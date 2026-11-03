@@ -48,7 +48,8 @@ export async function sollStellen(bisMonat: string): Promise<number> {
   let n = 0;
 
   // Mieten
-  const vertraege = await db.select('SELECT * FROM mietvertraege');
+  // Zahlt der Mieter an den Eigentümer (vermietete WEG-Einheit), entstehen bei uns keine Soll-Stellungen
+  const vertraege = await db.select(`SELECT * FROM mietvertraege WHERE COALESCE(zahlung_an, 'Verwaltung') <> 'Eigentümer'`);
   const alleAnp = await db.select('SELECT * FROM mietanpassungen');
   for (const v of vertraege) {
     const anp = alleAnp.filter((a) => a.vertrag_id === v.id);

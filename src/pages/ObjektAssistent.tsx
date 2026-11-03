@@ -8,8 +8,11 @@ import { num } from '../components/EntityTable';
 
 const zahl = (s: any) => Number(String(s ?? '').replace(/\./g, '').replace(',', '.')) || 0;
 const HEIZUNG = ['Gas-Zentralheizung', 'Öl-Zentralheizung', 'Fernwärme', 'Wärmepumpe', 'Pellets', 'Gasetagenheizung', 'Nachtspeicher', 'Sonstige'];
-type Einheit = { nummer: string; typ: string; lage: string; flaeche: string; mea: string; personenzahl: string };
-const leer = (n: number): Einheit => ({ nummer: `Top ${n}`, typ: 'Wohnung', lage: '', flaeche: '', mea: '', personenzahl: '' });
+type Einheit = { nummer: string; typ: string; lage: string; flaeche: string; mea: string; personenzahl: string;
+  vorname: string; nachname: string; telefon: string; email: string;
+  hausgeld: string; mVorname: string; mNachname: string; mSeit: string; nkVz: string };
+const leer = (n: number): Einheit => ({ nummer: `Top ${n}`, typ: 'Wohnung', lage: '', flaeche: '', mea: '', personenzahl: '', vorname: '', nachname: '', telefon: '', email: '', hausgeld: '', mVorname: '', mNachname: '', mSeit: '', nkVz: '' });
+const nameKey = (v: any, n: any) => `${String(v ?? '').trim().toLowerCase()}|${String(n ?? '').trim().toLowerCase()}`;
 
 export function ObjektAssistentPage() {
   const nav = useNavigate();
@@ -20,12 +23,18 @@ export function ObjektAssistentPage() {
   const [fehler, setFehler] = useState('');
   const [anzahl, setAnzahl] = useState('');
   useEffect(() => { db.select(personOptions('Eigentümer')).then(setEigentuemer); }, []);
+  const [eigNamen, setEigNamen] = useState<string[]>([]);
+  useEffect(() => { db.select(`SELECT nachname FROM personen WHERE rolle = 'Eigentümer' AND nachname IS NOT NULL`).then((r) => setEigNamen(r.map((x) => String(x.nachname)))); }, []);
 
   const set = (k: string, v: any) => setO({ ...o, [k]: v });
   const setE = (i: number, k: keyof Einheit, v: string) => setEinheiten(einheiten.map((e, j) => (j === i ? { ...e, [k]: v } : e)));
   const sFl = einheiten.reduce((a, e) => a + zahl(e.flaeche), 0), sMea = einheiten.reduce((a, e) => a + zahl(e.mea), 0), sP = einheiten.reduce((a, e) => a + zahl(e.personenzahl), 0);
   const weg = o.verwaltungsart === 'WEG';
   const meaSoll = zahl(o.gesamt_mea);
+  const jahrJetzt = new Date().getFullYear();
+  const sHg = einheiten.reduce((a, e) => a + zahl(e.hausgeld), 0), sNk = einheiten.reduce((a, e) => a + zahl(e.nkVz), 0);
+  const nMieter = einheiten.filter((e) => e.mNachname.trim()).length;
+  const nEig = new Set(einheiten.filter((e) => e.nachname.trim()).map((e) => nameKey(e.vorname, e.nachname))).size;
 
   function weiter() {
     setFehler('');
@@ -57,9 +66,34 @@ export function ObjektAssistentPage() {
         baujahr: o.baujahr ? zahl(o.baujahr) : null, gesamt_mea: meaSoll || (sMea || null), heizungsart: o.heizungsart || null,
         eigentuemer_id: !weg && o.eigentuemer_id ? Number(o.eigentuemer_id) : null, notiz: o.notiz || null,
       });
+      // Eigentümer je Einheit: gleicher Name = dieselbe Person (auch bereits vorhandene Eigentümer)
+      const personen = new Map<string, Row>();
+      if (weg) for (const p of await db.select(`SELECT id, vorname, nachname, telefon, email FROM personen WHERE rolle = 'Eigentümer'`)) personen.set(nameKey(p.vorname, p.nachname), p);
       for (const e of einheiten) {
-        await insert('einheiten', { objekt_id: id, nummer: e.nummer.trim(), typ: e.typ, lage: e.lage || null, flaeche: e.flaeche ? zahl(e.flaeche) : null,
+        const eid = await insert('einheiten', { objekt_id: id, nummer: e.nummer.trim(), typ: e.typ, lage: e.lage || null, flaeche: e.flaeche ? zahl(e.flaeche) : null,
           mea: e.mea ? zahl(e.mea) : null, personenzahl: e.personenzahl ? zahl(e.personenzahl) : null });
+        if (!weg || !e.nachname.trim()) continue;
+        const key = nameKey(e.vorname, e.nachname);
+        let p = personen.get(key);
+        if (!p) {
+          p = { id: await insert('personen', { rolle: 'Eigentümer', vorname: e.vorname.trim() || null, nachname: e.nachname.trim(),
+            telefon: e.telefon.trim() || null, email: e.email.trim() || null }), telefon: e.telefon.trim(), email: e.email.trim() };
+          personen.set(key, p);
+        } else if ((!p.telefon && e.telefon.trim()) || (!p.email && e.email.trim())) {
+          p.telefon = p.telefon || e.telefon.trim(); p.email = p.email || e.email.trim();
+          await db.execute('UPDATE personen SET telefon = $1, email = $2 WHERE id = $3', [p.telefon || null, p.email || null, p.id]);
+        }
+        await insert('eigentum', { einheit_id: eid, person_id: p.id, anteil: 100 });
+      }
+      if (weg) for (const e of einheiten) {
+        const eid = (await db.select('SELECT id FROM einheiten WHERE objekt_id = $1 AND nummer = $2', [id, e.nummer.trim()]))[0].id;
+        if (zahl(e.hausgeld)) await insert('hausgeld', { einheit_id: eid, gueltig_ab: `${jahrJetzt}-01-01`, betrag: zahl(e.hausgeld) });
+        // Vermietete Einheit: Mieter zahlt an den Eigentümer, wir brauchen ihn für die Nebenkostenabrechnung
+        if (e.mNachname.trim()) {
+          const mid = await insert('personen', { rolle: 'Mieter', vorname: e.mVorname.trim() || null, nachname: e.mNachname.trim() });
+          await insert('mietvertraege', { einheit_id: eid, mieter_id: mid, beginn: e.mSeit || `${jahrJetzt}-01-01`, kaltmiete: 0,
+            nk_vorauszahlung: zahl(e.nkVz), hk_vorauszahlung: 0, personenzahl: e.personenzahl ? zahl(e.personenzahl) : 1, zahlung_an: 'Eigentümer' });
+        }
       }
       nav(`/objekte/${id}`);
     } catch (err: any) { setFehler(String(err?.message ?? err)); }
@@ -108,21 +142,36 @@ export function ObjektAssistentPage() {
                 <button onClick={erzeugen} disabled={!zahl(anzahl)}>Einheiten erzeugen</button>
                 <button className="primary" onClick={() => setEinheiten([...einheiten, leer(einheiten.length + 1)])}><Plus size={16} />Einheit hinzufügen</button>
               </div></div>
+            {weg && <datalist id="eig-namen">{[...new Set(eigNamen)].map((n) => <option key={n} value={n} />)}</datalist>}
             <div className="tablewrap"><table className="list">
-              <thead><tr><th>Nr.</th><th>Bezeichnung</th><th>Etage / Lage</th><th className="num">Fläche (m²)</th><th className="num">MEA</th><th className="num">Personenzahl</th><th /></tr></thead>
+              <thead><tr><th>Nr.</th><th>Bezeichnung</th><th>Etage / Lage</th><th className="num">Fläche (m²)</th><th className="num">MEA</th><th className="num">Personenzahl</th>{weg && <><th>Eigentümer Vorname</th><th>Nachname / Firma</th><th>Telefon</th><th>E-Mail</th>
+                <th className="num">Hausgeld € / Monat</th><th>Mieter Vorname</th><th>Mieter Nachname</th><th>Mieter seit</th><th className="num">NK-Vorauszahlung Mieter € / Monat</th></>}<th /></tr></thead>
               <tbody>{einheiten.map((e, i) => (
                 <tr key={i}>
                   <td><input value={e.nummer} onChange={(x) => setE(i, 'nummer', x.target.value)} style={{ width: 110 }} /></td>
-                  <td><select value={e.typ} onChange={(x) => setE(i, 'typ', x.target.value)}>{EINHEIT_TYPEN.map((t) => <option key={t}>{t}</option>)}</select></td>
-                  <td><input value={e.lage} placeholder="EG, 1. OG …" onChange={(x) => setE(i, 'lage', x.target.value)} /></td>
-                  <td className="num"><input className="cell" inputMode="decimal" value={e.flaeche} onChange={(x) => setE(i, 'flaeche', x.target.value)} /></td>
-                  <td className="num"><input className="cell" inputMode="decimal" value={e.mea} onChange={(x) => setE(i, 'mea', x.target.value)} /></td>
-                  <td className="num"><input className="cell" inputMode="numeric" value={e.personenzahl} onChange={(x) => setE(i, 'personenzahl', x.target.value)} /></td>
+                  <td><select value={e.typ} style={{ minWidth: 130 }} onChange={(x) => setE(i, 'typ', x.target.value)}>{EINHEIT_TYPEN.map((t) => <option key={t}>{t}</option>)}</select></td>
+                  <td><input value={e.lage} placeholder="EG, 1. OG …" style={{ width: 100 }} onChange={(x) => setE(i, 'lage', x.target.value)} /></td>
+                  <td className="num"><input className="cell" inputMode="decimal" value={e.flaeche} style={{ width: 80 }} onChange={(x) => setE(i, 'flaeche', x.target.value)} /></td>
+                  <td className="num"><input className="cell" inputMode="decimal" value={e.mea} style={{ width: 80 }} onChange={(x) => setE(i, 'mea', x.target.value)} /></td>
+                  <td className="num"><input className="cell" inputMode="numeric" value={e.personenzahl} style={{ width: 60 }} onChange={(x) => setE(i, 'personenzahl', x.target.value)} /></td>
+                  {weg && <>
+                    <td><input value={e.vorname} onChange={(x) => setE(i, 'vorname', x.target.value)} style={{ width: 120 }} /></td>
+                    <td><input value={e.nachname} list="eig-namen" onChange={(x) => setE(i, 'nachname', x.target.value)} style={{ width: 150 }} /></td>
+                    <td><input type="tel" value={e.telefon} onChange={(x) => setE(i, 'telefon', x.target.value)} style={{ width: 140 }} /></td>
+                    <td><input type="email" value={e.email} onChange={(x) => setE(i, 'email', x.target.value)} style={{ width: 190 }} /></td>
+                    <td className="num"><input className="cell" inputMode="decimal" value={e.hausgeld} style={{ width: 90 }} onChange={(x) => setE(i, 'hausgeld', x.target.value)} /></td>
+                    <td><input value={e.mVorname} placeholder="leer = nicht vermietet" onChange={(x) => setE(i, 'mVorname', x.target.value)} style={{ width: 140 }} /></td>
+                    <td><input value={e.mNachname} onChange={(x) => setE(i, 'mNachname', x.target.value)} style={{ width: 140 }} /></td>
+                    <td><input type="date" value={e.mSeit} disabled={!e.mNachname.trim()} onChange={(x) => setE(i, 'mSeit', x.target.value)} /></td>
+                    <td className="num"><input className="cell" inputMode="decimal" value={e.nkVz} disabled={!e.mNachname.trim()} style={{ width: 90 }} onChange={(x) => setE(i, 'nkVz', x.target.value)} /></td>
+                  </>}
                   <td className="actions"><button className="icon-btn" title="Entfernen" disabled={einheiten.length === 1} onClick={() => setEinheiten(einheiten.filter((_, j) => j !== i))}><Trash2 size={17} /></button></td>
                 </tr>))}
               </tbody>
-              <tfoot><tr><td>Summe</td><td>{einheiten.length} Einheiten</td><td>–</td><td className="num">{num(sFl)} m²</td><td className="num">{num(sMea, 0)}</td><td className="num">{num(sP, 0)}</td><td /></tr></tfoot>
+              <tfoot><tr><td>Summe</td><td>{einheiten.length} Einheiten</td><td>–</td><td className="num">{num(sFl)} m²</td><td className="num">{num(sMea, 0)}</td><td className="num">{num(sP, 0)}</td>{weg && <><td colSpan={4}>{nEig} Eigentümer</td><td className="num">{num(sHg)} €</td><td colSpan={3}>{nMieter} vermietet</td><td className="num">{num(sNk)} €</td></>}<td /></tr></tfoot>
             </table></div>
+            {weg && <p className="muted small" style={{ marginTop: 8 }}>Gleicher Name in mehreren Zeilen = ein Eigentümer mit mehreren Einheiten. Ist der Name schon als Eigentümer gespeichert, wird diese Person verwendet.
+              Hausgeld gilt ab 01.01.{jahrJetzt}. Bei vermieteten Einheiten zahlt der Mieter an den Eigentümer; die Vorauszahlung brauchen wir für seine Nebenkostenabrechnung. Mieter seit leer = 01.01.{jahrJetzt}.</p>}
             {meaSoll > 0 && Math.abs(meaSoll - sMea) > 0.001 && <p className="warn" style={{ marginTop: 12 }}>Summe MEA {num(sMea, 0)} weicht vom Gesamt-MEA {num(meaSoll, 0)} ab. Du kannst trotzdem weiter und später korrigieren.</p>}
           </>
         )}
@@ -137,9 +186,11 @@ export function ObjektAssistentPage() {
               <tr><td>Anschrift</td><td>{o.strasse}, {o.plz} {o.ort}</td></tr>
               <tr><td>Baujahr / Heizung</td><td>{o.baujahr || '–'} / {o.heizungsart || '–'}</td></tr>
               <tr><td>Einheiten</td><td>{einheiten.length} ({[...new Set(einheiten.map((e) => e.typ))].join(', ')})</td></tr>
+              {weg && <tr><td>Hausgeld / vermietet</td><td>{num(sHg)} € im Monat · {nMieter} von {einheiten.length} Einheiten vermietet (NK-Vorauszahlungen {num(sNk)} € im Monat)</td></tr>}
+              {weg && <tr><td>Eigentümer</td><td>{nEig} erfasst{einheiten.some((e) => !e.nachname.trim()) ? `, ${einheiten.filter((e) => !e.nachname.trim()).length} Einheiten noch ohne` : ''}</td></tr>}
               <tr><td>Fläche / MEA / Personen</td><td>{num(sFl)} m² / {num(sMea, 0)}{meaSoll ? ` von ${num(meaSoll, 0)}` : ''} / {num(sP, 0)}</td></tr>
             </tbody></table>
-            <p className="muted small">Danach legst du in der Liegenschaft Eigentümer, Hausgeld bzw. Mietverträge, Bankkonto und Ordner an.</p>
+            <p className="muted small">Danach legst du in der Liegenschaft {weg ? 'Hausgeld' : 'Mietverträge'}, Bankkonto und Ordner an.</p>
           </>
         )}
 
