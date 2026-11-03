@@ -134,7 +134,7 @@ export async function nutzerErmitteln(objektId: number, jahr: number, modus: 'Mi
       for (const x of es) {
         const z = tageIn(x.von, x.bis, jahr);
         if (!z) continue;
-        nutzer.push({ key: `e${x.id}`, art: 'Eigentümer', einheit_id: e.id, person_id: x.person_id, name: name(x), ...z, personen: 1,
+        nutzer.push({ key: `e${x.id}`, art: 'Eigentümer', einheit_id: e.id, person_id: x.person_id, name: name(x), ...z, personen: e.personenzahl != null ? Number(e.personenzahl) : 1,
           anteil: Number(x.anteil) || 100 });
       }
     }

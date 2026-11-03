@@ -388,4 +388,13 @@ INSERT INTO ordnervorlagen (name, bezug, ordner) VALUES
 09 - Beschluss - EGT/Protokolle
 10 - Grundbesitzabgaben');
 `,
+  // Migration 4: Liegenschafts-ID (H-ID), Status, Personenzahl je Einheit (für WEG ohne Mieter)
+  `
+ALTER TABLE objekte ADD COLUMN objekt_nr TEXT;
+ALTER TABLE objekte ADD COLUMN status TEXT NOT NULL DEFAULT 'Aktiv';
+UPDATE objekte SET objekt_nr = CAST(1000 + id AS TEXT) WHERE objekt_nr IS NULL;
+CREATE TRIGGER objekt_nr_auto AFTER INSERT ON objekte WHEN NEW.objekt_nr IS NULL OR NEW.objekt_nr = ''
+BEGIN UPDATE objekte SET objekt_nr = CAST(1000 + NEW.id AS TEXT) WHERE id = NEW.id; END;
+ALTER TABLE einheiten ADD COLUMN personenzahl INTEGER;
+`,
 ];

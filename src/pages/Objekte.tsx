@@ -1,18 +1,25 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Building2, DoorOpen, FolderOpen, Gavel, Layers, Maximize2, Scale, Users, Wallet } from 'lucide-react';
 import { EntityTable, eur, num, type Field } from '../components/EntityTable';
 import { db, type Row } from '../db';
 import { AKTIV, EINHEIT_TYPEN, SCHLUESSEL, personLabel, personOptions } from '../db/labels';
 
+const adresse = (o: Row) => [o.strasse, [o.plz, o.ort].filter(Boolean).join(' ')].filter(Boolean).join(', ');
+const statusPill = (v: any) => <span className={'pill ' + String(v ?? 'Aktiv').toLowerCase()}>{v ?? 'Aktiv'}</span>;
+
 const objektFields: Field[] = [
-  { key: 'verwaltungsart', label: 'Verwaltungsart', type: 'select', options: ['WEG', 'Mietverwaltung'], required: true },
-  { key: 'name', label: 'Bezeichnung', required: true },
-  { key: 'strasse', label: 'Straße' },
+  { key: 'objekt_nr', label: 'ID', format: (v) => <b>H-ID {v}</b> },
+  { key: 'name', label: 'Liegenschaft (Adresse)', required: true, format: (v, r) => (
+    <div className="idcell"><div className="thumb-s"><Building2 size={22} /></div><div><b>{v}</b><div className="muted small">{adresse(r)}</div></div></div>) },
+  { key: 'verwaltungsart', label: 'Typ', type: 'select', options: ['WEG', 'Mietverwaltung'], required: true },
+  { key: 'status', label: 'Status', type: 'select', options: ['Aktiv', 'In Übernahme', 'Inaktiv'], format: statusPill },
+  { key: 'strasse', label: 'Straße', hideInTable: true },
   { key: 'plz', label: 'PLZ', hideInTable: true },
-  { key: 'ort', label: 'Ort' },
-  { key: 'baujahr', label: 'Baujahr', type: 'number', format: (v) => v ?? '' },
-  { key: 'gesamt_mea', label: 'MEA gesamt', type: 'number', format: (v) => num(v, 0) },
-  { key: 'heizungsart', label: 'Heizungsart', type: 'select',
+  { key: 'ort', label: 'Ort', hideInTable: true },
+  { key: 'baujahr', label: 'Baujahr', type: 'number', format: (v) => v ?? '', hideInTable: true },
+  { key: 'gesamt_mea', label: 'MEA gesamt', type: 'number', format: (v) => num(v, 0), hideInTable: true },
+  { key: 'heizungsart', label: 'Heizungsart', type: 'select', hideInTable: true,
     options: ['Gas-Zentralheizung', 'Öl-Zentralheizung', 'Fernwärme', 'Wärmepumpe', 'Pellets', 'Gasetagenheizung', 'Nachtspeicher', 'Sonstige'] },
   { key: 'eigentuemer_id', label: 'Eigentümer (nur Mietverwaltung)', type: 'select', optionsSql: personOptions('Eigentümer'), hideInTable: true, wide: true },
   { key: 'notiz', label: 'Notiz', type: 'textarea', hideInTable: true },
@@ -22,58 +29,72 @@ export function ObjektePage() {
   const nav = useNavigate();
   return (
     <EntityTable
-      title="Objekte"
+      title="Liegenschaften"
+      icon={<Building2 size={24} />}
+      newLabel="Liegenschaft hinzufügen"
       table="objekte"
-      fields={[...objektFields, { key: 'einheiten', label: 'Einheiten', computed: true }]}
+      fields={[...objektFields.slice(0, 2), { key: 'einheiten', label: 'Einheiten', type: 'number', computed: true, format: (v) => num(v, 0), sum: true }, ...objektFields.slice(2)]}
       listSql={`SELECT o.*, (SELECT COUNT(*) FROM einheiten e WHERE e.objekt_id = o.id) AS einheiten
-                FROM objekte o ORDER BY o.verwaltungsart, o.name`}
+                FROM objekte o ORDER BY o.objekt_nr, o.name`}
       onOpen={(r) => nav(`/objekte/${r.id}`)}
-      emptyText="Noch keine Objekte. Lege mit „+ Neu“ dein erstes Haus oder deine erste WEG an."
+      emptyText="Noch keine Liegenschaften. Lege mit „Liegenschaft hinzufügen“ dein erstes Haus oder deine erste WEG an."
     />
   );
 }
 
-const TABS_WEG = ['Einheiten', 'Eigentümer', 'Hausgeld', 'Verwaltungsbeirat', 'Umlageschlüssel'];
-const TABS_MIETE = ['Einheiten', 'Umlageschlüssel'];
+const TABS_WEG: [string, any][] = [['Einheiten & Zahlungen', Building2], ['Eigentümer', Users], ['Hausgeldplan', Wallet], ['Verwaltungsbeirat', Gavel], ['Umlageschlüssel', Scale], ['Dokumente', FolderOpen]];
+const TABS_MIETE: [string, any][] = [['Einheiten & Zahlungen', Building2], ['Umlageschlüssel', Scale], ['Dokumente', FolderOpen]];
 
 export function ObjektDetailPage() {
   const id = Number(useParams().id);
+  const nav = useNavigate();
   const [o, setO] = useState<Row | null>(null);
   const [sum, setSum] = useState<Row>({});
-  const [tab, setTab] = useState('Einheiten');
+  const [tab, setTab] = useState('Einheiten & Zahlungen');
   const reload = async () => {
     setO((await db.select(`SELECT o.*, ${personLabel('p')} AS eigentuemer, p.telefon, p.email
       FROM objekte o LEFT JOIN personen p ON p.id = o.eigentuemer_id WHERE o.id = $1`, [id]))[0] ?? null);
-    setSum((await db.select(`SELECT COUNT(*) n, SUM(flaeche) fl, SUM(mea) mea FROM einheiten WHERE objekt_id = $1`, [id]))[0]);
+    setSum((await db.select(`SELECT COUNT(*) n, SUM(flaeche) fl, SUM(mea) mea,
+        SUM(COALESCE((SELECT v.personenzahl FROM mietvertraege v WHERE v.einheit_id = e.id AND ${AKTIV()} LIMIT 1), e.personenzahl, 0)) pers
+      FROM einheiten e WHERE objekt_id = $1`, [id]))[0]);
   };
   useEffect(() => { reload(); }, [id]);
-  if (!o) return <p>Objekt wird geladen…</p>;
+  if (!o) return <p>Liegenschaft wird geladen…</p>;
   const weg = o.verwaltungsart === 'WEG';
   const meaWarn = o.gesamt_mea && sum.mea && Math.abs(o.gesamt_mea - sum.mea) > 0.001;
 
   return (
     <>
       <div className="page-head">
-        <p className="muted small"><Link to="/objekte">Objekte</Link> ›</p>
-        <h1>{o.name} <span className="badge">{o.verwaltungsart}</span></h1>
-        <p className="muted">
-          {[o.strasse, [o.plz, o.ort].filter(Boolean).join(' ')].filter(Boolean).join(', ')}
-          {o.baujahr ? ` · Baujahr ${o.baujahr}` : ''}{o.heizungsart ? ` · ${o.heizungsart}` : ''}
-        </p>
+        <h1>{weg ? 'WEG-Verwaltung' : 'Mietverwaltung'} – {o.name}</h1>
+        <div className="crumbs"><Link to="/">Dashboard</Link> › <Link to="/objekte">Liegenschaften</Link> › <span>{o.name} ({weg ? 'WEG' : 'Miete'})</span></div>
       </div>
-      <div className="kpis">
-        <div className="kpi"><span>Einheiten</span><b>{sum.n ?? 0}</b></div>
-        <div className="kpi"><span>Fläche gesamt</span><b>{num(sum.fl)} m²</b></div>
-        <div className="kpi"><span>MEA vergeben</span><b>{num(sum.mea, 0)}{o.gesamt_mea ? ` / ${num(o.gesamt_mea, 0)}` : ''}</b></div>
-        {!weg && <div className="kpi"><span>Eigentümer</span><b className="kpi-text">{o.eigentuemer || '–'}</b><small>{[o.telefon, o.email].filter(Boolean).join(' · ')}</small></div>}
-      </div>
-      {meaWarn && <p className="warn">Die Summe der MEA der Einheiten ({num(sum.mea, 0)}) weicht vom MEA gesamt des Objekts ({num(o.gesamt_mea, 0)}) ab.</p>}
+      <section className="card objhead">
+        <div className="thumb"><Building2 size={44} /></div>
+        <div>
+          <h2 style={{ fontSize: 22 }}>{o.name}</h2>
+          <div className="muted">{adresse(o)}</div>
+          <div className="row" style={{ marginTop: 8 }}>
+            <span className="badge"><Users size={14} />{weg ? 'WEG (Wohnungseigentum)' : 'Mietverwaltung'}</span>
+            <span className="muted small">H-ID {o.objekt_nr}{o.baujahr ? ` · Baujahr ${o.baujahr}` : ''}{o.heizungsart ? ` · ${o.heizungsart}` : ''}</span>
+          </div>
+          {!weg && o.eigentuemer && <div className="small" style={{ marginTop: 6 }}>Eigentümer: <b>{o.eigentuemer}</b> {[o.telefon, o.email].filter(Boolean).join(' · ')}</div>}
+        </div>
+        <div className="stats">
+          <div className="stat"><Building2 size={30} strokeWidth={1.5} /><div><b>{sum.n ?? 0}</b><span>Einheiten</span></div></div>
+          <div className="stat"><Layers size={30} strokeWidth={1.5} /><div><b>{num(sum.mea, 0)}{o.gesamt_mea ? <small className="muted"> / {num(o.gesamt_mea, 0)}</small> : ''}</b><span>Gesamt-MEA</span></div></div>
+          <div className="stat"><Maximize2 size={30} strokeWidth={1.5} /><div><b>{num(sum.fl)} m²</b><span>Gesamtfläche</span></div></div>
+          <div className="stat"><Users size={30} strokeWidth={1.5} /><div><b>{num(sum.pers, 0)}</b><span>Personen</span></div></div>
+        </div>
+      </section>
+      {meaWarn && <p className="warn">Die Summe der MEA der Einheiten ({num(sum.mea, 0)}) weicht vom MEA gesamt der Liegenschaft ({num(o.gesamt_mea, 0)}) ab.</p>}
       <div className="tabs">
-        {(weg ? TABS_WEG : TABS_MIETE).map((t) => <button key={t} className={tab === t ? 'on' : ''} onClick={() => setTab(t)}>{t}</button>)}
+        {(weg ? TABS_WEG : TABS_MIETE).map(([t, Icon]) => (
+          <button key={t} className={tab === t ? 'on' : ''} onClick={() => (t === 'Dokumente' ? nav('/ablage') : setTab(t))}><Icon size={18} />{t}</button>))}
       </div>
-      {tab === 'Einheiten' && <EinheitenTab objektId={id} weg={weg} onChange={reload} />}
+      {tab === 'Einheiten & Zahlungen' && <EinheitenTab objektId={id} weg={weg} onChange={reload} />}
       {tab === 'Eigentümer' && <EigentuemerTab objektId={id} />}
-      {tab === 'Hausgeld' && <HausgeldTab objektId={id} />}
+      {tab === 'Hausgeldplan' && <HausgeldTab objektId={id} />}
       {tab === 'Verwaltungsbeirat' && <BeiratTab objektId={id} />}
       {tab === 'Umlageschlüssel' && <SchluesselTab objektId={id} weg={weg} />}
     </>
@@ -81,32 +102,49 @@ export function ObjektDetailPage() {
 }
 
 function EinheitenTab({ objektId, weg, onChange }: { objektId: number; weg: boolean; onChange: () => void }) {
+  const jahr = new Date().getFullYear();
+  const status = (_: any, r: Row) => (Number(r.soll) || 0) === 0 ? <span className="muted">–</span>
+    : r.saldo > 0.005 ? <span className={'pill ' + (r.ist > 0.005 ? 'teil' : 'offen')}>{r.ist > 0.005 ? 'Teilweise' : 'Offen'}</span> : <span className="pill bezahlt">Bezahlt</span>;
   return (
     <EntityTable
-      title="Einheiten"
+      title={`Einheiten (${weg ? 'WEG' : 'Miete'}) · Zahlungen ${jahr}`}
+      icon={<DoorOpen size={22} />}
+      newLabel="Einheit hinzufügen"
       table="einheiten"
       fields={[
-        { key: 'nummer', label: 'Nummer', required: true },
-        { key: 'typ', label: 'Typ', type: 'select', options: EINHEIT_TYPEN, required: true },
-        { key: 'lage', label: 'Lage' },
-        { key: 'flaeche', label: 'Fläche m²', type: 'number' },
-        { key: 'mea', label: 'MEA', type: 'number', format: (v) => num(v, 0) },
+        { key: 'nummer', label: 'Nr.', required: true, format: (v) => <b>{v}</b> },
+        { key: 'typ', label: 'Bezeichnung', type: 'select', options: EINHEIT_TYPEN, required: true },
+        { key: 'nutzung', label: 'Nutzung', computed: true, format: (v: any) => v === 'Miete' ? <span className="pill künftig">Miete</span>
+            : v === 'Leerstand' ? <span className="pill offen">Leerstand</span> : <span className="badge">Eigentum</span> },
+        { key: 'lage', label: 'Etage / Lage' },
+        { key: 'flaeche', label: 'Fläche (m²)', type: 'number', sum: true },
+        { key: 'mea', label: 'MEA', type: 'number', format: (v) => num(v, 0), sum: true },
+        { key: 'personenzahl', label: 'Personenzahl (ohne Mietvertrag)', type: 'number', hideInTable: true },
+        { key: 'personen', label: 'Personen', type: 'number', computed: true, format: (v) => num(v, 0), sum: true },
         { key: 'notiz', label: 'Notiz', type: 'textarea', hideInTable: true },
         ...(weg ? [{ key: 'eigentuemer', label: 'Eigentümer', computed: true, format: (v: any) => v ?? '–' }] : []),
-        { key: 'mieter', label: 'Mieter (aktuell)', computed: true,
-          format: (v: any) => v ?? (weg ? <span className="muted">selbst genutzt / –</span> : <span className="tag">Leerstand</span>) },
-        { key: 'personen', label: 'Pers.', computed: true },
-        { key: 'zahlung', label: weg ? 'Hausgeld / Miete' : 'Miete warm', type: 'number', computed: true, format: (v: any, r: Row) =>
-          weg ? [r.hausgeld != null ? `HG ${eur(r.hausgeld)}` : null, v != null ? `Miete ${eur(v)}` : null].filter(Boolean).join(' · ') : eur(v) },
+        { key: 'mieter', label: 'Mieter (aktuell)', computed: true, format: (v: any) => v ?? <span className="muted">–</span> },
+        { key: 'monat', label: weg ? 'Hausgeld (Soll) / Monat' : 'Miete warm / Monat', type: 'number', computed: true, format: eur, sum: true },
+        { key: 'ist', label: `Zahlungseingang ${jahr}`, type: 'number', computed: true, format: eur, sum: true },
+        { key: 'saldo', label: 'Offener Saldo', type: 'number', computed: true, sum: true,
+          format: (v: any) => <span className={v > 0.005 ? 'neg' : ''}>{eur(v ?? 0)}</span> },
+        { key: 'status', label: 'Status', computed: true, format: status },
       ] as Field[]}
-      listSql={`SELECT e.*,
+      listSql={`SELECT x.*, x.soll - x.ist AS saldo FROM (SELECT e.*,
           (SELECT GROUP_CONCAT(${personLabel('p')}, '; ') FROM eigentum ei JOIN personen p ON p.id = ei.person_id
              WHERE ei.einheit_id = e.id AND (ei.bis IS NULL OR ei.bis >= date('now'))) AS eigentuemer,
           (SELECT ${personLabel('p')} FROM mietvertraege v JOIN personen p ON p.id = v.mieter_id WHERE v.einheit_id = e.id AND ${AKTIV()} LIMIT 1) AS mieter,
-          (SELECT v.personenzahl FROM mietvertraege v WHERE v.einheit_id = e.id AND ${AKTIV()} LIMIT 1) AS personen,
-          (SELECT v.kaltmiete + v.nk_vorauszahlung + v.hk_vorauszahlung FROM mietvertraege v WHERE v.einheit_id = e.id AND ${AKTIV()} LIMIT 1) AS zahlung,
-          (SELECT h.betrag FROM hausgeld h WHERE h.einheit_id = e.id AND h.gueltig_ab <= date('now') ORDER BY h.gueltig_ab DESC LIMIT 1) AS hausgeld
-        FROM einheiten e WHERE e.objekt_id = $1 ORDER BY e.nummer`}
+          CASE WHEN EXISTS (SELECT 1 FROM mietvertraege v WHERE v.einheit_id = e.id AND ${AKTIV()}) THEN 'Miete'
+               WHEN ${weg ? 1 : 0} = 1 THEN 'Eigentum' ELSE 'Leerstand' END AS nutzung,
+          COALESCE((SELECT v.personenzahl FROM mietvertraege v WHERE v.einheit_id = e.id AND ${AKTIV()} LIMIT 1), e.personenzahl) AS personen,
+          ${weg
+            ? `(SELECT h.betrag FROM hausgeld h WHERE h.einheit_id = e.id AND h.gueltig_ab <= date('now') ORDER BY h.gueltig_ab DESC LIMIT 1)`
+            : `(SELECT v.kaltmiete + v.nk_vorauszahlung + v.hk_vorauszahlung FROM mietvertraege v WHERE v.einheit_id = e.id AND ${AKTIV()} LIMIT 1)`} AS monat,
+          COALESCE((SELECT SUM(s.betrag) FROM sollstellungen s WHERE s.einheit_id = e.id AND substr(s.monat, 1, 4) = '${jahr}'
+             AND s.faellig <= date('now') AND s.art IN (${weg ? `'Hausgeld'` : `'Kaltmiete', 'NK', 'HK', 'USt'`})), 0) AS soll,
+          COALESCE((SELECT SUM(b.betrag) FROM buchungen b JOIN sollstellungen s ON s.id = b.sollstellung_id WHERE s.einheit_id = e.id
+             AND substr(s.monat, 1, 4) = '${jahr}' AND s.faellig <= date('now') AND s.art IN (${weg ? `'Hausgeld'` : `'Kaltmiete', 'NK', 'HK', 'USt'`})), 0) AS ist
+        FROM einheiten e WHERE e.objekt_id = $1) x ORDER BY x.nummer`}
       listParams={[objektId]}
       fixed={{ objekt_id: objektId }}
       onChange={onChange}
@@ -120,6 +158,8 @@ function EigentuemerTab({ objektId }: { objektId: number }) {
   return (
     <EntityTable
       title="Eigentümer je Einheit"
+      icon={<Users size={22} />}
+      newLabel="Eigentümer zuordnen"
       table="eigentum"
       fields={[
         { key: 'einheit_id', label: 'Einheit', type: 'select', required: true, optionsSql: einheitOptions(objektId) },
@@ -142,7 +182,9 @@ function EigentuemerTab({ objektId }: { objektId: number }) {
 function HausgeldTab({ objektId }: { objektId: number }) {
   return (
     <EntityTable
-      title="Hausgeld je Einheit"
+      title="Hausgeldplan je Einheit"
+      icon={<Wallet size={22} />}
+      newLabel="Hausgeld eintragen"
       table="hausgeld"
       fields={[
         { key: 'einheit_id', label: 'Einheit', type: 'select', required: true, optionsSql: einheitOptions(objektId) },
@@ -162,6 +204,7 @@ function BeiratTab({ objektId }: { objektId: number }) {
   return (
     <EntityTable
       title="Verwaltungsbeirat"
+      icon={<Gavel size={22} />}
       table="beiraete"
       fields={[
         { key: 'person_id', label: 'Person', type: 'select', required: true, optionsSql: personOptions() },
@@ -194,7 +237,7 @@ function SchluesselTab({ objektId, weg }: { objektId: number; weg: boolean }) {
   let gruppe = '';
   return (
     <section className="card">
-      <div className="card-head"><h2>Umlageschlüssel für dieses Objekt</h2></div>
+      <div className="card-head"><h2 className="title-ico"><Scale size={22} />Umlageschlüssel für diese Liegenschaft</h2></div>
       <p className="muted small">{weg ? 'Gilt für die WEG-Jahresabrechnung. Ohne eigene Auswahl wird nach MEA verteilt.' : 'Gilt für die Nebenkostenabrechnung. Ohne eigene Auswahl gilt der Vorschlag.'}</p>
       <table className="list">
         <thead><tr><th>Konto</th><th>Bezeichnung</th><th>Vorschlag</th><th>Schlüssel für dieses Objekt</th></tr></thead>
