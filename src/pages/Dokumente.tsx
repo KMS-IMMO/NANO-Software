@@ -121,11 +121,11 @@ export function DokumentePage() {
             {ordner.map((o) => {
               const liste = docs.filter((d) => (d.ordner || '') === o);
               return (
-                <div key={o || '_'} className={'ordner-box' + (over === o ? ' over' : '')}
+                <div key={o || '_'} className={'ordner-box' + (o.includes('/') ? ' sub' : '') + (over === o ? ' over' : '')} style={{ marginLeft: (o.split('/').length - 1) * 24 }}
                   onDragOver={(e) => { e.preventDefault(); setOver(o); }} onDragLeave={() => setOver('')}
                   onDrop={(e) => { e.preventDefault(); setOver(''); hochladen(Array.from(e.dataTransfer.files), o); }}>
                   <div className="ordner-head">
-                    <span>📁 {o || '(Hauptordner)'}</span>
+                    <span title={o}>📁 {o ? o.split('/').pop() : '(Hauptordner)'}</span>
                     <span className="muted small">{liste.length} Datei(en)</span>
                     <button className="link small" onClick={() => { setZiel(o); fileRef.current?.click(); }}>+ Datei</button>
                   </div>

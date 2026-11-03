@@ -6,6 +6,7 @@ import { eur, num, datum } from '../components/EntityTable';
 import { kostenErmitteln, nutzerErmitteln, verteilen, type Ergebnis, type Position } from '../logic/verteilung';
 import { Brief, absender, dDatum, geld } from '../lib/pdf';
 import { oeffnen, speichern } from '../lib/dateien';
+import { WerteJeEinheit } from '../components/WerteJeEinheit';
 
 const RUECKLAGE = ['1260', '1261', '1262'];
 const HEIZ_KONTO = '1200';
@@ -45,10 +46,12 @@ export function WegAbrechnungPage() {
   const [erg, setErg] = useState<Einzel[]>([]);
   const [verm, setVerm] = useState<Row>({});
   const [info, setInfo] = useState('');
+  const [einheiten, setEinheiten] = useState<Row[]>([]);
 
   async function rechnen() {
     if (objekt === '') return;
     const { einheiten, nutzer } = await nutzerErmitteln(Number(objekt), jahr, 'Eigentümer');
+    setEinheiten(einheiten);
     const eigene = await db.select('SELECT buchungskonto_id FROM objekt_schluessel WHERE objekt_id = $1', [objekt]);
     const h = await db.select(`SELECT h.* FROM heizkosten_ergebnisse h JOIN einheiten e ON e.id = h.einheit_id WHERE e.objekt_id = $1 AND h.jahr = $2`, [objekt, jahr]);
     const messdienst = Object.fromEntries(h.map((x) => [x.einheit_id, Number(x.heizkosten) + Number(x.warmwasser)]));
@@ -178,6 +181,8 @@ export function WegAbrechnungPage() {
           <table className="list"><thead><tr><th>Konto</th><th>Kostenart</th><th>umlagefähig</th><th>Schlüssel</th><th className="num">Betrag</th></tr></thead>
             <tbody>{pos.map((p) => <tr key={p.konto_id}><td>{p.nummer}</td><td>{p.name}</td><td>{p.umlagefaehig ? 'ja' : 'nein'}</td><td>{p.schluessel}</td><td className="num">{eur(p.betrag)}</td></tr>)}</tbody></table>)}
       </section>
+      {objekt !== '' && <WerteJeEinheit objekt={Number(objekt)} jahr={jahr} einheiten={einheiten}
+        konten={pos.filter((p) => p.schluessel === 'Summe' || p.schluessel === 'Verbrauch')} onSaved={() => { setInfo('Eingaben gespeichert und neu berechnet.'); rechnen(); }} />}
       <section className="card">
         <div className="card-head"><h2>Einzelabrechnungen</h2></div>
         <table className="list">
