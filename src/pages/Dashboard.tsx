@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { BarChart3, Building2, ChevronRight, DoorOpen, FolderOpen, ListTodo, Users, Wallet } from 'lucide-react';
+import { BarChart3, Building2, CalendarDays, ChevronRight, DoorOpen, FolderOpen, ListTodo, Users, Wallet } from 'lucide-react';
 import { db, type Row } from '../db';
 import { datum, eur, num } from '../components/EntityTable';
 import { Donut } from '../components/Donut';
@@ -18,6 +18,7 @@ export function DashboardPage() {
   const [leer, setLeer] = useState<Row[]>([]);
   const [auslaufend, setAuslaufend] = useState<Row[]>([]);
   const [op, setOp] = useState<Row[]>([]);
+  const [termine, setTermine] = useState<Row[]>([]);
 
   useEffect(() => {
     (async () => {
@@ -29,7 +30,14 @@ export function DashboardPage() {
           (SELECT COUNT(DISTINCT v.mieter_id) FROM mietvertraege v WHERE ${aktiv}) mieter,
           (SELECT COALESCE(SUM(betrag - bezahlt), 0) FROM (${OP_SQL}) WHERE betrag - bezahlt > 0.005 AND faellig < date('now')) offen,
           (SELECT COUNT(*) FROM (${OP_SQL}) WHERE betrag - bezahlt > 0.005 AND faellig < date('now')) offen_n,
-          (SELECT COUNT(*) FROM sollstellungen WHERE mahnstufe > 0 AND art <> 'Mahngebühr') gemahnt`))[0]);
+          (SELECT COUNT(*) FROM sollstellungen WHERE mahnstufe > 0 AND art <> 'Mahngebühr') gemahnt,
+          (SELECT COUNT(*) FROM vorgaenge WHERE status <> 'Erledigt') vorgaenge,
+          (SELECT COUNT(*) FROM beschluesse WHERE status <> 'Erledigt' AND ergebnis = 'Angenommen') beschluesse`))[0]);
+      setTermine(await db.select(`SELECT 'Eigentümerversammlung' AS was, o.name AS objekt, v.datum FROM versammlungen v JOIN objekte o ON o.id = v.objekt_id WHERE v.datum >= date('now')
+          UNION ALL SELECT 'Hausgeldanpassung', o.name, h.gueltig_ab FROM hausgeld h JOIN einheiten e ON e.id = h.einheit_id JOIN objekte o ON o.id = e.objekt_id
+            WHERE h.gueltig_ab > date('now') GROUP BY o.id, h.gueltig_ab
+          UNION ALL SELECT 'Fällig: ' || x.betreff, o.name, x.faellig FROM vorgaenge x JOIN objekte o ON o.id = x.objekt_id WHERE x.status <> 'Erledigt' AND x.faellig IS NOT NULL
+          ORDER BY 3 LIMIT 6`));
       setZ((await db.select(`SELECT COALESCE(SUM(betrag), 0) soll, COALESCE(SUM(MIN(bezahlt, betrag)), 0) ist
           FROM (${OP_SQL}) WHERE monat = $1 AND art IN ('Kaltmiete', 'NK', 'HK', 'USt', 'Hausgeld')`, [monat()]))[0]);
       setObjekte(await db.select(`SELECT o.*, (SELECT COUNT(*) FROM einheiten e WHERE e.objekt_id = o.id) einheiten
@@ -76,6 +84,8 @@ export function DashboardPage() {
           <div className="card-head"><h2 className="title-ico"><ListTodo size={22} />Offene Aufgaben</h2></div>
           <div className="aufgaben">
             <Link to="/mahnungen"><span><b>{k.offen_n ?? 0}</b>Zahlungen überfällig</span><ChevronRight size={18} /></Link>
+            <Link to="/instandhaltung"><span><b>{k.vorgaenge ?? 0}</b>Instandhaltungen offen</span><ChevronRight size={18} /></Link>
+            <Link to="/beschluesse"><span><b>{k.beschluesse ?? 0}</b>Beschlüsse in Umsetzung</span><ChevronRight size={18} /></Link>
             <Link to="/mahnungen"><span><b>{k.gemahnt ?? 0}</b>Posten bereits gemahnt</span><ChevronRight size={18} /></Link>
             <Link to="/objekte"><span><b>{leer.length}</b>Einheiten leer (Mietverwaltung)</span><ChevronRight size={18} /></Link>
             <Link to="/vertraege"><span><b>{auslaufend.length}</b>Mietverträge enden in 6 Monaten</span><ChevronRight size={18} /></Link>
@@ -110,7 +120,12 @@ export function DashboardPage() {
             </tbody></table>)}
         </section>
         <section className="card">
-          <div className="card-head"><h2>Leerstand und auslaufende Verträge</h2></div>
+          <div className="card-head"><h2 className="title-ico"><CalendarDays size={22} />Nächste Termine</h2></div>
+          {termine.length === 0 ? <p className="muted">Keine Termine. Versammlungen legst du in der WEG unter „Beschlüsse“ an.</p> : (
+            <table className="list"><tbody>
+              {termine.map((t, i) => <tr key={i}><td>{t.was}<div className="muted small">{t.objekt}</div></td><td className="num">{datum(t.datum)}</td></tr>)}
+            </tbody></table>)}
+          <div className="card-head" style={{ marginTop: 18 }}><h2>Leerstand und auslaufende Verträge</h2></div>
           {leer.length === 0 && auslaufend.length === 0 ? <p className="muted">Alles vermietet, keine Verträge laufen bald aus.</p> : (
             <table className="list"><tbody>
               {leer.map((e) => <tr key={'l' + e.id}><td><Link to={`/objekte/${e.objekt_id}`}>{e.objekt}</Link> – {e.nummer}</td><td><span className="pill offen">Leerstand</span></td><td className="num">{num(e.flaeche)} m²</td></tr>)}

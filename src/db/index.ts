@@ -145,4 +145,18 @@ async function seedDemo(d: Driver) {
   }
   await ex(`UPDATE eigentum SET von = '2015-01-01'`);
   await ex(`INSERT INTO mietanpassungen (vertrag_id, gueltig_ab, art, kaltmiete) VALUES (2,'2026-08-01','Staffel',820)`);
+  await ex(`UPDATE objekte SET ruecklage_anfang = 28500, ruecklage_stichtag = '2023-12-31' WHERE id = 2`);
+  await ex(`INSERT INTO versammlungen (objekt_id, datum, art, ort, status) VALUES
+    (2,'2025-04-15','Ordentliche Versammlung','Büro KMS','Durchgeführt'),(2,'2027-04-20','Ordentliche Versammlung','Büro KMS','Geplant')`);
+  await ex(`INSERT INTO beschluesse (objekt_id, versammlung_id, nummer, datum, betreff, art, ergebnis, zustimmung, status, betrag) VALUES
+    (2,1,'B-2025-01','2025-04-15','Instandhaltungsplan 2025','Organisation','Angenommen',100,'Erledigt',NULL),
+    (2,1,'B-2025-02','2025-04-15','Anpassung Hausgeld ab 01.01.2026','Finanzen','Angenommen',100,'Erledigt',NULL),
+    (2,1,'B-2025-03','2025-04-15','Sanierung Fassade','Investition','Angenommen',80,'In Umsetzung',80000)`);
+  await ex(`INSERT INTO vorgaenge (objekt_id, einheit_id, betreff, art, prioritaet, status, faellig, firma_id, kosten) VALUES
+    (2,NULL,'Heizungswartung','Wartung','Mittel','In Arbeit','2026-12-15',1,450),
+    (1,2,'Wasserschaden Bad WE 02','Schaden','Hoch','Offen','2026-11-20',1,1200),
+    (1,NULL,'Dachrinne reinigen','Instandhaltung','Niedrig','Erledigt','2026-09-30',2,180),
+    (2,NULL,'Aufzugsprüfung TÜV','Wartung','Hoch','Offen','2026-12-01',NULL,600)`);
+  await ex(`INSERT INTO ruecklage_massnahmen (objekt_id, massnahme, betrag, jahr, status) VALUES
+    (2,'Fassadensanierung (1. BA)',80000,2027,'Beschlossen'),(2,'Dachsanierung',60000,2029,'Vorgesehen')`);
 }

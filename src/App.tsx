@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { HashRouter, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import {
-  Bell, Building, Building2, ChevronDown, FolderOpen, Hammer, Home, Landmark, Search, Settings, User, Users, Wallet,
+  Bell, Building, Building2, ChevronDown, FolderOpen, Hammer, Home, Landmark, Search, Settings, User, Users, Wallet, Wrench,
 } from 'lucide-react';
 import { db, type Row } from './db';
 import { personLabel } from './db/labels';
@@ -18,6 +18,7 @@ import { NebenkostenPage } from './pages/Nebenkosten';
 import { DokumentePage } from './pages/Dokumente';
 import { EigentuemerAbrechnungPage, WegAbrechnungPage } from './pages/Jahresabrechnungen';
 import { EinstellungenPage, KontenPage, RechnungenPage } from './pages/Konten';
+import { BeschluessePage, InstandhaltungPage } from './pages/Weg';
 
 type Item = { to: string; label: string; icon?: ReactNode };
 type Group = { label: string; icon: ReactNode; items: Item[] };
@@ -25,6 +26,7 @@ const NAV: (Item | Group)[] = [
   { to: '/', label: 'Dashboard', icon: <Home size={18} /> },
   { to: '/objekte', label: 'Liegenschaften', icon: <Building2 size={18} /> },
   { label: 'WEG-Verwaltung', icon: <Users size={18} />, items: [
+    { to: '/beschluesse', label: 'Beschlusssammlung' },
     { to: '/weg-abrechnung', label: 'Jahresabrechnung' },
   ] },
   { label: 'Mietverwaltung', icon: <Building size={18} />, items: [
@@ -42,6 +44,7 @@ const NAV: (Item | Group)[] = [
     { to: '/mahnungen', label: 'Mahnungen' },
     { to: '/konten', label: 'Kontenplan' },
   ] },
+  { to: '/instandhaltung', label: 'Instandhaltung', icon: <Wrench size={18} /> },
   { to: '/ablage', label: 'Dokumente', icon: <FolderOpen size={18} /> },
   { to: '/einstellungen', label: 'Einstellungen', icon: <Settings size={18} /> },
 ];
@@ -153,6 +156,8 @@ export default function App() {
               <Route path="/weg-abrechnung" element={<WegAbrechnungPage />} />
               <Route path="/eigentuemer-abrechnung" element={<EigentuemerAbrechnungPage />} />
               <Route path="/ablage" element={<DokumentePage />} />
+              <Route path="/instandhaltung" element={<InstandhaltungPage />} />
+              <Route path="/beschluesse" element={<BeschluessePage />} />
             </Routes>
           </main>
         </div>

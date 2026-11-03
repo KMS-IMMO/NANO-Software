@@ -7,6 +7,7 @@ import { kostenErmitteln, nutzerErmitteln, verteilen, type Ergebnis, type Positi
 import { Brief, absender, dDatum, geld } from '../lib/pdf';
 import { oeffnen, speichern } from '../lib/dateien';
 import { WerteJeEinheit } from '../components/WerteJeEinheit';
+import { ruecklageJahr } from '../logic/ruecklage';
 
 const RUECKLAGE = ['1260', '1261', '1262'];
 const HEIZ_KONTO = '1200';
@@ -82,19 +83,13 @@ export function WegAbrechnungPage() {
     setErg(res);
     // Vermögensbericht
     const ende = `${jahr}-12-31`;
-    const zuf = (await db.select(`SELECT COALESCE(SUM(h.davon_ruecklage), 0) AS x FROM sollstellungen s
-      JOIN hausgeld h ON h.id = (SELECT h2.id FROM hausgeld h2 WHERE h2.einheit_id = s.einheit_id AND h2.gueltig_ab <= s.monat || '-01' ORDER BY h2.gueltig_ab DESC LIMIT 1)
-      JOIN einheiten e ON e.id = s.einheit_id WHERE s.art = 'Hausgeld' AND e.objekt_id = $1 AND s.monat <= $2`, [objekt, `${jahr}-12`]))[0].x;
+    const rl = await ruecklageJahr(Number(objekt), jahr);
     const zufJahr = res.reduce((a, r) => a + r.ruecklageSoll, 0);
-    const kontoSumme = async (nr: string, bisJahr: boolean) => -(await db.select(`SELECT COALESCE(SUM(b.betrag), 0) AS x FROM buchungen b JOIN buchungskonten k ON k.id = b.buchungskonto_id
-      WHERE k.nummer = $1 AND b.objekt_id = $2 AND b.datum <= $3 ${bisJahr ? '' : `AND b.datum >= '${jahr}-01-01'`}`, [nr, objekt, ende]))[0].x;
-    const entnahmeJahr = -(await kontoSumme('1261', false)), zinsJahr = -(await kontoSumme('1262', false));
-    const entnahmeGes = -(await kontoSumme('1261', true)), zinsGes = -(await kontoSumme('1262', true));
     const banken = await db.select(`SELECT b.*, b.anfangssaldo + COALESCE((SELECT SUM(u.betrag) FROM bankumsaetze u WHERE u.bankkonto_id = b.id
       AND u.datum <= $2 AND (b.saldo_datum IS NULL OR u.datum > b.saldo_datum)), 0) AS saldo FROM bankkonten b WHERE b.objekt_id = $1`, [objekt, ende]);
     const rueckstaende = (await db.select(`SELECT COALESCE(SUM(s.betrag - COALESCE((SELECT SUM(b.betrag) FROM buchungen b WHERE b.sollstellung_id = s.id), 0)), 0) AS x
       FROM sollstellungen s JOIN einheiten e ON e.id = s.einheit_id WHERE e.objekt_id = $1 AND s.faellig <= $2`, [objekt, ende]))[0].x;
-    setVerm({ ruecklage: Number(zuf) - Math.abs(entnahmeGes) + Math.abs(zinsGes), zufJahr, entnahmeJahr: Math.abs(entnahmeJahr), zinsJahr: Math.abs(zinsJahr), banken, rueckstaende: Number(rueckstaende) });
+    setVerm({ ruecklage: rl.bestand, zufJahr, entnahmeJahr: rl.entnahme, zinsJahr: rl.zinsen, banken, rueckstaende: Number(rueckstaende) });
   }
   useEffect(() => { rechnen(); }, [objekt, jahr]);
 
