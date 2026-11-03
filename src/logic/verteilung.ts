@@ -50,7 +50,8 @@ export interface Ergebnis {
  * - Fläche, MEA, Einheiten: Anteil der Einheit am Objekt × Tage des Nutzers / Tage im Jahr
  * - Personen: Personenzahl × Tage (Personentage), Leerstand zählt mit 0 Personen und zahlt dafür nichts
  * - Verbrauch / Messdienst: Wert je Einheit, zeitanteilig auf die Nutzer der Einheit
- * - Direkt / Summe: direkt einer Einheit zugeordnete Beträge, zeitanteilig auf deren Nutzer
+ * - Summe: fest eingetragener Betrag je Einheit (z. B. 1.000 € = W1 800 €, W2 100 €, W3 100 €), zeitanteilig auf deren Nutzer
+ * - Direkt: in der Rechnung direkt einer Einheit zugeordnete Beträge, zeitanteilig auf deren Nutzer
  */
 export function verteilen(jahr: number, einheiten: Row[], nutzer: Nutzer[], positionen: Position[],
   werte: { verbrauch: Record<string, number>; messdienst: Record<number, number> }): Ergebnis[] {
@@ -65,7 +66,8 @@ export function verteilen(jahr: number, einheiten: Row[], nutzer: Nutzer[], posi
       case 'Einheiten': return 1;
       case 'Verbrauch': return werte.verbrauch[`${e.id}-${p.konto_id}`] ?? 0;
       case 'Messdienst': return werte.messdienst[e.id] ?? 0;
-      case 'Direkt': case 'Summe': return p.direkt?.[e.id] ?? 0;
+      case 'Summe': return werte.verbrauch[`${e.id}-${p.konto_id}`] ?? 0;
+      case 'Direkt': return p.direkt?.[e.id] ?? 0;
       default: return 0;
     }
   };
@@ -81,8 +83,9 @@ export function verteilen(jahr: number, einheiten: Row[], nutzer: Nutzer[], posi
       continue;
     }
     const gesamt = einheiten.reduce((a, e) => a + basisEinheit(e, p.schluessel, p), 0);
-    // Bei Direkt/Summe ist die Basis schon ein Betrag: auf genau diese Beträge verteilen
-    const faktor = (p.schluessel === 'Direkt' || p.schluessel === 'Summe') && gesamt ? p.betrag / gesamt : 1;
+    // Bei Summe ist die Basis der eingetragene Betrag je Einheit und wird genau so übernommen;
+    // bei Direkt werden die direkt zugeordneten Rechnungsbeträge auf die Kontosumme bezogen
+    const faktor = p.schluessel === 'Direkt' && gesamt ? p.betrag / gesamt : 1;
     for (const n of nutzer) {
       const e = einheiten.find((x) => x.id === n.einheit_id)!;
       const eb = basisEinheit(e, p.schluessel, p);

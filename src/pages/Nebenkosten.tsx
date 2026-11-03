@@ -33,7 +33,7 @@ export function NebenkostenPage() {
     const h = await db.select(`SELECT h.* FROM heizkosten_ergebnisse h JOIN einheiten e ON e.id = h.einheit_id WHERE e.objekt_id = $1 AND h.jahr = $2`, [objekt, jahr]);
     setHeiz(Object.fromEntries(h.map((x) => [x.einheit_id, { heizkosten: String(x.heizkosten ?? ''), warmwasser: String(x.warmwasser ?? '') }])));
     const v = await db.select(`SELECT v.* FROM verbrauch v JOIN einheiten e ON e.id = v.einheit_id WHERE e.objekt_id = $1 AND v.jahr = $2`, [objekt, jahr]);
-    setVerbr(Object.fromEntries(v.map((x) => [`${x.einheit_id}-${x.buchungskonto_id}`, String(x.menge)])));
+    setVerbr(Object.fromEntries(v.map((x) => [`${x.einheit_id}-${x.buchungskonto_id}`, String(x.menge).replace('.', ',')])));
     await rechnen();
   }
   useEffect(() => { laden(); }, [objekt, jahr]);
@@ -104,7 +104,9 @@ export function NebenkostenPage() {
   }
 
   const kosten = pos.reduce((a, p) => a + p.betrag, 0);
-  const verbrauchsKonten = pos.filter((p) => p.schluessel === 'Verbrauch');
+  const verbrauchsKonten = pos.filter((p) => p.schluessel === 'Verbrauch' || p.schluessel === 'Summe');
+  const summenAbweichung = pos.filter((p) => p.schluessel === 'Summe').map((p) => ({ p, s: einheiten.reduce((a, e) => a + zahl(verbr[`${e.id}-${p.konto_id}`] ?? '0'), 0) }))
+    .filter((x) => Math.abs(x.s - x.p.betrag) > 0.005);
   const mieter = erg.filter((r) => r.nutzer.art === 'Mieter');
   const leer = erg.filter((r) => r.nutzer.art === 'Leerstand');
 
@@ -134,7 +136,7 @@ export function NebenkostenPage() {
         <div className="card-head"><h2>Eingaben je Einheit für {jahr}</h2><button onClick={eingabenSpeichern}>Speichern und neu berechnen</button></div>
         <table className="list">
           <thead><tr><th>Einheit</th><th className="num">Fläche</th><th className="num">Heizkosten lt. Messdienst €</th><th className="num">Warmwasser lt. Messdienst €</th>
-            {verbrauchsKonten.map((k) => <th key={k.konto_id} className="num">Verbrauch {k.name}</th>)}</tr></thead>
+            {verbrauchsKonten.map((k) => <th key={k.konto_id} className="num">{k.schluessel === 'Summe' ? `Betrag € ${k.name}` : `Verbrauch ${k.name}`}</th>)}</tr></thead>
           <tbody>{einheiten.map((e) => (
             <tr key={e.id}>
               <td>{e.nummer}</td><td className="num">{num(e.flaeche)}</td>
@@ -149,7 +151,8 @@ export function NebenkostenPage() {
             </tr>))}
           </tbody>
         </table>
-        <p className="muted small">Sobald Messdienst-Werte eingetragen sind, wird Konto {HEIZ_KONTO} danach verteilt. Verbrauchsspalten erscheinen für Konten mit Schlüssel „Verbrauch“.</p>
+        <p className="muted small">Sobald Messdienst-Werte eingetragen sind, wird Konto {HEIZ_KONTO} danach verteilt. Spalten für Verbrauch bzw. feste Beträge erscheinen für Konten mit Schlüssel „Verbrauch“ oder „Summe“.</p>
+        {summenAbweichung.map(({ p, s }) => <p key={p.konto_id} className="warn">Schlüssel „Summe“ bei {p.name}: eingetragen {eur(s)}, Kosten laut Buchhaltung {eur(p.betrag)}. Bitte prüfen.</p>)}
       </section>
 
       <section className="card">
