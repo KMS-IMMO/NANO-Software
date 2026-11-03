@@ -323,4 +323,31 @@ INSERT INTO einstellungen (schluessel, wert) VALUES
  ('firma_name', 'KMS Immobilien'),
  ('firma_ort', 'Köln');
 `,
+
+  /* 2: Standard-Ordnervorlagen (bis Serkans eigene Vorlage eingetragen ist) */ `
+INSERT INTO ordnervorlagen (name, bezug, ordner) VALUES
+ ('Standard', 'Objekt', 'Grundbuch und Teilungserklärung
+Verträge Dienstleister
+Versicherungen
+Rechnungen
+Nebenkostenabrechnungen
+WEG-Jahresabrechnung
+Eigentümerversammlung/Protokolle
+Eigentümerversammlung/Beschlüsse
+Mahnungen
+Fotos'),
+ ('Standard', 'Einheit', 'Grundrisse
+Übergabeprotokolle
+Zählerstände
+Schriftverkehr'),
+ ('Standard', 'Mietvertrag', 'Mietvertrag
+Mieterhöhungen
+Schriftverkehr
+Kündigung'),
+ ('Standard', 'Person', 'Korrespondenz
+Ausweis und Unterlagen'),
+ ('Standard', 'Firma', 'Angebote
+Rechnungen
+Verträge');
+`,
 ];

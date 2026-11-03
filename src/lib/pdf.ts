@@ -1,0 +1,74 @@
+// Briefvorlage (angelehnt an DIN 5008) für Mahnungen und Abrechnungen.
+import { jsPDF } from 'jspdf';
+import autoTable, { type RowInput } from 'jspdf-autotable';
+import { db } from '../db';
+
+export interface Absender { name: string; strasse?: string; plz?: string; ort?: string; telefon?: string; email?: string }
+
+export async function absender(): Promise<Absender> {
+  const e = Object.fromEntries((await db.select('SELECT * FROM einstellungen')).map((r) => [r.schluessel, r.wert ?? '']));
+  return { name: e.firma_name || 'KMS Immobilien', strasse: e.firma_strasse, plz: e.firma_plz, ort: e.firma_ort, telefon: e.firma_telefon, email: e.firma_email };
+}
+
+export const geld = (n: number) => (Math.abs(n) < 0.005 ? 0 : n).toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €';
+export const dDatum = (iso: string) => new Date(iso + 'T00:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
+
+export class Brief {
+  doc = new jsPDF({ unit: 'mm', format: 'a4' });
+  y = 0;
+  abs: Absender;
+  constructor(abs: Absender) { this.abs = abs; }
+
+  kopf(empfaenger: string[], datum: string, ort?: string) {
+    const d = this.doc;
+    d.setFont('helvetica', 'bold'); d.setFontSize(16); d.text(this.abs.name, 20, 20);
+    d.setFont('helvetica', 'normal'); d.setFontSize(8.5); d.setTextColor(90);
+    const zeile = [this.abs.strasse, [this.abs.plz, this.abs.ort].filter(Boolean).join(' '), this.abs.telefon, this.abs.email].filter(Boolean).join(' · ');
+    if (zeile) d.text(zeile, 20, 25);
+    // Rücksendeangabe und Anschriftfeld (Fensterumschlag DIN lang)
+    d.setFontSize(7); d.text([this.abs.name, this.abs.strasse, [this.abs.plz, this.abs.ort].filter(Boolean).join(' ')].filter(Boolean).join(', '), 20, 47);
+    d.setTextColor(0); d.setFontSize(10.5);
+    d.text(empfaenger.filter(Boolean), 20, 55);
+    d.text(`${ort || this.abs.ort || ''}${ort || this.abs.ort ? ', ' : ''}${dDatum(datum)}`, 190, 90, { align: 'right' });
+    this.y = 100;
+  }
+
+  betreff(text: string) {
+    this.doc.setFont('helvetica', 'bold'); this.doc.setFontSize(11.5);
+    this.doc.text(text, 20, this.y); this.y += 10;
+    this.doc.setFont('helvetica', 'normal'); this.doc.setFontSize(10.5);
+  }
+
+  absatz(text: string, abstand = 5) {
+    const lines = this.doc.splitTextToSize(text, 170);
+    this.platz(lines.length * 5);
+    this.doc.text(lines, 20, this.y);
+    this.y += lines.length * 5 + abstand;
+  }
+
+  tabelle(head: string[], body: RowInput[], foot?: RowInput[], rechtsAb = 1) {
+    const align: Record<number, { halign: 'right' }> = {};
+    for (let i = rechtsAb; i < head.length; i++) align[i] = { halign: 'right' };
+    autoTable(this.doc, {
+      startY: this.y, head: [head], body, foot, showFoot: 'lastPage', margin: { left: 20, right: 20 },
+      styles: { font: 'helvetica', fontSize: 9.5, cellPadding: 1.8 },
+      headStyles: { fillColor: [29, 43, 58], textColor: 255 },
+      footStyles: { fillColor: [238, 241, 245], textColor: 0, fontStyle: 'bold' },
+      columnStyles: align,
+      didParseCell: (h) => { if (h.section !== 'body' && h.column.index >= rechtsAb) h.cell.styles.halign = 'right'; },
+    });
+    this.y = (this.doc as any).lastAutoTable.finalY + 8;
+  }
+
+  platz(mm: number) {
+    if (this.y + mm > 270) { this.doc.addPage(); this.y = 25; }
+  }
+
+  gruss() {
+    this.platz(25);
+    this.doc.text(['Mit freundlichen Grüßen', '', this.abs.name], 20, this.y);
+    this.y += 20;
+  }
+
+  bytes(): Uint8Array { return new Uint8Array(this.doc.output('arraybuffer')); }
+}

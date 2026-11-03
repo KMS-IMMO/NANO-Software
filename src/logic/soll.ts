@@ -85,7 +85,7 @@ export async function sollStellen(bisMonat: string): Promise<number> {
 
 /** Buchungskonto (Einnahme) je Art des offenen Postens */
 export const KONTO_FUER_ART: Record<string, string> = {
-  Kaltmiete: '1000', NK: '1001', HK: '1002', USt: '1003', Hausgeld: '1010', Mahngebühr: '1011',
+  Kaltmiete: '1000', NK: '1001', HK: '1002', USt: '1003', Hausgeld: '1010', Mahngebühr: '1011', 'NK-Abrechnung': '1001', 'WEG-Abrechnung': '1010',
 };
 
 /** Offene Posten mit bezahltem Betrag, Objekt, Einheit und Schuldner */

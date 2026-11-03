@@ -59,7 +59,11 @@ export function RechnungenPage() {
 
 const EINST: [string, string][] = [
   ['firma_name', 'Name der Verwaltung'],
+  ['firma_strasse', 'Straße'],
+  ['firma_plz', 'PLZ'],
   ['firma_ort', 'Ort'],
+  ['firma_telefon', 'Telefon'],
+  ['firma_email', 'E-Mail'],
   ['mahnung_gebuehr_1', 'Gebühr Zahlungserinnerung (€)'],
   ['mahnung_gebuehr_2', 'Gebühr 1. Mahnung (€)'],
   ['mahnung_gebuehr_3', 'Gebühr 2. Mahnung (€)'],

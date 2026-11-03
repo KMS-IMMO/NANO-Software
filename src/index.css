@@ -68,3 +68,22 @@ table.list tr.group td { background: #f6f7f9; font-weight: 600; font-size: 12px;
 .kpi b.kpi-text { font-size: 16px; }
 .bar { display: inline-block; width: 70%; height: 8px; background: #fdecea; border-radius: 4px; overflow: hidden; vertical-align: middle; margin-right: 8px; }
 .bar div { height: 100%; background: var(--pos); }
+.drop { border: 2px dashed #c7d2e0; text-align: center; padding: 26px; }
+.drop.over { border-color: var(--accent); background: var(--accent-soft); }
+.drop p { margin: 4px 0; }
+.info { background: var(--accent-soft); padding: 8px 12px; border-radius: 6px; display: inline-block; margin-top: 10px !important; }
+.zuordnen { display: flex; flex-direction: column; gap: 6px; }
+.zuordnen select { padding: 5px 7px; font-size: 13px; }
+.vorschlag { font-size: 13px; flex: 1; }
+.small-btn { padding: 4px 10px; font-size: 13px; }
+button:disabled { opacity: .5; cursor: default; }
+input.cell { width: 110px; text-align: right; padding: 4px 6px; }
+.ordner { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 10px; }
+.ordner-box { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; min-height: 64px; }
+.ordner-box.over { border-color: var(--accent); background: var(--accent-soft); }
+.ordner-head { display: flex; gap: 8px; align-items: center; font-weight: 600; }
+.ordner-head span:first-child { flex: 1; }
+.datei { display: flex; gap: 8px; align-items: center; padding: 4px 0 0 22px; font-size: 13px; }
+.datei button:first-child { flex: 1; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ordner-head > span:first-child { min-width: 0; overflow-wrap: anywhere; }
+.ordner-head > *:not(:first-child) { white-space: nowrap; }
