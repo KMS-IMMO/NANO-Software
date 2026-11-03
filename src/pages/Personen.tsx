@@ -1,13 +1,18 @@
+import { User, Users, Hammer } from 'lucide-react';
 import { EntityTable } from '../components/EntityTable';
 import { personLabel } from '../db/labels';
 
-export function PersonenPage() {
+export function PersonenPage({ rolle }: { rolle?: 'Eigentümer' | 'Mieter' }) {
   return (
     <EntityTable
-      title="Eigentümer und Mieter"
+      key={rolle ?? 'alle'}
+      title={rolle ?? 'Eigentümer und Mieter'}
+      icon={rolle === 'Mieter' ? <User size={22} /> : <Users size={22} />}
+      newLabel={rolle ? `${rolle} hinzufügen` : 'Person hinzufügen'}
       table="personen"
+      fixed={rolle ? { rolle } : undefined}
       fields={[
-        { key: 'rolle', label: 'Rolle', type: 'select', options: ['Mieter', 'Eigentümer', 'Sonstige'], required: true },
+        ...(rolle ? [] : [{ key: 'rolle', label: 'Rolle', type: 'select' as const, options: ['Mieter', 'Eigentümer', 'Sonstige'], required: true }]),
         { key: 'anrede', label: 'Anrede', type: 'select', options: ['Herr', 'Frau', 'Divers', 'Firma', 'Eheleute'], hideInTable: true },
         { key: 'titel', label: 'Titel', hideInTable: true },
         { key: 'vorname', label: 'Vorname' },
@@ -33,7 +38,7 @@ export function PersonenPage() {
             (SELECT GROUP_CONCAT(o.name || ' ' || e.nummer, '; ') FROM mietvertraege v JOIN einheiten e ON e.id = v.einheit_id
                JOIN objekte o ON o.id = e.objekt_id WHERE v.mieter_id = p.id AND (v.ende IS NULL OR v.ende >= date('now')))
           ) AS objekte
-        FROM personen p ORDER BY p.rolle, COALESCE(p.nachname, p.firma)`}
+        FROM personen p ${rolle ? `WHERE p.rolle = '${rolle}'` : ''} ORDER BY p.rolle, COALESCE(p.nachname, p.firma)`}
     />
   );
 }
@@ -42,6 +47,8 @@ export function FirmenPage() {
   return (
     <EntityTable
       title="Firmenkontakte (Handwerker und Dienstleister)"
+      icon={<Hammer size={22} />}
+      newLabel="Firma hinzufügen"
       table="firmen"
       fields={[
         { key: 'name', label: 'Firma', required: true, wide: true },

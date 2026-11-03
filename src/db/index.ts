@@ -119,6 +119,7 @@ async function seedDemo(d: Driver) {
   await ex(`INSERT INTO eigentum (einheit_id, person_id, anteil, von) VALUES
     (5,5,100,'2015-01-01'),(6,6,100,'2018-05-01'),(7,1,100,'2020-01-01')`);
   await ex(`INSERT INTO beiraete (objekt_id, person_id, funktion) VALUES (2,5,'Vorsitz')`);
+  await ex(`UPDATE einheiten SET personenzahl = CASE id WHEN 5 THEN 2 WHEN 6 THEN 1 WHEN 7 THEN 3 END WHERE objekt_id = 2`);
   await ex(`INSERT INTO hausgeld (einheit_id, gueltig_ab, betrag, davon_ruecklage) VALUES
     (5,'2024-01-01',310,80),(6,'2024-01-01',310,80),(7,'2024-01-01',325,85)`);
   await ex(`INSERT INTO mietvertraege (einheit_id, mieter_id, beginn, ende, kaltmiete, nk_vorauszahlung, hk_vorauszahlung, kaution, personenzahl, ust_satz, mietart) VALUES

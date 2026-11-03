@@ -1,5 +1,6 @@
 // Wiederverwendbare Liste mit Formular zum Anlegen, Bearbeiten und Löschen.
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { Pencil } from 'lucide-react';
 import { db, insert, remove, update, type Row } from '../db';
 
 export type FieldType = 'text' | 'number' | 'date' | 'select' | 'textarea' | 'checkbox';
@@ -17,6 +18,8 @@ export interface Field {
   wide?: boolean;
   /** Nur Anzeige in der Tabelle (berechnet), nicht im Formular */
   computed?: boolean;
+  /** Summe in der Fußzeile bilden */
+  sum?: boolean;
 }
 
 interface Props {
@@ -33,11 +36,14 @@ interface Props {
   onChange?: () => void;
   /** Spalte, nach der Zwischenüberschriften gebildet werden */
   groupBy?: string;
+  /** Beschriftung des Knopfs zum Anlegen */
+  newLabel?: string;
+  icon?: ReactNode;
 }
 
 type Opt = { value: string | number; label: string };
 
-export function EntityTable({ title, table, fields, listSql, listParams = [], fixed, onOpen, emptyText, onChange, groupBy }: Props) {
+export function EntityTable({ title, table, fields, listSql, listParams = [], fixed, onOpen, emptyText, onChange, groupBy, newLabel, icon }: Props) {
   const [rows, setRows] = useState<Row[]>([]);
   const [editing, setEditing] = useState<Row | null>(null);
   const [opts, setOpts] = useState<Record<string, Opt[]>>({});
@@ -121,16 +127,16 @@ export function EntityTable({ title, table, fields, listSql, listParams = [], fi
   return (
     <section className="card">
       <div className="card-head">
-        <h2>{title}</h2>
+        <h2 className="title-ico">{icon}{title}</h2>
         <div className="row">
           <input className="search" placeholder="Suchen…" value={filter} onChange={(e) => setFilter(e.target.value)} />
-          <button className="primary" onClick={() => setEditing({})}>+ Neu</button>
+          <button className="primary" onClick={() => setEditing({})}>+ {newLabel ?? 'Neu'}</button>
         </div>
       </div>
       {visible.length === 0 ? (
         <p className="muted">{emptyText ?? 'Noch keine Einträge.'}</p>
       ) : (
-        <table className="list">
+        <div className="tablewrap"><table className="list">
           <thead>
             <tr>{shown.map((f) => <th key={f.key} className={f.type === 'number' ? 'num' : ''}>{f.label}</th>)}<th /></tr>
           </thead>
@@ -142,12 +148,22 @@ export function EntityTable({ title, table, fields, listSql, listParams = [], fi
               <tr key={r.id} onClick={() => (onOpen ? onOpen(r) : setEditing(r))} className="clickable">
                 {shown.map((f) => <td key={f.key} className={f.type === 'number' ? 'num' : ''}>{display(f, r)}</td>)}
                 <td className="actions">
-                  <button className="link" onClick={(e) => { e.stopPropagation(); setEditing(r); }}>Bearbeiten</button>
+                  <button className="icon-btn" title="Bearbeiten" onClick={(e) => { e.stopPropagation(); setEditing(r); }}><Pencil size={17} /></button>
                 </td>
               </tr>,
             ])}
           </tbody>
-        </table>
+          {shown.some((f) => f.sum) && (
+            <tfoot><tr>
+              {shown.map((f, i) => {
+                if (f.sum) {
+                  const t = visible.reduce((a, r) => a + (Number(r[f.key]) || 0), 0);
+                  return <td key={f.key} className="num">{f.format ? f.format(t, {}) : num(t)}</td>;
+                }
+                return <td key={f.key}>{i === 0 ? 'Summe' : i === 1 ? `${visible.length} Einträge` : ''}</td>;
+              })}<td />
+            </tr></tfoot>)}
+        </table></div>
       )}
 
       {editing && (
