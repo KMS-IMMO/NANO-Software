@@ -134,6 +134,7 @@ function EinheitenTab({ objektId, weg, onChange }: { objektId: number; weg: bool
           { key: 'eig_email', label: 'E-Mail', computed: true, format: (v: any) => v ? <a href={`mailto:${v}`}>{v}</a> : '–' }] : []),
         { key: 'mieter', label: 'Mieter (aktuell)', computed: true, format: (v: any) => v ?? <span className="muted">–</span> },
         { key: 'monat', label: weg ? 'Hausgeld (Soll) / Monat' : 'Miete warm / Monat', type: 'number', computed: true, format: eur, sum: true },
+        ...(weg ? [{ key: 'nk_vz', label: 'NK-VZ Mieter / Monat', type: 'number', computed: true, format: (v: any) => v != null ? eur(v) : '–', sum: true }] : []),
         { key: 'ist', label: `Zahlungseingang ${jahr}`, type: 'number', computed: true, format: eur, sum: true },
         { key: 'saldo', label: 'Offener Saldo', type: 'number', computed: true, sum: true,
           format: (v: any) => <span className={v > 0.005 ? 'neg' : ''}>{eur(v ?? 0)}</span> },
@@ -147,6 +148,7 @@ function EinheitenTab({ objektId, weg, onChange }: { objektId: number; weg: bool
           (SELECT GROUP_CONCAT(p.email, '; ') FROM eigentum ei JOIN personen p ON p.id = ei.person_id
              WHERE ei.einheit_id = e.id AND (ei.bis IS NULL OR ei.bis >= date('now')) AND p.email IS NOT NULL) AS eig_email,
           (SELECT ${personLabel('p')} FROM mietvertraege v JOIN personen p ON p.id = v.mieter_id WHERE v.einheit_id = e.id AND ${AKTIV()} LIMIT 1) AS mieter,
+          (SELECT v.nk_vorauszahlung + v.hk_vorauszahlung FROM mietvertraege v WHERE v.einheit_id = e.id AND ${AKTIV()} LIMIT 1) AS nk_vz,
           CASE WHEN EXISTS (SELECT 1 FROM mietvertraege v WHERE v.einheit_id = e.id AND ${AKTIV()}) THEN 'Miete'
                WHEN ${weg ? 1 : 0} = 1 THEN 'Eigentum' ELSE 'Leerstand' END AS nutzung,
           COALESCE((SELECT v.personenzahl FROM mietvertraege v WHERE v.einheit_id = e.id AND ${AKTIV()} LIMIT 1), e.personenzahl) AS personen,

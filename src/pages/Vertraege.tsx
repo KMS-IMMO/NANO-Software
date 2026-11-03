@@ -12,6 +12,8 @@ const vertragFields: Field[] = [
   { key: 'mieter2_id', label: '2. Mieter', type: 'select', optionsSql: personOptions('Mieter'), hideInTable: true },
   { key: 'beginn', label: 'Beginn', type: 'date', required: true },
   { key: 'ende', label: 'Ende', type: 'date' },
+  { key: 'zahlung_an', label: 'Miete zahlt an', type: 'select', hideInTable: true,
+    options: [{ value: 'Verwaltung', label: 'Verwaltung (Soll-Stellung bei uns)' }, { value: 'Eigentümer', label: 'Eigentümer (vermietete WEG-Einheit)' }] },
   { key: 'mietart', label: 'Mietart', type: 'select', options: ['Standard', 'Staffelmiete', 'Indexmiete'] },
   { key: 'kaltmiete', label: 'Kaltmiete (Start)', type: 'number', format: eur, hideInTable: true },
   { key: 'nk_vorauszahlung', label: 'NK-Vorauszahlung (Start)', type: 'number', format: eur, hideInTable: true },

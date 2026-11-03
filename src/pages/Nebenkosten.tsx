@@ -2,13 +2,11 @@
 import { useEffect, useState } from 'react';
 import { db, type Row } from '../db';
 import { eur, num, datum } from '../components/EntityTable';
-import {
-  kostenErmitteln, nutzerErmitteln, tageImJahr, verteilen, vorauszahlungen, type Ergebnis, type Position, type Schluessel,
-} from '../logic/verteilung';
+import { tageImJahr, type Position, type Schluessel } from '../logic/verteilung';
+import { HEIZ_KONTO, nkBerechnen, type NkErgebnis } from '../logic/nebenkosten';
 import { Brief, absender, dDatum, geld } from '../lib/pdf';
 import { oeffnen, speichern } from '../lib/dateien';
 
-const HEIZ_KONTO = '1200';
 const einheitText: Record<string, string> = { Fläche: 'm²', MEA: 'MEA', Einheiten: 'Einh.', Personen: 'Pers.-Tage', Verbrauch: 'Verbr.', Messdienst: '€ lt. Messdienst', Direkt: '€', Summe: '€' };
 const basisFmt = (s: Schluessel, v: number) => (s === 'Personen' ? num(v, 0) : s === 'Einheiten' ? num(v, 3) : num(v, 2));
 
@@ -18,7 +16,7 @@ export function NebenkostenPage() {
   const [jahr, setJahr] = useState(new Date().getFullYear() - 1);
   const [einheiten, setEinheiten] = useState<Row[]>([]);
   const [pos, setPos] = useState<Position[]>([]);
-  const [erg, setErg] = useState<(Ergebnis & { vz: number; saldo: number })[]>([]);
+  const [erg, setErg] = useState<NkErgebnis[]>([]);
   const [heiz, setHeiz] = useState<Record<number, { heizkosten: string; warmwasser: string }>>({});
   const [verbr, setVerbr] = useState<Record<string, string>>({});
   const [info, setInfo] = useState('');
@@ -40,22 +38,8 @@ export function NebenkostenPage() {
 
   async function rechnen() {
     if (objekt === '') return;
-    const { einheiten, nutzer } = await nutzerErmitteln(Number(objekt), jahr, 'Mieter');
-    setEinheiten(einheiten);
-    let positionen = await kostenErmitteln(Number(objekt), jahr, true);
-    const h = await db.select(`SELECT h.* FROM heizkosten_ergebnisse h JOIN einheiten e ON e.id = h.einheit_id WHERE e.objekt_id = $1 AND h.jahr = $2`, [objekt, jahr]);
-    const messdienst: Record<number, number> = Object.fromEntries(h.map((x) => [x.einheit_id, Number(x.heizkosten) + Number(x.warmwasser)]));
-    // Heizkosten nach Messdienst verteilen, sobald Ergebnisse eingetragen sind
-    if (Object.keys(messdienst).length) positionen = positionen.map((p) => (p.nummer === HEIZ_KONTO ? { ...p, schluessel: 'Messdienst' } : p));
-    const v = await db.select(`SELECT v.* FROM verbrauch v JOIN einheiten e ON e.id = v.einheit_id WHERE e.objekt_id = $1 AND v.jahr = $2`, [objekt, jahr]);
-    const verbrauch = Object.fromEntries(v.map((x) => [`${x.einheit_id}-${x.buchungskonto_id}`, Number(x.menge)]));
-    setPos(positionen);
-    const vz = await vorauszahlungen(jahr, ['NK', 'HK']);
-    const e = verteilen(jahr, einheiten, nutzer, positionen, { verbrauch, messdienst }).map((r) => {
-      const gezahlt = r.nutzer.vertrag_id ? vz.filter((x) => x.vertrag_id === r.nutzer.vertrag_id).reduce((a, x) => a + Number(x.gezahlt), 0) : 0;
-      return { ...r, vz: Math.round(gezahlt * 100) / 100, saldo: Math.round((r.summe - gezahlt) * 100) / 100 };
-    });
-    setErg(e);
+    const r = await nkBerechnen(Number(objekt), jahr);
+    setEinheiten(r.einheiten); setPos(r.positionen); setErg(r.erg);
   }
 
   async function eingabenSpeichern() {
@@ -82,7 +66,7 @@ export function NebenkostenPage() {
       const abs = await absender();
       let n = 0, letzter = '';
       for (const r of erg.filter((x) => x.nutzer.art === 'Mieter')) {
-        letzter = await speichern(abrechnungPdf(abs, o, jahr, r), `NK-Abrechnung ${jahr} ${r.einheit.nummer} ${r.nutzer.name}.pdf`,
+        letzter = await speichern(abrechnungPdf(abs, o, jahr, r, await vermieter(r.einheit.id, jahr)), `NK-Abrechnung ${jahr} ${r.einheit.nummer} ${r.nutzer.name}.pdf`,
           { bezug: 'Objekt', bezugId: o.id, ordner: [o.name, 'Nebenkostenabrechnungen', String(jahr)] });
         n++;
       }
@@ -93,14 +77,17 @@ export function NebenkostenPage() {
 
   async function buchen() {
     let n = 0;
-    for (const r of erg.filter((x) => x.nutzer.art === 'Mieter' && Math.abs(x.saldo) > 0.005)) {
+    // Zahlt der Mieter an den Eigentümer, rechnet der Eigentümer das Ergebnis mit ihm ab: kein offener Posten bei uns
+    for (const r of erg.filter((x) => x.nutzer.art === 'Mieter' && !x.ueberEigentuemer && Math.abs(x.saldo) > 0.005)) {
       const f = new Date(); f.setDate(f.getDate() + 30);
       const res = await db.execute(`INSERT OR IGNORE INTO sollstellungen (vertrag_id, einheit_id, person_id, monat, art, betrag, faellig)
         VALUES ($1, $2, $3, $4, 'NK-Abrechnung', $5, $6)`, [r.nutzer.vertrag_id ?? null, r.nutzer.einheit_id, r.nutzer.person_id, `${jahr}-NK`, r.saldo, f.toISOString().slice(0, 10)]);
       n += res.rowsAffected;
     }
     await db.execute(`INSERT INTO abrechnungen (objekt_id, art, jahr, status) VALUES ($1, 'Nebenkosten', $2, 'Gebucht')`, [objekt, jahr]);
-    setInfo(n ? `${n} Nachzahlungen/Guthaben als offene Posten gebucht (fällig in 30 Tagen).` : 'Bereits gebucht.');
+    const ueber = erg.filter((x) => x.ueberEigentuemer).length;
+    setInfo((n ? `${n} Nachzahlungen/Guthaben als offene Posten gebucht (fällig in 30 Tagen).` : 'Keine neuen offenen Posten.') +
+      (ueber ? ` ${ueber} Mieter zahlen an ihren Eigentümer, deren Ergebnis wird dort verrechnet und nicht bei uns gebucht.` : ''));
   }
 
   const kosten = pos.reduce((a, p) => a + p.betrag, 0);
@@ -109,6 +96,7 @@ export function NebenkostenPage() {
     .filter((x) => Math.abs(x.s - x.p.betrag) > 0.005);
   const mieter = erg.filter((r) => r.nutzer.art === 'Mieter');
   const leer = erg.filter((r) => r.nutzer.art === 'Leerstand');
+  const weg = objekte.find((x) => x.id === objekt)?.verwaltungsart === 'WEG';
 
   return (
     <>
@@ -127,9 +115,9 @@ export function NebenkostenPage() {
 
       <div className="kpis">
         <div className="kpi"><span>Umlagefähige Kosten</span><b>{eur(kosten)}</b></div>
-        <div className="kpi"><span>Vorauszahlungen (gezahlt)</span><b>{eur(mieter.reduce((a, r) => a + r.vz, 0))}</b></div>
+        <div className="kpi"><span>Vorauszahlungen{mieter.some((r) => r.ueberEigentuemer) ? ' (gezahlt bzw. laut Vertrag)' : ' (gezahlt)'}</span><b>{eur(mieter.reduce((a, r) => a + r.vz, 0))}</b></div>
         <div className="kpi"><span>Nachzahlungen − Guthaben</span><b>{eur(mieter.reduce((a, r) => a + r.saldo, 0))}</b></div>
-        <div className="kpi"><span>Anteil Leerstand (Eigentümer)</span><b>{eur(leer.reduce((a, r) => a + r.summe, 0))}</b></div>
+        <div className="kpi"><span>{weg ? 'Anteil selbst genutzt / nicht vermietet' : 'Anteil Leerstand (Eigentümer)'}</span><b>{eur(leer.reduce((a, r) => a + r.summe, 0))}</b></div>
       </div>
 
       <section className="card">
@@ -172,7 +160,8 @@ export function NebenkostenPage() {
             <tbody>{erg.map((r) => (
               <tr key={r.nutzer.key}>
                 <td>{r.einheit.nummer}</td>
-                <td>{r.nutzer.art === 'Leerstand' ? <span className="tag">Leerstand / nicht vermietet · Eigentümer</span> : r.nutzer.name}</td>
+                <td>{r.nutzer.art === 'Leerstand' ? <span className="tag">{weg ? 'Eigentümer (selbst genutzt / nicht vermietet)' : 'Leerstand / nicht vermietet · Eigentümer'}</span>
+                  : <>{r.nutzer.name}{r.ueberEigentuemer && <div className="muted small">zahlt an Eigentümer · Vorauszahlung laut Vertrag</div>}</>}</td>
                 <td className="small">{datum(r.nutzer.von)} – {datum(r.nutzer.bis)} ({r.nutzer.tage} T.)</td>
                 <td className="num">{eur(r.summe)}</td>
                 <td className="num">{r.nutzer.art === 'Mieter' ? eur(r.vz) : ''}</td>
@@ -188,20 +177,33 @@ export function NebenkostenPage() {
 
 const zahl = (s: string) => Number(String(s).replace(/\./g, '').replace(',', '.')) || 0;
 
-function abrechnungPdf(abs: Awaited<ReturnType<typeof absender>>, o: Row, jahr: number, r: Ergebnis & { vz: number; saldo: number }): Uint8Array {
+/** Eigentümer der Einheit am Jahresende (bei vermieteten WEG-Einheiten der Vermieter) */
+async function vermieter(einheitId: number, jahr: number): Promise<string> {
+  const p = (await db.select(`SELECT p.* FROM eigentum ei JOIN personen p ON p.id = ei.person_id WHERE ei.einheit_id = $1
+    AND (ei.von IS NULL OR ei.von <= $2) ORDER BY ei.von DESC LIMIT 1`, [einheitId, `${jahr}-12-31`]))[0];
+  return p ? [p.firma, [p.vorname, p.nachname].filter(Boolean).join(' ')].filter(Boolean).join(', ') : '';
+}
+
+function abrechnungPdf(abs: Awaited<ReturnType<typeof absender>>, o: Row, jahr: number, r: NkErgebnis, eigentuemer: string): Uint8Array {
   const b = new Brief(abs);
-  b.kopf([r.nutzer.name], new Date().toISOString().slice(0, 10));
+  b.kopf([r.nutzer.name, o.strasse, [o.plz, o.ort].filter(Boolean).join(' ')], new Date().toISOString().slice(0, 10));
   b.betreff(`Betriebs- und Heizkostenabrechnung ${jahr}`);
   b.absatz(`Objekt: ${o.name}, ${[o.strasse, [o.plz, o.ort].filter(Boolean).join(' ')].filter(Boolean).join(', ')} · Einheit ${r.einheit.nummer}` +
     `${r.einheit.flaeche ? `, ${num(r.einheit.flaeche)} m²` : ''}\nAbrechnungszeitraum: 01.01.${jahr} bis 31.12.${jahr} · Ihr Nutzungszeitraum: ${dDatum(r.nutzer.von)} bis ${dDatum(r.nutzer.bis)} (${r.nutzer.tage} Tage)`);
   const body = r.zeilen.map((z) => [z.pos.name, geld(z.pos.betrag), z.pos.schluessel === 'Messdienst' ? 'lt. Messdienst' : z.pos.schluessel,
     `${basisFmt(z.pos.schluessel, z.gesamtBasis)} ${einheitText[z.pos.schluessel] ?? ''}`, basisFmt(z.pos.schluessel, z.nutzerBasis), geld(z.betrag)]);
   b.tabelle(['Kostenart', 'Gesamtkosten', 'Schlüssel', 'Gesamt', 'Ihr Anteil', 'Ihre Kosten'], body,
-    [['Summe Ihrer Kosten', '', '', '', '', geld(r.summe)], ['abzüglich Ihrer Vorauszahlungen', '', '', '', '', geld(-r.vz)],
+    [['Summe Ihrer Kosten', '', '', '', '', geld(r.summe)], [r.ueberEigentuemer ? 'abzüglich Ihrer Vorauszahlungen laut Mietvertrag' : 'abzüglich Ihrer Vorauszahlungen', '', '', '', '', geld(-r.vz)],
       [r.saldo > 0 ? 'Nachzahlung' : 'Guthaben', '', '', '', '', geld(Math.abs(r.saldo))]], 1);
-  b.absatz(r.saldo > 0
-    ? `Bitte überweisen Sie die Nachzahlung von ${geld(r.saldo)} innerhalb von 30 Tagen nach Erhalt dieser Abrechnung.`
-    : `Ihr Guthaben von ${geld(Math.abs(r.saldo))} erstatten wir Ihnen bzw. verrechnen es mit der nächsten Miete.`);
+  const an = eigentuemer ? `Ihren Vermieter (${eigentuemer})` : 'Ihren Vermieter';
+  const er = eigentuemer ? `Ihr Vermieter (${eigentuemer})` : 'Ihr Vermieter';
+  b.absatz(r.ueberEigentuemer
+    ? (r.saldo > 0
+      ? `Diese Abrechnung erstellen wir im Auftrag Ihres Vermieters. Bitte überweisen Sie die Nachzahlung von ${geld(r.saldo)} innerhalb von 30 Tagen an ${an}.`
+      : `Diese Abrechnung erstellen wir im Auftrag Ihres Vermieters. Ihr Guthaben von ${geld(Math.abs(r.saldo))} erstattet Ihnen ${er} bzw. verrechnet es mit der nächsten Miete.`)
+    : (r.saldo > 0
+      ? `Bitte überweisen Sie die Nachzahlung von ${geld(r.saldo)} innerhalb von 30 Tagen nach Erhalt dieser Abrechnung.`
+      : `Ihr Guthaben von ${geld(Math.abs(r.saldo))} erstatten wir Ihnen bzw. verrechnen es mit der nächsten Miete.`));
   if (r.hdl || r.hwl) {
     b.absatz('Bescheinigung nach § 35a EStG: In Ihren Kosten sind folgende Anteile enthalten (Arbeitskosten laut Rechnungen):', 2);
     b.tabelle(['Art', 'Betrag'], [['Haushaltsnahe Dienstleistungen (§ 35a Abs. 2)', geld(r.hdl)], ['Handwerkerleistungen (§ 35a Abs. 3)', geld(r.hwl)]]);

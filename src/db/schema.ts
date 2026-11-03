@@ -474,4 +474,9 @@ INSERT INTO buchungsregeln (prioritaet, muster, richtung, buchungskonto_id)
 INSERT INTO buchungsregeln (prioritaet, muster, richtung, buchungskonto_id)
   SELECT 90, 'Rechnungsabschluss', 'Ausgang', id FROM buchungskonten WHERE nummer = '1405';
 `,
+  // Migration 7: Wer kassiert die Miete? Bei vermieteten WEG-Einheiten zahlt der Mieter meist an den Eigentümer.
+  // 'Verwaltung' = Soll-Stellung und Zahlungseingang bei uns, 'Eigentümer' = nur für die Nebenkostenabrechnung erfasst.
+  `
+ALTER TABLE mietvertraege ADD COLUMN zahlung_an TEXT DEFAULT 'Verwaltung'; -- leer = Verwaltung
+`,
 ];

@@ -8,6 +8,7 @@ import { Brief, absender, dDatum, geld } from '../lib/pdf';
 import { oeffnen, speichern } from '../lib/dateien';
 import { WerteJeEinheit } from '../components/WerteJeEinheit';
 import { ruecklageJahr } from '../logic/ruecklage';
+import { nkBerechnen } from '../logic/nebenkosten';
 
 const RUECKLAGE = ['1260', '1261', '1262'];
 const HEIZ_KONTO = '1200';
@@ -38,7 +39,8 @@ function Kopf({ titel, text, objekte, objekt, setObjekt, jahr, setJahr, children
 
 /* =================== WEG-Jahresabrechnung =================== */
 
-interface Einzel extends Ergebnis { soll: number; ist: number; ruecklageSoll: number; vorschuss: number; spitze: number; rueckstand: number }
+interface Einzel extends Ergebnis { soll: number; ist: number; ruecklageSoll: number; vorschuss: number; spitze: number; rueckstand: number;
+  mieter?: { name: string; kosten: number; vz: number; saldo: number; ueberEigentuemer: boolean } }
 
 export function WegAbrechnungPage() {
   const { objekte, objekt, setObjekt, o } = useObjekte('WEG');
@@ -67,6 +69,8 @@ export function WegAbrechnungPage() {
         SUM(COALESCE((SELECT SUM(b.betrag) FROM buchungen b WHERE b.sollstellung_id = s.id), 0)) AS ist
       FROM sollstellungen s WHERE s.art = 'Hausgeld' AND substr(s.monat, 1, 4) = $1 GROUP BY s.person_id, s.einheit_id`, [String(jahr)]);
     const saetze = await db.select('SELECT * FROM hausgeld ORDER BY gueltig_ab');
+    // Vermietete Einheiten: Nebenkostenabrechnung der Mieter (umlagefähige Kosten gegen deren Vorauszahlungen)
+    const nk = (await nkBerechnen(Number(objekt), jahr)).erg.filter((x) => x.nutzer.art === 'Mieter');
     const res = verteilen(jahr, einheiten, nutzer, p, { verbrauch, messdienst }).map((r): Einzel => {
       const x = hg.find((y) => y.person_id === r.nutzer.person_id && y.einheit_id === r.nutzer.einheit_id) ?? { soll: 0, ist: 0 };
       // Rücklagenanteil im Hausgeld (Soll) für die Monate des Eigentümers
@@ -78,7 +82,10 @@ export function WegAbrechnungPage() {
         rs += Number(s?.davon_ruecklage) || 0;
       }
       const vorschuss = r2(Number(x.soll) - rs);
-      return { ...r, soll: r2(Number(x.soll)), ist: r2(Number(x.ist)), ruecklageSoll: r2(rs), vorschuss, spitze: r2(r.summe - vorschuss), rueckstand: r2(Number(x.soll) - Number(x.ist)) };
+      const m = nk.filter((y) => y.nutzer.einheit_id === r.nutzer.einheit_id);
+      const mieter = m.length ? { name: m.map((y) => y.nutzer.name).join(', '), kosten: r2(m.reduce((a, y) => a + y.summe, 0)), vz: r2(m.reduce((a, y) => a + y.vz, 0)),
+        saldo: r2(m.reduce((a, y) => a + y.saldo, 0)), ueberEigentuemer: m.some((y) => y.ueberEigentuemer) } : undefined;
+      return { ...r, mieter, soll: r2(Number(x.soll)), ist: r2(Number(x.ist)), ruecklageSoll: r2(rs), vorschuss, spitze: r2(r.summe - vorschuss), rueckstand: r2(Number(x.soll) - Number(x.ist)) };
     });
     setErg(res);
     // Vermögensbericht
@@ -136,6 +143,16 @@ export function WegAbrechnungPage() {
         ['davon Zuführung Erhaltungsrücklage', geld(r.ruecklageSoll)],
         ['Vorschüsse für Bewirtschaftung', geld(r.vorschuss)],
       ], [[r.spitze > 0 ? 'Nachschuss (Abrechnungsspitze)' : 'Erstattung (Abrechnungsspitze)', geld(Math.abs(r.spitze))]]);
+      if (r.mieter) {
+        b.absatz(`Ihre Einheit ist vermietet (${r.mieter.name})`, 1);
+        b.tabelle(['Verrechnung mit Ihrem Mieter (Nebenkostenabrechnung)', 'Betrag'], [
+          ['Umlagefähige Kosten für den Mietzeitraum', geld(r.mieter.kosten)],
+          [r.mieter.ueberEigentuemer ? 'Vorauszahlungen des Mieters laut Mietvertrag (in Ihrem Hausgeld enthalten)' : 'Vorauszahlungen des Mieters', geld(r.mieter.vz)],
+        ], [[r.mieter.saldo > 0 ? 'Nachzahlung des Mieters' : 'Guthaben des Mieters', geld(Math.abs(r.mieter.saldo))]]);
+        b.absatz(r.mieter.ueberEigentuemer
+          ? `Die Nebenkostenabrechnung für Ihren Mieter erstellen wir gesondert. Die ${r.mieter.saldo > 0 ? 'Nachzahlung zahlt der Mieter an Sie' : 'Erstattung an den Mieter leisten Sie'}.`
+          : 'Die Nebenkostenabrechnung für Ihren Mieter erstellen und buchen wir gesondert.');
+      }
       if (r.rueckstand > 0.005) b.absatz(`Hinweis: Aus dem Jahr ${jahr} sind noch Hausgeldzahlungen von ${geld(r.rueckstand)} offen. Diese sind unabhängig von der Abrechnungsspitze zu zahlen.`);
       if (r.hdl || r.hwl) b.tabelle(['§ 35a EStG (Ihr Anteil)', 'Betrag'], [['Haushaltsnahe Dienstleistungen', geld(r.hdl)], ['Handwerkerleistungen', geld(r.hwl)]]);
       b.absatz('Die Abrechnung wird der Eigentümerversammlung zur Beschlussfassung über die Nachschüsse bzw. Anpassung der Vorschüsse vorgelegt (§ 28 Abs. 2 WEG).');
@@ -181,7 +198,7 @@ export function WegAbrechnungPage() {
       <section className="card">
         <div className="card-head"><h2>Einzelabrechnungen</h2></div>
         <table className="list">
-          <thead><tr><th>Einheit</th><th>Eigentümer</th><th>Zeitraum</th><th className="num">Kostenanteil</th><th className="num">davon umlagefähig</th><th className="num">Vorschüsse (ohne Rücklage)</th><th className="num">Abrechnungsspitze</th><th className="num">Rückstand Hausgeld</th></tr></thead>
+          <thead><tr><th>Einheit</th><th>Eigentümer</th><th>Zeitraum</th><th className="num">Kostenanteil</th><th className="num">davon umlagefähig</th><th className="num">Vorschüsse (ohne Rücklage)</th><th className="num">Abrechnungsspitze</th><th className="num">Rückstand Hausgeld</th><th>Mieter (NK-Abrechnung)</th></tr></thead>
           <tbody>{erg.map((r) => (
             <tr key={r.nutzer.key}>
               <td>{r.einheit.nummer}</td><td>{r.nutzer.name}</td><td className="small">{datum(r.nutzer.von)} – {datum(r.nutzer.bis)}</td>
@@ -189,6 +206,7 @@ export function WegAbrechnungPage() {
               <td className="num">{eur(r.vorschuss)}</td>
               <td className={'num ' + (r.spitze > 0 ? 'neg' : 'pos')}><b>{r.spitze > 0 ? 'Nachschuss ' : 'Erstattung '}{eur(Math.abs(r.spitze))}</b></td>
               <td className={'num ' + (r.rueckstand > 0.005 ? 'neg' : '')}>{eur(r.rueckstand)}</td>
+              <td className="small">{r.mieter ? <>{r.mieter.name}<div className="muted">VZ {eur(r.mieter.vz)} · {r.mieter.saldo > 0 ? 'Nachzahlung' : 'Guthaben'} {eur(Math.abs(r.mieter.saldo))}</div></> : <span className="muted">selbst genutzt</span>}</td>
             </tr>))}
           </tbody>
         </table>
