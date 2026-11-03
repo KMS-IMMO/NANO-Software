@@ -21,7 +21,8 @@ export class Brief {
 
   kopf(empfaenger: string[], datum: string, ort?: string) {
     const d = this.doc;
-    d.setFont('helvetica', 'bold'); d.setFontSize(16); d.text(this.abs.name, 20, 20);
+    d.setFont('helvetica', 'bold'); d.setFontSize(16); d.setTextColor(80); d.text(this.abs.name, 20, 20);
+    d.setDrawColor(176, 138, 74); d.setLineWidth(0.6); d.line(20, 22, 20 + d.getTextWidth(this.abs.name), 22);
     d.setFont('helvetica', 'normal'); d.setFontSize(8.5); d.setTextColor(90);
     const zeile = [this.abs.strasse, [this.abs.plz, this.abs.ort].filter(Boolean).join(' '), this.abs.telefon, this.abs.email].filter(Boolean).join(' · ');
     if (zeile) d.text(zeile, 20, 25);
@@ -52,8 +53,8 @@ export class Brief {
     autoTable(this.doc, {
       startY: this.y, head: [head], body, foot, showFoot: 'lastPage', margin: { left: 20, right: 20 },
       styles: { font: 'helvetica', fontSize: 9.5, cellPadding: 1.8 },
-      headStyles: { fillColor: [29, 43, 58], textColor: 255 },
-      footStyles: { fillColor: [238, 241, 245], textColor: 0, fontStyle: 'bold' },
+      headStyles: { fillColor: [176, 138, 74], textColor: 255 },
+      footStyles: { fillColor: [248, 240, 227], textColor: 0, fontStyle: 'bold' },
       columnStyles: align,
       didParseCell: (h) => { if (h.section !== 'body' && h.column.index >= rechtsAb) h.cell.styles.halign = 'right'; },
     });
@@ -71,4 +72,33 @@ export class Brief {
   }
 
   bytes(): Uint8Array { return new Uint8Array(this.doc.output('arraybuffer')); }
+}
+
+/** Liste als PDF im Querformat (Mieterliste, Eigentümerliste, Journal …) */
+export async function listePdf(titel: string, untertitel: string, head: string[], body: RowInput[], foot?: RowInput[], rechts: number[] = []): Promise<Uint8Array> {
+  const abs = await absender();
+  const doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'landscape' });
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(15); doc.setTextColor(80); doc.text(abs.name, 15, 16);
+  doc.setDrawColor(176, 138, 74); doc.setLineWidth(0.6); doc.line(15, 18, 15 + doc.getTextWidth(abs.name), 18);
+  doc.setTextColor(0); doc.setFontSize(13); doc.text(titel, 15, 28);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(100); doc.text(untertitel, 15, 34); doc.setTextColor(0);
+  const cs: Record<number, { halign: 'right' }> = {};
+  for (const i of rechts) cs[i] = { halign: 'right' };
+  autoTable(doc, {
+    startY: 40, head: [head], body, foot, showFoot: 'lastPage', margin: { left: 15, right: 15 },
+    styles: { font: 'helvetica', fontSize: 8.5, cellPadding: 1.6 },
+    headStyles: { fillColor: [176, 138, 74], textColor: 255 },
+    footStyles: { fillColor: [248, 240, 227], textColor: 0, fontStyle: 'bold' },
+    columnStyles: cs,
+    didParseCell: (h) => { if (h.section !== 'body' && rechts.includes(h.column.index)) h.cell.styles.halign = 'right'; },
+    didDrawPage: () => { doc.setFontSize(7.5); doc.setTextColor(120); doc.text(`Erstellt am ${new Date().toLocaleDateString('de-DE')} · Seite ${doc.getNumberOfPages()}`, 282, 203, { align: 'right' }); doc.setTextColor(0); },
+  });
+  return new Uint8Array(doc.output('arraybuffer'));
+}
+
+/** CSV mit Semikolon und BOM (öffnet sich in Excel korrekt) */
+export function csv(head: string[], rows: (string | number | null | undefined)[][]): Uint8Array {
+  const esc = (v: any) => { const t = v == null ? '' : typeof v === 'number' ? v.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: false }) : String(v); return /[;"\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t; };
+  const text = '\uFEFF' + [head, ...rows].map((r) => r.map(esc).join(';')).join('\r\n');
+  return new TextEncoder().encode(text);
 }

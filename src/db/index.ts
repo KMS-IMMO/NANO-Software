@@ -33,7 +33,8 @@ async function browserDriver(): Promise<Driver> {
   db.run('PRAGMA foreign_keys = ON');
   return {
     select: async (sql, p) => {
-      const stmt = db.prepare(sql);
+      // $1, $2 … als ?1, ?2 binden, damit die Reihenfolge im SQL keine Rolle spielt (wie in der App)
+      const stmt = db.prepare(sql.replace(/\$(\d+)/g, '?$1'));
       stmt.bind(p);
       const rows: Row[] = [];
       while (stmt.step()) rows.push(stmt.getAsObject());
@@ -41,7 +42,7 @@ async function browserDriver(): Promise<Driver> {
       return rows;
     },
     execute: async (sql, p) => {
-      if (p.length) db.run(sql, p);
+      if (p.length) db.run(sql.replace(/\$(\d+)/g, '?$1'), p);
       else db.exec(sql);
       const id = db.exec('SELECT last_insert_rowid()')[0]?.values[0][0] as number;
       return { lastInsertId: id, rowsAffected: db.getRowsModified() };

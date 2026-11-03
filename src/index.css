@@ -137,3 +137,17 @@ input.cell { width: 110px; text-align: right; padding: 4px 6px; }
 .aufgaben { display: flex; flex-direction: column; } .aufgaben a { display: flex; justify-content: space-between; padding: 10px 2px; border-bottom: 1px solid var(--line); color: var(--text); }
 .aufgaben a b { color: var(--accent-dark); margin-right: 8px; }
 .tablewrap { overflow-x: auto; margin: 0 -4px; padding: 0 4px; }
+
+.steps { display: flex; align-items: center; gap: 14px; justify-content: center; margin: 20px 0 22px; flex-wrap: wrap; }
+.steps i { flex: 0 1 120px; height: 1px; background: #d8d8d4; }
+.step { display: flex; align-items: center; gap: 10px; color: var(--text); }
+.step span { width: 34px; height: 34px; border-radius: 50%; border: 1.5px solid #bdbdb8; display: flex; align-items: center; justify-content: center; font-weight: 600; }
+.step.on { font-weight: 700; } .step.on span { background: var(--accent); border-color: var(--accent); color: #fff; }
+.step.done span { border-color: var(--accent); color: var(--accent); }
+.sec { background: var(--head); padding: 10px 14px; border-radius: 8px; font-weight: 700; margin: 16px 0 12px; }
+.form.f3 { grid-template-columns: repeat(3, 1fr); } .form .span2 { grid-column: span 2; } .form .span3 { grid-column: 1 / -1; }
+.objhead.sub { border: 1px solid var(--line); border-radius: 12px; padding: 12px 16px; }
+.objhead.sub .thumb { width: 110px; height: 70px; }
+.berichte { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }
+.bericht { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 6px; }
+.bericht > svg { color: var(--accent); } .bericht p { margin: 0 0 6px; min-height: 30px; }

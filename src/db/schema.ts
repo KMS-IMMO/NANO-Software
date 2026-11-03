@@ -457,4 +457,21 @@ CREATE TABLE wirtschaftsplan (
 ALTER TABLE objekte ADD COLUMN ruecklage_anfang REAL DEFAULT 0;   -- Bestand Erhaltungsrücklage bei Übernahme
 ALTER TABLE objekte ADD COLUMN ruecklage_stichtag TEXT;           -- Datum dieses Bestands
 `,
+  // Migration 6: Buchungsregeln für die automatische Zuordnung von Bankumsätzen
+  `
+CREATE TABLE buchungsregeln (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  prioritaet INTEGER NOT NULL DEFAULT 10,
+  muster TEXT NOT NULL,            -- Text in Empfänger/Verwendungszweck, z. B. "Allianz"
+  richtung TEXT NOT NULL DEFAULT 'Ausgang', -- Ausgang, Eingang, Beide
+  buchungskonto_id INTEGER NOT NULL REFERENCES buchungskonten(id),
+  objekt_id INTEGER REFERENCES objekte(id) ON DELETE CASCADE, -- leer = alle Liegenschaften
+  aktiv INTEGER NOT NULL DEFAULT 1,
+  notiz TEXT
+);
+INSERT INTO buchungsregeln (prioritaet, muster, richtung, buchungskonto_id)
+  SELECT 90, 'Kontoführung', 'Ausgang', id FROM buchungskonten WHERE nummer = '1405';
+INSERT INTO buchungsregeln (prioritaet, muster, richtung, buchungskonto_id)
+  SELECT 90, 'Rechnungsabschluss', 'Ausgang', id FROM buchungskonten WHERE nummer = '1405';
+`,
 ];

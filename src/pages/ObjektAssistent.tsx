@@ -1,0 +1,172 @@
+// Assistent „Liegenschaft hinzufügen“: Grunddaten → Einheiten erfassen → Zusammenfassung.
+import { useEffect, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { ArrowLeft, ArrowRight, Building2, Check, Layers, Maximize2, Plus, Trash2, Users } from 'lucide-react';
+import { db, insert, type Row } from '../db';
+import { EINHEIT_TYPEN, personOptions } from '../db/labels';
+import { num } from '../components/EntityTable';
+
+const zahl = (s: any) => Number(String(s ?? '').replace(/\./g, '').replace(',', '.')) || 0;
+const HEIZUNG = ['Gas-Zentralheizung', 'Öl-Zentralheizung', 'Fernwärme', 'Wärmepumpe', 'Pellets', 'Gasetagenheizung', 'Nachtspeicher', 'Sonstige'];
+type Einheit = { nummer: string; typ: string; lage: string; flaeche: string; mea: string; personenzahl: string };
+const leer = (n: number): Einheit => ({ nummer: `Top ${n}`, typ: 'Wohnung', lage: '', flaeche: '', mea: '', personenzahl: '' });
+
+export function ObjektAssistentPage() {
+  const nav = useNavigate();
+  const [schritt, setSchritt] = useState(1);
+  const [o, setO] = useState<Row>({ verwaltungsart: 'WEG', status: 'Aktiv' });
+  const [einheiten, setEinheiten] = useState<Einheit[]>([leer(1)]);
+  const [eigentuemer, setEigentuemer] = useState<Row[]>([]);
+  const [fehler, setFehler] = useState('');
+  const [anzahl, setAnzahl] = useState('');
+  useEffect(() => { db.select(personOptions('Eigentümer')).then(setEigentuemer); }, []);
+
+  const set = (k: string, v: any) => setO({ ...o, [k]: v });
+  const setE = (i: number, k: keyof Einheit, v: string) => setEinheiten(einheiten.map((e, j) => (j === i ? { ...e, [k]: v } : e)));
+  const sFl = einheiten.reduce((a, e) => a + zahl(e.flaeche), 0), sMea = einheiten.reduce((a, e) => a + zahl(e.mea), 0), sP = einheiten.reduce((a, e) => a + zahl(e.personenzahl), 0);
+  const weg = o.verwaltungsart === 'WEG';
+  const meaSoll = zahl(o.gesamt_mea);
+
+  function weiter() {
+    setFehler('');
+    if (schritt === 1) {
+      if (!o.strasse || !o.plz || !o.ort) { setFehler('Bitte Straße, PLZ und Ort ausfüllen.'); return; }
+      if (!o.name) setO({ ...o, name: o.strasse });
+    }
+    if (schritt === 2) {
+      const nr = einheiten.map((e) => e.nummer.trim());
+      if (nr.some((n) => !n)) { setFehler('Jede Einheit braucht eine Nummer.'); return; }
+      if (new Set(nr).size !== nr.length) { setFehler('Einheitennummern müssen eindeutig sein.'); return; }
+    }
+    setSchritt(schritt + 1);
+  }
+
+  function erzeugen() {
+    const n = Math.min(500, Math.max(1, Math.round(zahl(anzahl))));
+    const start = einheiten.length === 1 && !einheiten[0].flaeche ? 0 : einheiten.length;
+    const neu = Array.from({ length: n }, (_, i) => leer(start + i + 1));
+    setEinheiten(start ? [...einheiten, ...neu] : neu);
+    setAnzahl('');
+  }
+
+  async function anlegen() {
+    setFehler('');
+    try {
+      const id = await insert('objekte', {
+        verwaltungsart: o.verwaltungsart, name: o.name || o.strasse, strasse: o.strasse, plz: o.plz, ort: o.ort, status: o.status || 'Aktiv',
+        baujahr: o.baujahr ? zahl(o.baujahr) : null, gesamt_mea: meaSoll || (sMea || null), heizungsart: o.heizungsart || null,
+        eigentuemer_id: !weg && o.eigentuemer_id ? Number(o.eigentuemer_id) : null, notiz: o.notiz || null,
+      });
+      for (const e of einheiten) {
+        await insert('einheiten', { objekt_id: id, nummer: e.nummer.trim(), typ: e.typ, lage: e.lage || null, flaeche: e.flaeche ? zahl(e.flaeche) : null,
+          mea: e.mea ? zahl(e.mea) : null, personenzahl: e.personenzahl ? zahl(e.personenzahl) : null });
+      }
+      nav(`/objekte/${id}`);
+    } catch (err: any) { setFehler(String(err?.message ?? err)); }
+  }
+
+  const Schritt = ({ n, t }: { n: number; t: string }) => (
+    <div className={'step' + (schritt === n ? ' on' : schritt > n ? ' done' : '')}><span>{schritt > n ? <Check size={16} /> : n}</span>{t}</div>);
+
+  return (
+    <>
+      <div className="page-head">
+        <h1>Liegenschaften</h1>
+        <div className="crumbs"><Link to="/">Dashboard</Link> › <Link to="/objekte">Liegenschaften</Link> › <span>Liegenschaft hinzufügen</span></div>
+      </div>
+      <section className="card">
+        <h2 className="title-ico" style={{ fontSize: 22 }}><Building2 size={28} />Liegenschaft hinzufügen</h2>
+        <div className="steps"><Schritt n={1} t="Liegenschaftsdaten" /><i /><Schritt n={2} t="Einheiten erfassen" /><i /><Schritt n={3} t="Zusammenfassung" /></div>
+
+        {schritt === 1 && (
+          <>
+            <div className="sec">Grunddaten der Liegenschaft</div>
+            <div className="form f3">
+              <label><span>Verwaltungsart *</span><select value={o.verwaltungsart} onChange={(e) => set('verwaltungsart', e.target.value)}><option value="WEG">WEG (Wohnungseigentum)</option><option value="Mietverwaltung">Mietverwaltung</option></select></label>
+              <label className="span2"><span>Bezeichnung</span><input placeholder="z. B. WEG Rheinblick (sonst die Straße)" value={o.name ?? ''} onChange={(e) => set('name', e.target.value)} /></label>
+              <label className="span3"><span>Straße und Hausnummer *</span><input placeholder="z. B. Musterstraße 12" value={o.strasse ?? ''} onChange={(e) => set('strasse', e.target.value)} /></label>
+              <label><span>PLZ *</span><input value={o.plz ?? ''} onChange={(e) => set('plz', e.target.value)} /></label>
+              <label><span>Ort *</span><input value={o.ort ?? ''} onChange={(e) => set('ort', e.target.value)} /></label>
+              <label><span>Baujahr</span><input inputMode="numeric" value={o.baujahr ?? ''} onChange={(e) => set('baujahr', e.target.value)} /></label>
+            </div>
+            <div className="sec">Technik und Anteile</div>
+            <div className="form f3">
+              <label><span>Heizungsart</span><select value={o.heizungsart ?? ''} onChange={(e) => set('heizungsart', e.target.value)}><option value="">–</option>{HEIZUNG.map((h) => <option key={h}>{h}</option>)}</select></label>
+              <label><span>Gesamt-MEA {weg ? '*' : ''}</span><input inputMode="decimal" placeholder="z. B. 1.000 oder 10.000" value={o.gesamt_mea ?? ''} onChange={(e) => set('gesamt_mea', e.target.value)} /></label>
+              {!weg && <label><span>Eigentümer des Hauses</span><select value={o.eigentuemer_id ?? ''} onChange={(e) => set('eigentuemer_id', e.target.value)}>
+                <option value="">–</option>{eigentuemer.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}</select></label>}
+            </div>
+          </>
+        )}
+
+        {schritt === 2 && (
+          <>
+            <Kopf o={o} n={einheiten.length} mea={sMea} fl={sFl} p={sP} />
+            <div className="card-head" style={{ marginTop: 18 }}><h2>Einheiten der Liegenschaft</h2>
+              <div className="row">
+                <input className="cell" placeholder="Anzahl" value={anzahl} onChange={(e) => setAnzahl(e.target.value)} />
+                <button onClick={erzeugen} disabled={!zahl(anzahl)}>Einheiten erzeugen</button>
+                <button className="primary" onClick={() => setEinheiten([...einheiten, leer(einheiten.length + 1)])}><Plus size={16} />Einheit hinzufügen</button>
+              </div></div>
+            <div className="tablewrap"><table className="list">
+              <thead><tr><th>Nr.</th><th>Bezeichnung</th><th>Etage / Lage</th><th className="num">Fläche (m²)</th><th className="num">MEA</th><th className="num">Personenzahl</th><th /></tr></thead>
+              <tbody>{einheiten.map((e, i) => (
+                <tr key={i}>
+                  <td><input value={e.nummer} onChange={(x) => setE(i, 'nummer', x.target.value)} style={{ width: 110 }} /></td>
+                  <td><select value={e.typ} onChange={(x) => setE(i, 'typ', x.target.value)}>{EINHEIT_TYPEN.map((t) => <option key={t}>{t}</option>)}</select></td>
+                  <td><input value={e.lage} placeholder="EG, 1. OG …" onChange={(x) => setE(i, 'lage', x.target.value)} /></td>
+                  <td className="num"><input className="cell" inputMode="decimal" value={e.flaeche} onChange={(x) => setE(i, 'flaeche', x.target.value)} /></td>
+                  <td className="num"><input className="cell" inputMode="decimal" value={e.mea} onChange={(x) => setE(i, 'mea', x.target.value)} /></td>
+                  <td className="num"><input className="cell" inputMode="numeric" value={e.personenzahl} onChange={(x) => setE(i, 'personenzahl', x.target.value)} /></td>
+                  <td className="actions"><button className="icon-btn" title="Entfernen" disabled={einheiten.length === 1} onClick={() => setEinheiten(einheiten.filter((_, j) => j !== i))}><Trash2 size={17} /></button></td>
+                </tr>))}
+              </tbody>
+              <tfoot><tr><td>Summe</td><td>{einheiten.length} Einheiten</td><td>–</td><td className="num">{num(sFl)} m²</td><td className="num">{num(sMea, 0)}</td><td className="num">{num(sP, 0)}</td><td /></tr></tfoot>
+            </table></div>
+            {meaSoll > 0 && Math.abs(meaSoll - sMea) > 0.001 && <p className="warn" style={{ marginTop: 12 }}>Summe MEA {num(sMea, 0)} weicht vom Gesamt-MEA {num(meaSoll, 0)} ab. Du kannst trotzdem weiter und später korrigieren.</p>}
+          </>
+        )}
+
+        {schritt === 3 && (
+          <>
+            <Kopf o={o} n={einheiten.length} mea={sMea} fl={sFl} p={sP} />
+            <div className="sec">Zusammenfassung</div>
+            <table className="list"><tbody>
+              <tr><td>Verwaltungsart</td><td><b>{weg ? 'WEG (Wohnungseigentum)' : 'Mietverwaltung'}</b></td></tr>
+              <tr><td>Bezeichnung</td><td><b>{o.name || o.strasse}</b></td></tr>
+              <tr><td>Anschrift</td><td>{o.strasse}, {o.plz} {o.ort}</td></tr>
+              <tr><td>Baujahr / Heizung</td><td>{o.baujahr || '–'} / {o.heizungsart || '–'}</td></tr>
+              <tr><td>Einheiten</td><td>{einheiten.length} ({[...new Set(einheiten.map((e) => e.typ))].join(', ')})</td></tr>
+              <tr><td>Fläche / MEA / Personen</td><td>{num(sFl)} m² / {num(sMea, 0)}{meaSoll ? ` von ${num(meaSoll, 0)}` : ''} / {num(sP, 0)}</td></tr>
+            </tbody></table>
+            <p className="muted small">Danach legst du in der Liegenschaft Eigentümer, Hausgeld bzw. Mietverträge, Bankkonto und Ordner an.</p>
+          </>
+        )}
+
+        {fehler && <p className="error">{fehler}</p>}
+        <div className="row end">
+          {schritt > 1 ? <button onClick={() => setSchritt(schritt - 1)}><ArrowLeft size={16} />Zurück</button> : <span />}
+          <span className="grow" />
+          <button onClick={() => nav('/objekte')}>Abbrechen</button>
+          {schritt < 3 ? <button className="primary" onClick={weiter}>{schritt === 2 ? 'Weiter zur Zusammenfassung' : 'Weiter'}<ArrowRight size={16} /></button>
+            : <button className="primary" onClick={anlegen}><Check size={16} />Liegenschaft anlegen</button>}
+        </div>
+      </section>
+    </>
+  );
+}
+
+function Kopf({ o, n, mea, fl, p }: { o: Row; n: number; mea: number; fl: number; p: number }) {
+  return (
+    <div className="objhead sub">
+      <div className="thumb"><Building2 size={36} /></div>
+      <div><h2>{o.name || o.strasse}</h2><div className="muted">{o.plz} {o.ort}</div></div>
+      <div className="stats">
+        <div className="stat"><Building2 size={24} strokeWidth={1.5} /><div><b>{n}</b><span>Einheiten</span></div></div>
+        <div className="stat"><Layers size={24} strokeWidth={1.5} /><div><b>{num(mea, 0)}</b><span>Gesamt-MEA</span></div></div>
+        <div className="stat"><Maximize2 size={24} strokeWidth={1.5} /><div><b>{num(fl)} m²</b><span>Gesamtfläche</span></div></div>
+        <div className="stat"><Users size={24} strokeWidth={1.5} /><div><b>{num(p, 0)}</b><span>Personen</span></div></div>
+      </div>
+    </div>
+  );
+}
