@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { Building2, DoorOpen, FolderOpen, Gavel, Layers, Maximize2, Scale, Users, Wallet } from 'lucide-react';
+import { Building2, ClipboardList, DoorOpen, FileSignature, FolderOpen, Gavel, Layers, Maximize2, PiggyBank, Scale, Users, Wallet, Wrench } from 'lucide-react';
+import { BeschluesseTab, RuecklagenTab, VorgaengeTab, WirtschaftsplanTab } from './Weg';
 import { EntityTable, eur, num, type Field } from '../components/EntityTable';
 import { db, type Row } from '../db';
 import { AKTIV, EINHEIT_TYPEN, SCHLUESSEL, personLabel, personOptions } from '../db/labels';
@@ -42,8 +43,9 @@ export function ObjektePage() {
   );
 }
 
-const TABS_WEG: [string, any][] = [['Einheiten & Zahlungen', Building2], ['Eigentümer', Users], ['Hausgeldplan', Wallet], ['Verwaltungsbeirat', Gavel], ['Umlageschlüssel', Scale], ['Dokumente', FolderOpen]];
-const TABS_MIETE: [string, any][] = [['Einheiten & Zahlungen', Building2], ['Umlageschlüssel', Scale], ['Dokumente', FolderOpen]];
+const TABS_WEG: [string, any][] = [['Einheiten & Zahlungen', Building2], ['Eigentümer', Users], ['Wirtschaftsplan', ClipboardList], ['Hausgeldplan', Wallet],
+  ['Rücklagen', PiggyBank], ['Beschlüsse', FileSignature], ['Instandhaltung', Wrench], ['Verwaltungsbeirat', Gavel], ['Umlageschlüssel', Scale], ['Dokumente', FolderOpen]];
+const TABS_MIETE: [string, any][] = [['Einheiten & Zahlungen', Building2], ['Instandhaltung', Wrench], ['Umlageschlüssel', Scale], ['Dokumente', FolderOpen]];
 
 export function ObjektDetailPage() {
   const id = Number(useParams().id);
@@ -95,6 +97,10 @@ export function ObjektDetailPage() {
       {tab === 'Einheiten & Zahlungen' && <EinheitenTab objektId={id} weg={weg} onChange={reload} />}
       {tab === 'Eigentümer' && <EigentuemerTab objektId={id} />}
       {tab === 'Hausgeldplan' && <HausgeldTab objektId={id} />}
+      {tab === 'Wirtschaftsplan' && <WirtschaftsplanTab objektId={id} />}
+      {tab === 'Rücklagen' && <RuecklagenTab objektId={id} />}
+      {tab === 'Beschlüsse' && <BeschluesseTab objektId={id} />}
+      {tab === 'Instandhaltung' && <VorgaengeTab objektId={id} />}
       {tab === 'Verwaltungsbeirat' && <BeiratTab objektId={id} />}
       {tab === 'Umlageschlüssel' && <SchluesselTab objektId={id} weg={weg} />}
     </>

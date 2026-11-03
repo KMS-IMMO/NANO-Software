@@ -397,4 +397,64 @@ CREATE TRIGGER objekt_nr_auto AFTER INSERT ON objekte WHEN NEW.objekt_nr IS NULL
 BEGIN UPDATE objekte SET objekt_nr = CAST(1000 + NEW.id AS TEXT) WHERE id = NEW.id; END;
 ALTER TABLE einheiten ADD COLUMN personenzahl INTEGER;
 `,
+  // Migration 5: Beschlüsse, Versammlungen, Instandhaltung, Rücklagen-Maßnahmen, Wirtschaftsplan
+  `
+CREATE TABLE versammlungen (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  objekt_id INTEGER NOT NULL REFERENCES objekte(id) ON DELETE CASCADE,
+  datum TEXT NOT NULL,
+  art TEXT NOT NULL DEFAULT 'Ordentliche Versammlung', -- Ordentliche, Außerordentliche, Umlaufbeschluss
+  ort TEXT,
+  status TEXT NOT NULL DEFAULT 'Geplant',              -- Geplant, Eingeladen, Durchgeführt
+  notiz TEXT
+);
+CREATE TABLE beschluesse (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  objekt_id INTEGER NOT NULL REFERENCES objekte(id) ON DELETE CASCADE,
+  versammlung_id INTEGER REFERENCES versammlungen(id) ON DELETE SET NULL,
+  nummer TEXT,                -- z. B. B-2025-01
+  datum TEXT NOT NULL,
+  betreff TEXT NOT NULL,
+  art TEXT,                   -- Investition, Finanzen, Organisation, Instandhaltung, Sonstiges
+  ergebnis TEXT NOT NULL DEFAULT 'Angenommen', -- Angenommen, Abgelehnt, Vertagt
+  zustimmung REAL,            -- Zustimmung in %
+  status TEXT NOT NULL DEFAULT 'Geplant',      -- Geplant, In Umsetzung, Erledigt
+  betrag REAL,
+  notiz TEXT
+);
+CREATE TABLE vorgaenge (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  objekt_id INTEGER NOT NULL REFERENCES objekte(id) ON DELETE CASCADE,
+  einheit_id INTEGER REFERENCES einheiten(id) ON DELETE SET NULL,
+  betreff TEXT NOT NULL,
+  art TEXT DEFAULT 'Instandhaltung', -- Instandhaltung, Wartung, Schaden, Anfrage, Sonstiges
+  prioritaet TEXT NOT NULL DEFAULT 'Mittel', -- Niedrig, Mittel, Hoch
+  status TEXT NOT NULL DEFAULT 'Offen',      -- Offen, In Arbeit, Erledigt
+  faellig TEXT,
+  firma_id INTEGER REFERENCES firmen(id) ON DELETE SET NULL,
+  kosten REAL,
+  angelegt TEXT NOT NULL DEFAULT (date('now')),
+  erledigt_am TEXT,
+  notiz TEXT
+);
+CREATE TABLE ruecklage_massnahmen (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  objekt_id INTEGER NOT NULL REFERENCES objekte(id) ON DELETE CASCADE,
+  massnahme TEXT NOT NULL,
+  betrag REAL NOT NULL DEFAULT 0,
+  jahr INTEGER,
+  status TEXT NOT NULL DEFAULT 'Vorgesehen', -- Vorgesehen, Geplant, Beschlossen, Umgesetzt
+  notiz TEXT
+);
+CREATE TABLE wirtschaftsplan (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  objekt_id INTEGER NOT NULL REFERENCES objekte(id) ON DELETE CASCADE,
+  jahr INTEGER NOT NULL,
+  buchungskonto_id INTEGER NOT NULL REFERENCES buchungskonten(id),
+  betrag REAL NOT NULL DEFAULT 0,
+  UNIQUE (objekt_id, jahr, buchungskonto_id)
+);
+ALTER TABLE objekte ADD COLUMN ruecklage_anfang REAL DEFAULT 0;   -- Bestand Erhaltungsrücklage bei Übernahme
+ALTER TABLE objekte ADD COLUMN ruecklage_stichtag TEXT;           -- Datum dieses Bestands
+`,
 ];
