@@ -75,7 +75,7 @@ export function ObjektDetailPage() {
       {tab === 'Eigentümer' && <EigentuemerTab objektId={id} />}
       {tab === 'Hausgeld' && <HausgeldTab objektId={id} />}
       {tab === 'Verwaltungsbeirat' && <BeiratTab objektId={id} />}
-      {tab === 'Umlageschlüssel' && <SchluesselTab objektId={id} />}
+      {tab === 'Umlageschlüssel' && <SchluesselTab objektId={id} weg={weg} />}
     </>
   );
 }
@@ -179,12 +179,12 @@ function BeiratTab({ objektId }: { objektId: number }) {
 }
 
 /** Umlageschlüssel je Konto für dieses Objekt; ohne Eintrag gilt der Vorschlag aus dem Kontenrahmen. */
-function SchluesselTab({ objektId }: { objektId: number }) {
+function SchluesselTab({ objektId, weg }: { objektId: number; weg: boolean }) {
   const [rows, setRows] = useState<Row[]>([]);
   const load = async () => setRows(await db.select(`SELECT k.id, k.nummer, k.name, k.gruppe, k.schluessel AS vorschlag, s.schluessel
       FROM buchungskonten k LEFT JOIN objekt_schluessel s ON s.buchungskonto_id = k.id AND s.objekt_id = $1
-      WHERE k.umlagefaehig = 1 ORDER BY k.nummer`, [objektId]));
-  useEffect(() => { load(); }, [objektId]);
+      WHERE ${weg ? "k.art = 'Aufwand' AND k.nummer NOT IN ('1260', '1261', '1262')" : 'k.umlagefaehig = 1'} ORDER BY k.nummer`, [objektId]));
+  useEffect(() => { load(); }, [objektId, weg]);
   async function set(kontoId: number, wert: string) {
     if (!wert) await db.execute('DELETE FROM objekt_schluessel WHERE objekt_id = $1 AND buchungskonto_id = $2', [objektId, kontoId]);
     else await db.execute(`INSERT INTO objekt_schluessel (objekt_id, buchungskonto_id, schluessel) VALUES ($1, $2, $3)
@@ -195,7 +195,7 @@ function SchluesselTab({ objektId }: { objektId: number }) {
   return (
     <section className="card">
       <div className="card-head"><h2>Umlageschlüssel für dieses Objekt</h2></div>
-      <p className="muted small">Gilt für die Nebenkosten- und Jahresabrechnung. Ohne eigene Auswahl gilt der Vorschlag.</p>
+      <p className="muted small">{weg ? 'Gilt für die WEG-Jahresabrechnung. Ohne eigene Auswahl wird nach MEA verteilt.' : 'Gilt für die Nebenkostenabrechnung. Ohne eigene Auswahl gilt der Vorschlag.'}</p>
       <table className="list">
         <thead><tr><th>Konto</th><th>Bezeichnung</th><th>Vorschlag</th><th>Schlüssel für dieses Objekt</th></tr></thead>
         <tbody>
@@ -204,9 +204,9 @@ function SchluesselTab({ objektId }: { objektId: number }) {
             if (r.gruppe !== gruppe) { gruppe = r.gruppe; out.push(<tr key={'g' + r.id} className="group"><td colSpan={4}>{gruppe}</td></tr>); }
             out.push(
               <tr key={r.id}>
-                <td>{r.nummer}</td><td>{r.name}</td><td className="muted">{r.vorschlag}</td>
+                <td>{r.nummer}</td><td>{r.name}</td><td className="muted">{weg ? 'MEA' : r.vorschlag}</td>
                 <td><select value={r.schluessel ?? ''} onChange={(e) => set(r.id, e.target.value)}>
-                  <option value="">wie Vorschlag ({r.vorschlag})</option>
+                  <option value="">{weg ? 'Standard (MEA)' : `wie Vorschlag (${r.vorschlag})`}</option>
                   {SCHLUESSEL.map((s) => <option key={s}>{s}</option>)}
                 </select></td>
               </tr>);
