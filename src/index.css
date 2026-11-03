@@ -78,3 +78,12 @@ table.list tr.group td { background: #f6f7f9; font-weight: 600; font-size: 12px;
 .small-btn { padding: 4px 10px; font-size: 13px; }
 button:disabled { opacity: .5; cursor: default; }
 input.cell { width: 110px; text-align: right; padding: 4px 6px; }
+.ordner { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 10px; }
+.ordner-box { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; min-height: 64px; }
+.ordner-box.over { border-color: var(--accent); background: var(--accent-soft); }
+.ordner-head { display: flex; gap: 8px; align-items: center; font-weight: 600; }
+.ordner-head span:first-child { flex: 1; }
+.datei { display: flex; gap: 8px; align-items: center; padding: 4px 0 0 22px; font-size: 13px; }
+.datei button:first-child { flex: 1; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ordner-head > span:first-child { min-width: 0; overflow-wrap: anywhere; }
+.ordner-head > *:not(:first-child) { white-space: nowrap; }

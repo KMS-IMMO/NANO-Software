@@ -7,6 +7,7 @@ import { OffenePostenPage } from './pages/OffenePosten';
 import { BankPage } from './pages/Bank';
 import { MahnungenPage } from './pages/Mahnungen';
 import { NebenkostenPage } from './pages/Nebenkosten';
+import { DokumentePage } from './pages/Dokumente';
 import { EigentuemerAbrechnungPage, WegAbrechnungPage } from './pages/Jahresabrechnungen';
 import { EinstellungenPage, KontenPage, RechnungenPage } from './pages/Konten';
 
@@ -31,15 +32,6 @@ const NAV: ([string, string] | string)[] = [
   ['/konten', 'Buchungskonten'],
   ['/einstellungen', 'Einstellungen'],
 ];
-
-function Bald({ titel, text }: { titel: string; text: string }) {
-  return (
-    <>
-      <div className="page-head"><h1>{titel}</h1></div>
-      <section className="card"><p className="muted">In Arbeit: {text}</p></section>
-    </>
-  );
-}
 
 export default function App() {
   return (
@@ -72,7 +64,7 @@ export default function App() {
             <Route path="/nebenkosten" element={<NebenkostenPage />} />
             <Route path="/weg-abrechnung" element={<WegAbrechnungPage />} />
             <Route path="/eigentuemer-abrechnung" element={<EigentuemerAbrechnungPage />} />
-            <Route path="/ablage" element={<Bald titel="Dokumente" text="Ablage mit deiner Ordnervorlage, Drag & Drop und Durchsuchen, automatische Ablage erzeugter PDFs." />} />
+            <Route path="/ablage" element={<DokumentePage />} />
           </Routes>
         </main>
       </div>
