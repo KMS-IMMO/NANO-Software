@@ -120,14 +120,28 @@ async function seedDemo(d: Driver) {
     (5,5,100,'2015-01-01'),(6,6,100,'2018-05-01'),(7,1,100,'2020-01-01')`);
   await ex(`INSERT INTO beiraete (objekt_id, person_id, funktion) VALUES (2,5,'Vorsitz')`);
   await ex(`INSERT INTO hausgeld (einheit_id, gueltig_ab, betrag, davon_ruecklage) VALUES
-    (5,'2026-01-01',310,80),(6,'2026-01-01',310,80),(7,'2026-01-01',325,85)`);
+    (5,'2024-01-01',310,80),(6,'2024-01-01',310,80),(7,'2024-01-01',325,85)`);
   await ex(`INSERT INTO mietvertraege (einheit_id, mieter_id, beginn, ende, kaltmiete, nk_vorauszahlung, hk_vorauszahlung, kaution, personenzahl, ust_satz, mietart) VALUES
-    (1,2,'2026-01-01',NULL,620,140,80,1860,1,0,'Standard'),
+    (1,2,'2024-04-01',NULL,620,140,80,1860,1,0,'Standard'),
     (2,3,'2025-08-01','2026-12-31',790,170,95,2370,3,0,'Staffelmiete'),
-    (4,4,'2026-01-01',NULL,900,120,60,2700,0,19,'Indexmiete'),
+    (4,4,'2023-01-01',NULL,900,120,60,2700,0,19,'Indexmiete'),
     (6,7,'2026-03-01',NULL,700,150,90,2100,2,0,'Standard')`);
   await ex(`INSERT INTO bankkonten (objekt_id, name, bank, iban) VALUES
     (1,'Mietkonto Lindenstraße','Sparkasse KölnBonn','DE11370501980000000001'),
     (2,'WEG-Konto Rheinblick','Volksbank Köln Bonn','DE22380601860000000002')`);
+  // Kosten 2025 für die Beispiel-Abrechnungen
+  const k = async (nr: string) => (await d.select('SELECT id FROM buchungskonten WHERE nummer = $1', [nr]))[0].id;
+  const rech: [number, string, string, number, number | null][] = [
+    [1, '1220', '2025-02-15', 1240, null], [1, '1215', '2025-12-10', 2380, null], [1, '1222', '2025-03-01', 960, null],
+    [1, '1246', '2025-12-31', 1800, 2], [1, '1250', '2025-01-20', 1150, null], [1, '1200', '2025-12-31', 6200, 3],
+    [1, '1243', '2025-12-31', 720, 2], [1, '1300', '2025-06-12', 840, 1], [1, '1400', '2025-12-31', 1440, null],
+    [2, '1220', '2025-02-15', 980, null], [2, '1250', '2025-01-20', 890, null], [2, '1246', '2025-12-31', 1500, 2],
+    [2, '1200', '2025-12-31', 4300, 3], [2, '1400', '2025-12-31', 1080, null], [2, '1300', '2025-09-01', 2100, 1],
+  ];
+  for (const [o, nr, dt, betrag, firma] of rech) {
+    await d.execute('INSERT INTO rechnungen (objekt_id, datum, betrag, buchungskonto_id, firma_id, bezahlt_am) VALUES ($1, $2, $3, $4, $5, $2)',
+      [o, dt, betrag, await k(nr), firma]);
+  }
+  await ex(`UPDATE eigentum SET von = '2015-01-01'`);
   await ex(`INSERT INTO mietanpassungen (vertrag_id, gueltig_ab, art, kaltmiete) VALUES (2,'2026-08-01','Staffel',820)`);
 }

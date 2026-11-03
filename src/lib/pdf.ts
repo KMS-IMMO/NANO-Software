@@ -10,7 +10,7 @@ export async function absender(): Promise<Absender> {
   return { name: e.firma_name || 'KMS Immobilien', strasse: e.firma_strasse, plz: e.firma_plz, ort: e.firma_ort, telefon: e.firma_telefon, email: e.firma_email };
 }
 
-export const geld = (n: number) => n.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €';
+export const geld = (n: number) => (Math.abs(n) < 0.005 ? 0 : n).toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €';
 export const dDatum = (iso: string) => new Date(iso + 'T00:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
 export class Brief {

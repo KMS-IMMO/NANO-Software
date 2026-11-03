@@ -6,6 +6,8 @@ import { VertragDetailPage, VertraegePage } from './pages/Vertraege';
 import { OffenePostenPage } from './pages/OffenePosten';
 import { BankPage } from './pages/Bank';
 import { MahnungenPage } from './pages/Mahnungen';
+import { NebenkostenPage } from './pages/Nebenkosten';
+import { EigentuemerAbrechnungPage, WegAbrechnungPage } from './pages/Jahresabrechnungen';
 import { EinstellungenPage, KontenPage, RechnungenPage } from './pages/Konten';
 
 const NAV: ([string, string] | string)[] = [
@@ -67,9 +69,9 @@ export default function App() {
             <Route path="/einstellungen" element={<EinstellungenPage />} />
             <Route path="/bank" element={<BankPage />} />
             <Route path="/mahnungen" element={<MahnungenPage />} />
-            <Route path="/nebenkosten" element={<Bald titel="Nebenkostenabrechnung" text="Kalenderjahr, Schlüssel je Objekt (Fläche, Personen, Einheiten, MEA, Summe, Verbrauch), Heizkosten vom Messdienst, Leerstand trägt der Eigentümer, §35a-Ausweis, PDF je Mieter." />} />
-            <Route path="/weg-abrechnung" element={<Bald titel="WEG-Jahresabrechnung" text="Gesamtabrechnung, Einzelabrechnung je Eigentümer und Vermögensbericht." />} />
-            <Route path="/eigentuemer-abrechnung" element={<Bald titel="Eigentümerabrechnung" text="Jährliche Abrechnung für Eigentümer in der Mietverwaltung mit umlagefähigen und nicht umlagefähigen Kosten." />} />
+            <Route path="/nebenkosten" element={<NebenkostenPage />} />
+            <Route path="/weg-abrechnung" element={<WegAbrechnungPage />} />
+            <Route path="/eigentuemer-abrechnung" element={<EigentuemerAbrechnungPage />} />
             <Route path="/ablage" element={<Bald titel="Dokumente" text="Ablage mit deiner Ordnervorlage, Drag & Drop und Durchsuchen, automatische Ablage erzeugter PDFs." />} />
           </Routes>
         </main>

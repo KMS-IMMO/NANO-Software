@@ -77,3 +77,4 @@ table.list tr.group td { background: #f6f7f9; font-weight: 600; font-size: 12px;
 .vorschlag { font-size: 13px; flex: 1; }
 .small-btn { padding: 4px 10px; font-size: 13px; }
 button:disabled { opacity: .5; cursor: default; }
+input.cell { width: 110px; text-align: right; padding: 4px 6px; }
