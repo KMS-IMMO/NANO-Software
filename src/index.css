@@ -68,3 +68,12 @@ table.list tr.group td { background: #f6f7f9; font-weight: 600; font-size: 12px;
 .kpi b.kpi-text { font-size: 16px; }
 .bar { display: inline-block; width: 70%; height: 8px; background: #fdecea; border-radius: 4px; overflow: hidden; vertical-align: middle; margin-right: 8px; }
 .bar div { height: 100%; background: var(--pos); }
+.drop { border: 2px dashed #c7d2e0; text-align: center; padding: 26px; }
+.drop.over { border-color: var(--accent); background: var(--accent-soft); }
+.drop p { margin: 4px 0; }
+.info { background: var(--accent-soft); padding: 8px 12px; border-radius: 6px; display: inline-block; margin-top: 10px !important; }
+.zuordnen { display: flex; flex-direction: column; gap: 6px; }
+.zuordnen select { padding: 5px 7px; font-size: 13px; }
+.vorschlag { font-size: 13px; flex: 1; }
+.small-btn { padding: 4px 10px; font-size: 13px; }
+button:disabled { opacity: .5; cursor: default; }

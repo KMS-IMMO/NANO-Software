@@ -4,6 +4,7 @@ import { ObjektDetailPage, ObjektePage } from './pages/Objekte';
 import { FirmenPage, PersonenPage } from './pages/Personen';
 import { VertragDetailPage, VertraegePage } from './pages/Vertraege';
 import { OffenePostenPage } from './pages/OffenePosten';
+import { BankPage } from './pages/Bank';
 import { EinstellungenPage, KontenPage, RechnungenPage } from './pages/Konten';
 
 const NAV: ([string, string] | string)[] = [
@@ -63,7 +64,7 @@ export default function App() {
             <Route path="/rechnungen" element={<RechnungenPage />} />
             <Route path="/konten" element={<KontenPage />} />
             <Route path="/einstellungen" element={<EinstellungenPage />} />
-            <Route path="/bank" element={<Bald titel="Bank & Zuordnung" text="Kontoauszüge (CAMT/CSV) importieren, Zahlungen automatisch nach IBAN, Name und Verwendungszweck zuordnen, unklare Zahlungen zur Prüfung." />} />
+            <Route path="/bank" element={<BankPage />} />
             <Route path="/mahnungen" element={<Bald titel="Mahnungen" text="Zahlungserinnerung, 1. und 2. Mahnung als PDF mit einstellbaren Gebühren." />} />
             <Route path="/nebenkosten" element={<Bald titel="Nebenkostenabrechnung" text="Kalenderjahr, Schlüssel je Objekt (Fläche, Personen, Einheiten, MEA, Summe, Verbrauch), Heizkosten vom Messdienst, Leerstand trägt der Eigentümer, §35a-Ausweis, PDF je Mieter." />} />
             <Route path="/weg-abrechnung" element={<Bald titel="WEG-Jahresabrechnung" text="Gesamtabrechnung, Einzelabrechnung je Eigentümer und Vermögensbericht." />} />

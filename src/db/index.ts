@@ -126,5 +126,8 @@ async function seedDemo(d: Driver) {
     (2,3,'2025-08-01','2026-12-31',790,170,95,2370,3,0,'Staffelmiete'),
     (4,4,'2026-01-01',NULL,900,120,60,2700,0,19,'Indexmiete'),
     (6,7,'2026-03-01',NULL,700,150,90,2100,2,0,'Standard')`);
+  await ex(`INSERT INTO bankkonten (objekt_id, name, bank, iban) VALUES
+    (1,'Mietkonto Lindenstraße','Sparkasse KölnBonn','DE11370501980000000001'),
+    (2,'WEG-Konto Rheinblick','Volksbank Köln Bonn','DE22380601860000000002')`);
   await ex(`INSERT INTO mietanpassungen (vertrag_id, gueltig_ab, art, kaltmiete) VALUES (2,'2026-08-01','Staffel',820)`);
 }
