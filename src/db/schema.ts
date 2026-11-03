@@ -350,4 +350,42 @@ Ausweis und Unterlagen'),
 Rechnungen
 Verträge');
 `,
+  // Migration 3: Ordnervorlage von KMS Immobilien für Objekte
+  `
+INSERT INTO ordnervorlagen (name, bezug, ordner) VALUES
+ ('KMS Immobilien', 'Objekt', '01 - Gebäudedaten
+01 - Gebäudedaten/Teilungserklärung
+01 - Gebäudedaten/Grundrisse
+01 - Gebäudedaten/KMS E-Check
+01 - Gebäudedaten/KMS E-Check/Eigentümer
+01 - Gebäudedaten/KMS E-Check/Mieter
+01 - Gebäudedaten/Liegenschaftscheck
+02 - Rechnungen
+02 - Rechnungen/Handwerkerrechnungen
+02 - Rechnungen/Dienstleisterechnungen
+02 - Rechnungen/Sanierungen - Gebäude
+03 - Versicherung
+03 - Versicherung/Versicherungsverträge
+03 - Versicherung/Versicherungsschäden
+04 - Energieversorgung
+04 - Energieversorgung/Wasserversorgung
+04 - Energieversorgung/Stromversorgung
+04 - Energieversorgung/Gasversorgung
+05 - Jahresabrechnung - Ableseunternehmen
+05 - Jahresabrechnung - Ableseunternehmen/Jahresabrechnung Wasser
+05 - Jahresabrechnung - Ableseunternehmen/Jahresabrechnung Strom
+05 - Jahresabrechnung - Ableseunternehmen/Jahresabrechnung GAS
+06 - Zählernummer
+06 - Zählernummer/Wasserzählerliste
+06 - Zählernummer/Stromzählerliste
+06 - Zählernummer/Gaszählerliste - HKV
+07 - Hausverwaltung
+07 - Hausverwaltung/Verwaltervertrag
+07 - Hausverwaltung/Verwaltervollmacht
+08 - Bankdaten
+08 - Bankdaten/Online Banking - Daten
+09 - Beschluss - EGT
+09 - Beschluss - EGT/Protokolle
+10 - Grundbesitzabgaben');
+`,
 ];

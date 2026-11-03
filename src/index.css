@@ -78,8 +78,9 @@ table.list tr.group td { background: #f6f7f9; font-weight: 600; font-size: 12px;
 .small-btn { padding: 4px 10px; font-size: 13px; }
 button:disabled { opacity: .5; cursor: default; }
 input.cell { width: 110px; text-align: right; padding: 4px 6px; }
-.ordner { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 10px; }
-.ordner-box { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; min-height: 64px; }
+.ordner { display: flex; flex-direction: column; gap: 6px; }
+.ordner-box { border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; }
+.ordner-box.sub .ordner-head { font-weight: 500; }
 .ordner-box.over { border-color: var(--accent); background: var(--accent-soft); }
 .ordner-head { display: flex; gap: 8px; align-items: center; font-weight: 600; }
 .ordner-head span:first-child { flex: 1; }
