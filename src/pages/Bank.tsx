@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { db, type Row } from '../db';
 import { datum, eur } from '../components/EntityTable';
 import { kontoOptions, personOptions } from '../db/labels';
+import { BankAbruf } from '../components/BankAbruf';
 import {
   automatischZuordnen, importieren, parseDatei, vorschlag, zuordnenKonto, zuordnenPerson, zuordnenRechnung, zuordnungLoesen, type Vorschlag,
 } from '../logic/bank';
@@ -82,11 +83,12 @@ export function BankPage() {
 
   return (
     <>
-      <div className="page-head"><h1>Bank & Zuordnung</h1><p className="muted">Kontoauszug aus dem Online-Banking importieren (CAMT-XML oder CSV, alle deutschen Banken)</p></div>
+      <div className="page-head"><h1>Bank & Zuordnung</h1><p className="muted">Umsätze direkt bei der Bank abrufen (Freigabe in der Banking-App) oder Kontoauszug importieren (CAMT-XML oder CSV)</p></div>
       <div className="row">
         <select style={{ width: 360 }} value={konto} onChange={(e) => setKonto(Number(e.target.value))}>
           {konten.map((x) => <option key={x.id} value={x.id}>{x.objekt} – {x.name}{x.iban ? ` (${x.iban})` : ''}</option>)}
         </select>
+        {k && <BankAbruf konto={k} onDone={(m) => { setInfo(m); load(); }} />}
       </div>
       <div className="kpis">
         <div className="kpi"><span>Kontostand laut Import</span><b>{eur(saldo)}</b></div>

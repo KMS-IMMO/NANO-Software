@@ -69,6 +69,7 @@ const EINST: [string, string][] = [
   ['mahnung_gebuehr_3', 'Gebühr 2. Mahnung (€)'],
   ['mahnung_frist_tage', 'Zahlungsfrist in Mahnungen (Tage)'],
   ['ablage_pfad', 'Ablageordner für Dokumente (später NAS)'],
+  ['fints_produkt_id', 'FinTS-Produkt-ID für den Bankabruf (kostenlos bei fints.org)'],
 ];
 
 export function EinstellungenPage() {

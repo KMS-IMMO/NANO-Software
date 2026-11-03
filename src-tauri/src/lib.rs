@@ -1,3 +1,5 @@
+mod bank;
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   tauri::Builder::default()
@@ -5,6 +7,8 @@ pub fn run() {
     .plugin(tauri_plugin_fs::init())
     .plugin(tauri_plugin_dialog::init())
     .plugin(tauri_plugin_opener::init())
+    .manage(bank::BankState::default())
+    .invoke_handler(tauri::generate_handler![bank::bank_start, bank::bank_abholen, bank::bank_abbrechen])
     .setup(|app| {
       if cfg!(debug_assertions) {
         app.handle().plugin(
