@@ -479,4 +479,8 @@ INSERT INTO buchungsregeln (prioritaet, muster, richtung, buchungskonto_id)
   `
 ALTER TABLE mietvertraege ADD COLUMN zahlung_an TEXT DEFAULT 'Verwaltung'; -- leer = Verwaltung
 `,
+  // Migration 8: Bankabruf per FinTS – Anmeldename je Bankkonto (die PIN wird nie gespeichert)
+  `
+ALTER TABLE bankkonten ADD COLUMN fints_benutzer TEXT;
+`,
 ];
