@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { HashRouter, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import {
-  Bell, Building, Building2, ChevronDown, FolderOpen, Hammer, Home, Landmark, Search, Settings, User, Users, Wallet, Wrench,
+  BarChart3, Bell, Building, Building2, ChevronDown, FolderOpen, Hammer, Home, Landmark, Search, Settings, User, Users, Wallet, Wrench,
 } from 'lucide-react';
 import { db, type Row } from './db';
 import { personLabel } from './db/labels';
@@ -19,6 +19,8 @@ import { DokumentePage } from './pages/Dokumente';
 import { EigentuemerAbrechnungPage, WegAbrechnungPage } from './pages/Jahresabrechnungen';
 import { EinstellungenPage, KontenPage, RechnungenPage } from './pages/Konten';
 import { BeschluessePage, InstandhaltungPage } from './pages/Weg';
+import { AuswertungPage, BerichtePage, JournalPage, RegelnPage } from './pages/Buchhaltung';
+import { ObjektAssistentPage } from './pages/ObjektAssistent';
 
 type Item = { to: string; label: string; icon?: ReactNode };
 type Group = { label: string; icon: ReactNode; items: Item[] };
@@ -42,10 +44,14 @@ const NAV: (Item | Group)[] = [
     { to: '/offene-posten', label: 'Offene Posten' },
     { to: '/rechnungen', label: 'Rechnungen' },
     { to: '/mahnungen', label: 'Mahnungen' },
+    { to: '/journal', label: 'Buchungsjournal' },
+    { to: '/regeln', label: 'Buchungsregeln' },
+    { to: '/auswertung', label: 'Auswertung (GuV)' },
     { to: '/konten', label: 'Kontenplan' },
   ] },
   { to: '/instandhaltung', label: 'Instandhaltung', icon: <Wrench size={18} /> },
   { to: '/ablage', label: 'Dokumente', icon: <FolderOpen size={18} /> },
+  { to: '/berichte', label: 'Berichte', icon: <BarChart3 size={18} /> },
   { to: '/einstellungen', label: 'Einstellungen', icon: <Settings size={18} /> },
 ];
 
@@ -139,6 +145,7 @@ export default function App() {
             <Routes>
               <Route path="/" element={<DashboardPage />} />
               <Route path="/objekte" element={<ObjektePage />} />
+              <Route path="/objekte/neu" element={<ObjektAssistentPage />} />
               <Route path="/objekte/:id" element={<ObjektDetailPage />} />
               <Route path="/personen" element={<PersonenPage />} />
               <Route path="/eigentuemer" element={<PersonenPage rolle="Eigentümer" />} />
@@ -158,6 +165,10 @@ export default function App() {
               <Route path="/ablage" element={<DokumentePage />} />
               <Route path="/instandhaltung" element={<InstandhaltungPage />} />
               <Route path="/beschluesse" element={<BeschluessePage />} />
+              <Route path="/journal" element={<JournalPage />} />
+              <Route path="/regeln" element={<RegelnPage />} />
+              <Route path="/auswertung" element={<AuswertungPage />} />
+              <Route path="/berichte" element={<BerichtePage />} />
             </Routes>
           </main>
         </div>

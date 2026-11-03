@@ -113,6 +113,21 @@ const woerter = (s: string) => norm(s).split(/\s+/).filter((w) => w.length > 2);
 
 export interface Vorschlag { art: 'person' | 'rechnung' | 'konto'; id: number; label: string; sicher: boolean; grund: string }
 
+/** Erste passende aktive Buchungsregel (nach Priorität) für einen Umsatz */
+export async function regelFuer(u: Row, objekt: number | null): Promise<Vorschlag | null> {
+  const regeln = await db.select(`SELECT r.*, k.nummer || ' ' || k.name AS konto FROM buchungsregeln r JOIN buchungskonten k ON k.id = r.buchungskonto_id
+    WHERE r.aktiv = 1 ORDER BY r.prioritaet, r.id`);
+  const text = norm(`${u.gegenpartei} ${u.verwendungszweck}`).replace(/\s+/g, ' ');
+  for (const r of regeln) {
+    if (r.objekt_id && objekt && r.objekt_id !== objekt) continue;
+    if (r.richtung === 'Ausgang' && u.betrag > 0) continue;
+    if (r.richtung === 'Eingang' && u.betrag < 0) continue;
+    const m = norm(r.muster).replace(/\s+/g, ' ').trim();
+    if (m && text.includes(m)) return { art: 'konto', id: r.buchungskonto_id, label: r.konto, sicher: true, grund: `Regel „${r.muster}“` };
+  }
+  return null;
+}
+
 /** Sucht für einen Umsatz den passenden Mieter/Eigentümer (Eingang) oder die passende Rechnung (Ausgang). */
 export async function vorschlag(u: Row): Promise<Vorschlag | null> {
   const objekt = (await db.select('SELECT objekt_id FROM bankkonten WHERE id = $1', [u.bankkonto_id]))[0]?.objekt_id ?? null;
@@ -138,7 +153,7 @@ export async function vorschlag(u: Row): Promise<Vorschlag | null> {
       if (en && new RegExp(`\\b${en.replace(/ /g, '\\s*0*')}\\b`).test(text) && o.person_id) add(o.person_id, 1, 'Einheit');
     }
     const ranked = [...kandidaten.entries()].filter(([pid]) => ops.some((o) => o.person_id === pid)).sort((a, b) => b[1].score - a[1].score);
-    if (!ranked.length) return null;
+    if (!ranked.length) return regelFuer(u, objekt);
     const [pid, k] = ranked[0];
     const offen = ops.filter((o) => o.person_id === pid).reduce((a, o) => a + o.betrag - o.bezahlt, 0);
     const p = personen.find((x) => x.id === pid)!;
@@ -159,6 +174,8 @@ export async function vorschlag(u: Row): Promise<Vorschlag | null> {
     return { r, s, g };
   }).sort((a, b) => b.s - a.s);
   if (!treffer.length) {
+    const regel = await regelFuer(u, objekt);
+    if (regel) return regel;
     // Bankgebühren erkennen
     if (/kontofuehrung|kontoentgelt|kontofuhrung|abschluss|entgelt|bankgebuehr/.test(text.replace(/\s+/g, ''))) {
       const k = (await db.select(`SELECT id, nummer || ' ' || name AS label FROM buchungskonten WHERE nummer = '1405'`))[0];

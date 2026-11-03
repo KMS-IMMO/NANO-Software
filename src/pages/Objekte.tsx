@@ -33,6 +33,7 @@ export function ObjektePage() {
       title="Liegenschaften"
       icon={<Building2 size={24} />}
       newLabel="Liegenschaft hinzufügen"
+      onNew={() => nav('/objekte/neu')}
       table="objekte"
       fields={[...objektFields.slice(0, 2), { key: 'einheiten', label: 'Einheiten', type: 'number', computed: true, format: (v) => num(v, 0), sum: true }, ...objektFields.slice(2)]}
       listSql={`SELECT o.*, (SELECT COUNT(*) FROM einheiten e WHERE e.objekt_id = o.id) AS einheiten

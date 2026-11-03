@@ -39,11 +39,13 @@ interface Props {
   /** Beschriftung des Knopfs zum Anlegen */
   newLabel?: string;
   icon?: ReactNode;
+  /** Eigener Ablauf statt Formular beim Anlegen (z. B. Assistent) */
+  onNew?: () => void;
 }
 
 type Opt = { value: string | number; label: string };
 
-export function EntityTable({ title, table, fields, listSql, listParams = [], fixed, onOpen, emptyText, onChange, groupBy, newLabel, icon }: Props) {
+export function EntityTable({ title, table, fields, listSql, listParams = [], fixed, onOpen, emptyText, onChange, groupBy, newLabel, icon, onNew }: Props) {
   const [rows, setRows] = useState<Row[]>([]);
   const [editing, setEditing] = useState<Row | null>(null);
   const [opts, setOpts] = useState<Record<string, Opt[]>>({});
@@ -130,7 +132,7 @@ export function EntityTable({ title, table, fields, listSql, listParams = [], fi
         <h2 className="title-ico">{icon}{title}</h2>
         <div className="row">
           <input className="search" placeholder="Suchen…" value={filter} onChange={(e) => setFilter(e.target.value)} />
-          <button className="primary" onClick={() => setEditing({})}>+ {newLabel ?? 'Neu'}</button>
+          <button className="primary" onClick={() => (onNew ? onNew() : setEditing({}))}>+ {newLabel ?? 'Neu'}</button>
         </div>
       </div>
       {visible.length === 0 ? (
