@@ -147,7 +147,7 @@ export function WegAbrechnungPage() {
         b.absatz(`Ihre Einheit ist vermietet (${r.mieter.name})`, 1);
         b.tabelle(['Verrechnung mit Ihrem Mieter (Nebenkostenabrechnung)', 'Betrag'], [
           ['Umlagefähige Kosten für den Mietzeitraum', geld(r.mieter.kosten)],
-          [r.mieter.ueberEigentuemer ? 'Vorauszahlungen des Mieters laut Mietvertrag (in Ihrem Hausgeld enthalten)' : 'Vorauszahlungen des Mieters', geld(r.mieter.vz)],
+          [r.mieter.ueberEigentuemer ? 'Vorauszahlungen des Mieters laut Mietvertrag (an Sie gezahlt)' : 'Vorauszahlungen des Mieters', geld(r.mieter.vz)],
         ], [[r.mieter.saldo > 0 ? 'Nachzahlung des Mieters' : 'Guthaben des Mieters', geld(Math.abs(r.mieter.saldo))]]);
         b.absatz(r.mieter.ueberEigentuemer
           ? `Die Nebenkostenabrechnung für Ihren Mieter erstellen wir gesondert. Die ${r.mieter.saldo > 0 ? 'Nachzahlung zahlt der Mieter an Sie' : 'Erstattung an den Mieter leisten Sie'}.`

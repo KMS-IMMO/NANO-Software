@@ -127,7 +127,9 @@ async function seedDemo(d: Driver) {
     (1,2,'2024-04-01',NULL,620,140,80,1860,1,0,'Standard'),
     (2,3,'2025-08-01','2026-12-31',790,170,95,2370,3,0,'Staffelmiete'),
     (4,4,'2023-01-01',NULL,900,120,60,2700,0,19,'Indexmiete'),
-    (6,7,'2026-03-01',NULL,700,150,90,2100,2,0,'Standard')`);
+    (6,7,'2025-03-01',NULL,700,150,90,2100,2,0,'Standard')`);
+  // Vermietete WEG-Einheit: Mieter zahlt an den Eigentümer, wir erstellen nur seine Nebenkostenabrechnung
+  await ex(`UPDATE mietvertraege SET zahlung_an = 'Eigentümer' WHERE einheit_id = 6`);
   await ex(`INSERT INTO bankkonten (objekt_id, name, bank, iban) VALUES
     (1,'Mietkonto Lindenstraße','Sparkasse KölnBonn','DE11370501980000000001'),
     (2,'WEG-Konto Rheinblick','Volksbank Köln Bonn','DE22380601860000000002')`);

@@ -30,6 +30,13 @@ export async function nkBerechnen(objektId: number, jahr: number): Promise<{ ein
   const messdienst: Record<number, number> = Object.fromEntries(h.map((x) => [x.einheit_id, Number(x.heizkosten) + Number(x.warmwasser)]));
   // Heizkosten nach Messdienst verteilen, sobald Ergebnisse eingetragen sind
   if (Object.keys(messdienst).length) positionen = positionen.map((p) => (p.nummer === HEIZ_KONTO ? { ...p, schluessel: 'Messdienst' } : p));
+  // In der WEG gelten dieselben Schlüssel wie in der Jahresabrechnung (MEA, solange für das Objekt kein eigener eingestellt ist),
+  // damit der Mieter genau den umlagefähigen Anteil des Eigentümers für seine Mietzeit trägt
+  const o = (await db.select('SELECT verwaltungsart FROM objekte WHERE id = $1', [objektId]))[0];
+  if (o?.verwaltungsart === 'WEG') {
+    const eigene = await db.select('SELECT buchungskonto_id FROM objekt_schluessel WHERE objekt_id = $1', [objektId]);
+    positionen = positionen.map((p) => (p.schluessel === 'Messdienst' || eigene.some((e) => e.buchungskonto_id === p.konto_id) ? p : { ...p, schluessel: 'MEA' }));
+  }
   const v = await db.select(`SELECT v.* FROM verbrauch v JOIN einheiten e ON e.id = v.einheit_id WHERE e.objekt_id = $1 AND v.jahr = $2`, [objektId, jahr]);
   const verbrauch = Object.fromEntries(v.map((x) => [`${x.einheit_id}-${x.buchungskonto_id}`, Number(x.menge)]));
   const vz = await vorauszahlungen(jahr, ['NK', 'HK']);
