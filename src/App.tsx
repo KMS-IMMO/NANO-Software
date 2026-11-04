@@ -1,7 +1,8 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { HashRouter, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import {
-  BarChart3, Bell, Building, Building2, ChevronDown, FolderOpen, Hammer, Home, Landmark, Lock, Search, Settings, User, Users, Wallet, Wrench,
+  AlarmClock, Banknote, Bell, Building2, Calendar, ChevronRight, CircleCheck, Columns3, Contact, CreditCard, FolderOpen, LayoutDashboard, Landmark, Lock,
+  Network, Receipt, Search, Settings, SquarePen, UserCog, Users,
 } from 'lucide-react';
 import { db, sicherheit, type Row } from './db';
 import { personLabel } from './db/labels';
@@ -22,39 +23,58 @@ import { EinstellungenPage, KontenPage, RechnungenPage } from './pages/Konten';
 import { BeschluessePage, InstandhaltungPage } from './pages/Weg';
 import { AuswertungPage, BerichtePage, JournalPage, RegelnPage } from './pages/Buchhaltung';
 import { ObjektAssistentPage } from './pages/ObjektAssistent';
+import { ErinnerungenPage, KalenderPage, KontaktePage, NotizenPage, TicketBoardsPage, TodoPage } from './pages/Produktiv';
 
-type Item = { to: string; label: string; icon?: ReactNode };
+type Item = { to: string; label: string; icon?: ReactNode; sub?: string };
 type Group = { label: string; icon: ReactNode; items: Item[] };
-const NAV: (Item | Group)[] = [
-  { to: '/', label: 'Dashboard', icon: <Home size={18} /> },
-  { to: '/objekte', label: 'Liegenschaften', icon: <Building2 size={18} /> },
-  { label: 'WEG-Verwaltung', icon: <Users size={18} />, items: [
-    { to: '/beschluesse', label: 'Beschlusssammlung' },
-    { to: '/weg-abrechnung', label: 'Jahresabrechnung' },
+type Abschnitt = { titel: string; eintraege: (Item | Group)[] };
+const I = 18;
+const NAV: Abschnitt[] = [
+  { titel: 'Verwaltung', eintraege: [
+    { to: '/', label: 'Dashboard', icon: <LayoutDashboard size={I} /> },
+    { to: '/objekte', label: 'Immobilien', icon: <Building2 size={I} /> },
+    { to: '/eigentuemer', label: 'Eigentümer', icon: <Users size={I} /> },
+    { to: '/verwalter', label: 'Verwalter', icon: <UserCog size={I} /> },
+    { to: '/kontakte', label: 'Kontakte', icon: <Contact size={I} /> },
+    { to: '/ablage', label: 'Dateimanager', icon: <FolderOpen size={I} /> },
   ] },
-  { label: 'Mietverwaltung', icon: <Building size={18} />, items: [
-    { to: '/vertraege', label: 'Mietverträge' },
-    { to: '/nebenkosten', label: 'Nebenkostenabrechnung' },
-    { to: '/eigentuemer-abrechnung', label: 'Eigentümerabrechnung' },
+  { titel: 'Buchhaltung', eintraege: [
+    { label: 'Online Banking', icon: <CreditCard size={I} />, items: [
+      { to: '/bank', label: 'Bank & Zuordnung' },
+      { to: '/regeln', label: 'Buchungsregeln' },
+    ] },
+    { label: 'Sollstellung', icon: <Banknote size={I} />, items: [
+      { to: '/offene-posten', label: 'Offene Posten' },
+      { to: '/vertraege', label: 'Mietverträge' },
+      { to: '/mahnungen', label: 'Mahnungen' },
+      { to: '/weg-abrechnung', label: 'Hausgeldabrechnung' },
+      { to: '/nebenkosten', label: 'Nebenkostenabrechnung' },
+      { to: '/eigentuemer-abrechnung', label: 'Eigentümerabrechnung' },
+    ] },
+    { to: '/rechnungen', label: 'Ausgaben', icon: <Receipt size={I} /> },
+    { label: 'Buchungskonten', icon: <Network size={I} />, items: [
+      { to: '/konten', label: 'Kontenplan' },
+      { to: '/journal', label: 'Buchungsjournal' },
+      { to: '/auswertung', label: 'Auswertung (GuV)' },
+      { to: '/berichte', label: 'Berichte' },
+    ] },
   ] },
-  { to: '/eigentuemer', label: 'Eigentümer', icon: <Users size={18} /> },
-  { to: '/mieter', label: 'Mieter', icon: <User size={18} /> },
-  { to: '/firmen', label: 'Firmenkontakte', icon: <Hammer size={18} /> },
-  { label: 'Buchhaltung', icon: <Wallet size={18} />, items: [
-    { to: '/bank', label: 'Banken & Konten' },
-    { to: '/offene-posten', label: 'Offene Posten' },
-    { to: '/rechnungen', label: 'Rechnungen' },
-    { to: '/mahnungen', label: 'Mahnungen' },
-    { to: '/journal', label: 'Buchungsjournal' },
-    { to: '/regeln', label: 'Buchungsregeln' },
-    { to: '/auswertung', label: 'Auswertung (GuV)' },
-    { to: '/konten', label: 'Kontenplan' },
+  { titel: 'Produktivität', eintraege: [
+    { to: '/kalender', label: 'Kalender', icon: <Calendar size={I} /> },
+    { to: '/erinnerungen', label: 'Erinnerungen', icon: <AlarmClock size={I} /> },
+    { to: '/tickets', label: 'Ticket-Boards', sub: 'Board-Verwaltung', icon: <Columns3 size={I} /> },
+    { to: '/todo', label: 'Todo', sub: 'Aufgaben', icon: <CircleCheck size={I} /> },
+    { to: '/notizen', label: 'Notizen', icon: <SquarePen size={I} /> },
   ] },
-  { to: '/instandhaltung', label: 'Instandhaltung', icon: <Wrench size={18} /> },
-  { to: '/ablage', label: 'Dokumente', icon: <FolderOpen size={18} /> },
-  { to: '/berichte', label: 'Berichte', icon: <BarChart3 size={18} /> },
-  { to: '/einstellungen', label: 'Einstellungen', icon: <Settings size={18} /> },
 ];
+
+function NavEintrag({ n, kompakt }: { n: Item; kompakt: boolean }) {
+  return (
+    <NavLink to={n.to} end={n.to === '/'} className={'nav-item' + (n.sub ? ' zwei' : '')} title={kompakt ? n.label : undefined}>
+      {n.icon}<span>{n.label}{n.sub && <small>{n.sub}</small>}</span>
+    </NavLink>
+  );
+}
 
 function NavGroup({ g, kompakt }: { g: Group; kompakt: boolean }) {
   const loc = useLocation();
@@ -65,7 +85,7 @@ function NavGroup({ g, kompakt }: { g: Group; kompakt: boolean }) {
   return (
     <>
       <button className={'nav-item group-btn' + (inside ? ' inside' : '')} title={kompakt ? g.label : undefined} onClick={() => (kompakt ? nav(g.items[0].to) : setOpen(!open))}>
-        {g.icon}<span>{g.label}</span><ChevronDown size={16} className={'chev' + (open ? ' open' : '')} />
+        {g.icon}<span>{g.label}</span><ChevronRight size={16} className={'chev' + (open ? ' open' : '')} />
       </button>
       {open && !kompakt && g.items.map((i) => <NavLink key={i.to} to={i.to} className="nav-item sub">{i.label}</NavLink>)}
     </>
@@ -147,9 +167,14 @@ function Rahmen() {
         <aside className="side">
           <div className="side-logo"><Logo /></div>
           <nav>
-            {NAV.map((n) => 'items' in n
-              ? <NavGroup key={n.label} g={n} kompakt={kompakt} />
-              : <NavLink key={n.to} to={n.to} end={n.to === '/'} className="nav-item" title={kompakt ? n.label : undefined}>{n.icon}<span>{n.label}</span></NavLink>)}
+            {NAV.map((a) => (
+              <div key={a.titel} className="nav-abschnitt">
+                <div className="nav-titel">{a.titel}</div>
+                {a.eintraege.map((n) => 'items' in n
+                  ? <NavGroup key={n.label} g={n} kompakt={kompakt} />
+                  : <NavEintrag key={n.to} n={n} kompakt={kompakt} />)}
+              </div>))}
+            <div className="nav-unten"><NavEintrag n={{ to: '/einstellungen', label: 'Einstellungen', icon: <Settings size={I} /> }} kompakt={kompakt} /></div>
           </nav>
           <div className="side-foot"><Landmark size={13} /> KMS Immobilienverwaltung · Version 0.2</div>
         </aside>
@@ -183,6 +208,13 @@ function Rahmen() {
               <Route path="/regeln" element={<RegelnPage />} />
               <Route path="/auswertung" element={<AuswertungPage />} />
               <Route path="/berichte" element={<BerichtePage />} />
+              <Route path="/verwalter" element={<PersonenPage rolle="Verwalter" titel="Verwalter (Mitarbeiter)" />} />
+              <Route path="/kontakte" element={<KontaktePage />} />
+              <Route path="/kalender" element={<KalenderPage />} />
+              <Route path="/erinnerungen" element={<ErinnerungenPage />} />
+              <Route path="/tickets" element={<TicketBoardsPage />} />
+              <Route path="/todo" element={<TodoPage />} />
+              <Route path="/notizen" element={<NotizenPage />} />
             </Routes>
           </main>
         </div>
