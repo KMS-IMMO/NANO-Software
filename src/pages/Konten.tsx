@@ -3,6 +3,9 @@ import { SicherheitKarte } from '../components/SicherheitKarte';
 import { db, sicherheit } from '../db';
 import { useObjektKontext } from '../logic/objektKontext';
 import { useEffect, useState } from 'react';
+import { Paperclip } from 'lucide-react';
+import { RechnungErfassen } from '../components/RechnungErfassen';
+import { oeffnen } from '../lib/dateien';
 import { SCHLUESSEL, kontoOptions } from '../db/labels';
 
 const haken = (v: any) => (v ? '✓' : '');
@@ -32,20 +35,29 @@ export function KontenPage() {
 
 export function RechnungenPage() {
   const fix = useObjektKontext();
+  const [version, setVersion] = useState(0);
+  const [info, setInfo] = useState('');
   return (
+    <>
+    <div className="page-head"><h1>Rechnungen</h1><p className="muted">{fix ? `Rechnungen und Gutschriften von ${fix.name}` : 'Rechnungen und Gutschriften aller Liegenschaften'}</p></div>
+    <RechnungErfassen objektFest={fix?.id} onSaved={(t) => { setInfo(t); setVersion(version + 1); }} />
+    {info && <p className="info">{info}</p>}
     <EntityTable
-      title="Rechnungen und Kosten"
+      version={version}
+      title="Erfasste Rechnungen"
       table="rechnungen"
       fixed={fix ? { objekt_id: fix.id } : undefined}
       fields={[
         { key: 'datum', label: 'Datum', type: 'date', required: true },
         ...(fix ? [] : [{ key: 'objekt_id', label: 'Objekt', type: 'select' as const, required: true, optionsSql: 'SELECT id AS value, name AS label FROM objekte ORDER BY name' }]),
-        { key: 'einheit_id', label: 'Einheit', type: 'select', hideInTable: true, leer: 'Alle Einheiten (Umlage nach Schlüssel)',
+        { key: 'einheit_id', label: 'Einheit', type: 'select', leer: 'Alle Einheiten (Umlage nach Schlüssel)',
           optionsSql: `SELECT e.id AS value, ${fix ? '' : "o.name || ' – ' || "}e.nummer AS label FROM einheiten e JOIN objekte o ON o.id = e.objekt_id ${fix ? `WHERE e.objekt_id = ${fix.id}` : ''} ORDER BY label` },
         { key: 'firma_id', label: 'Firma', type: 'select', optionsSql: 'SELECT id AS value, name AS label FROM firmen ORDER BY name' },
         { key: 'rechnungsnr', label: 'Rechnungsnr.' },
         { key: 'buchungskonto_id', label: 'Buchungskonto', type: 'select', required: true, wide: true, optionsSql: kontoOptions("art IN ('Aufwand')") },
-        { key: 'betrag', label: 'Betrag brutto', type: 'number', required: true, format: eur },
+        { key: 'betrag', label: 'Betrag brutto', type: 'number', required: true, format: (v: any) => <span className={v < 0 ? '' : 'neg'}>{eur(v)}{v < 0 ? ' Gutschrift' : ''}</span> },
+        { key: 'mwst_satz', label: 'MwSt %', type: 'number', format: (v: any) => (v == null ? '' : `${v} %`) },
+        { key: 'beleg', label: 'Beleg', computed: true, format: (v: any) => v ? <button className="link" title={v} onClick={(e) => { e.stopPropagation(); oeffnen(v); }}><Paperclip size={15} /></button> : '' },
         { key: 'anteil_lohn', label: 'davon Arbeitskosten (§35a)', type: 'number', format: eur, hideInTable: true },
         { key: 'zeitraum_von', label: 'Leistung von', type: 'date', hideInTable: true },
         { key: 'zeitraum_bis', label: 'Leistung bis', type: 'date', hideInTable: true },
@@ -53,11 +65,13 @@ export function RechnungenPage() {
         { key: 'bezahlt_am', label: 'Bezahlt am', type: 'date' },
         { key: 'notiz', label: 'Notiz', type: 'textarea', hideInTable: true },
       ]}
-      listSql={`SELECT r.*, o.name AS objekt_id_label, k.nummer || ' ' || k.name AS buchungskonto_id_label, f.name AS firma_id_label
-        FROM rechnungen r LEFT JOIN objekte o ON o.id = r.objekt_id LEFT JOIN buchungskonten k ON k.id = r.buchungskonto_id
+      listSql={`SELECT r.*, o.name AS objekt_id_label, k.nummer || ' ' || k.name AS buchungskonto_id_label, f.name AS firma_id_label,
+          COALESCE(eh.nummer, 'alle') AS einheit_id_label, d.pfad AS beleg
+        FROM rechnungen r LEFT JOIN einheiten eh ON eh.id = r.einheit_id LEFT JOIN dokumente d ON d.id = r.dokument_id LEFT JOIN objekte o ON o.id = r.objekt_id LEFT JOIN buchungskonten k ON k.id = r.buchungskonto_id
         LEFT JOIN firmen f ON f.id = r.firma_id ${fix ? `WHERE r.objekt_id = ${fix.id}` : ''} ORDER BY r.datum DESC`}
       emptyText="Noch keine Rechnungen erfasst."
     />
+    </>
   );
 }
 
