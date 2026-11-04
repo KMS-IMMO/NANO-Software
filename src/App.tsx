@@ -1,11 +1,12 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { HashRouter, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import {
-  BarChart3, Bell, Building, Building2, ChevronDown, FolderOpen, Hammer, Home, Landmark, Search, Settings, User, Users, Wallet, Wrench,
+  BarChart3, Bell, Building, Building2, ChevronDown, FolderOpen, Hammer, Home, Landmark, Lock, Search, Settings, User, Users, Wallet, Wrench,
 } from 'lucide-react';
-import { db, type Row } from './db';
+import { db, sicherheit, type Row } from './db';
 import { personLabel } from './db/labels';
 import { OP_SQL } from './logic/soll';
+import { Sperre, SPERREN } from './components/Sperre';
 import { Logo } from './components/Logo';
 import { DashboardPage } from './pages/Dashboard';
 import { ObjektDetailPage, ObjektePage } from './pages/Objekte';
@@ -121,6 +122,7 @@ function Topbar() {
       <NavLink to="/offene-posten" className="bell" title={`${offen} überfällige Posten`}>
         <Bell size={20} />{offen > 0 && <span className="dot">{offen > 99 ? '99+' : offen}</span>}
       </NavLink>
+      {sicherheit.aktiv && <button className="bell" title="Jetzt sperren" onClick={() => window.dispatchEvent(new Event(SPERREN))}><Lock size={20} /></button>}
       <NavLink to="/einstellungen" className="avatar" title="Einstellungen">{kurz}</NavLink>
     </header>
   );
@@ -128,6 +130,7 @@ function Topbar() {
 
 export default function App() {
   return (
+    <Sperre>
     <HashRouter>
       <div className="app">
         <aside className="side">
@@ -174,5 +177,6 @@ export default function App() {
         </div>
       </div>
     </HashRouter>
+    </Sperre>
   );
 }

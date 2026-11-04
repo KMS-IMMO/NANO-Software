@@ -1,80 +1,22 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "enables the default permissions",
-  "windows": [
-    "main"
-  ],
+  "description": "Nur die Rechte, die die Oberfläche wirklich braucht. Dateien schreiben nur in Dokumente, Schreibtisch, Downloads und den in den Einstellungen gewählten Ablageordner (wird zur Laufzeit freigegeben).",
+  "windows": ["main"],
   "permissions": [
     "core:default",
-    "sql:default",
-    "sql:allow-execute",
-    "dialog:default",
-    "opener:default",
+    "dialog:allow-open",
     {
       "identifier": "opener:allow-open-path",
-      "allow": [
-        {
-          "path": "**"
-        }
-      ]
+      "allow": [{ "path": "**" }]
     },
-    "fs:default",
     {
       "identifier": "fs:allow-write-file",
-      "allow": [
-        {
-          "path": "**"
-        }
-      ]
-    },
-    {
-      "identifier": "fs:allow-read-file",
-      "allow": [
-        {
-          "path": "**"
-        }
-      ]
+      "allow": [{ "path": "$DOCUMENT/**" }, { "path": "$DESKTOP/**" }, { "path": "$DOWNLOAD/**" }]
     },
     {
       "identifier": "fs:allow-mkdir",
-      "allow": [
-        {
-          "path": "**"
-        }
-      ]
-    },
-    {
-      "identifier": "fs:allow-exists",
-      "allow": [
-        {
-          "path": "**"
-        }
-      ]
-    },
-    {
-      "identifier": "fs:allow-read-dir",
-      "allow": [
-        {
-          "path": "**"
-        }
-      ]
-    },
-    {
-      "identifier": "fs:allow-copy-file",
-      "allow": [
-        {
-          "path": "**"
-        }
-      ]
-    },
-    {
-      "identifier": "fs:allow-remove",
-      "allow": [
-        {
-          "path": "**"
-        }
-      ]
+      "allow": [{ "path": "$DOCUMENT/**" }, { "path": "$DESKTOP/**" }, { "path": "$DOWNLOAD/**" }]
     }
   ]
 }
