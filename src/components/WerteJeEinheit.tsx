@@ -1,7 +1,7 @@
 // Eingabe je Einheit für Konten mit Schlüssel „Verbrauch“ (Menge) oder „Summe“ (fester Betrag in €).
 import { useEffect, useState } from 'react';
 import { db, type Row } from '../db';
-import { eur } from './EntityTable';
+import { eur, num } from './EntityTable';
 import type { Position } from '../logic/verteilung';
 
 const zahl = (s: string) => Number(String(s).replace(/\./g, '').replace(',', '.')) || 0;
@@ -31,7 +31,7 @@ export function WerteJeEinheit({ objekt, jahr, einheiten, konten, onSaved }: { o
     <section className="card">
       <div className="card-head"><h2>Beträge und Verbrauch je Einheit für {jahr}</h2><button onClick={speichern}>Speichern und neu berechnen</button></div>
       <table className="list">
-        <thead><tr><th>Einheit</th>{konten.map((k) => <th key={k.konto_id} className="num">{k.schluessel === 'Summe' ? `Betrag € ${k.name}` : `Verbrauch ${k.name}`}</th>)}</tr></thead>
+        <thead><tr><th>Einheit</th>{konten.map((k) => <th key={k.konto_id} className="num">{k.schluessel === 'Summe' ? `${k.name} (€, manuell)` : `Verbrauch ${k.name}`}</th>)}</tr></thead>
         <tbody>{einheiten.map((e) => (
           <tr key={e.id}><td>{e.nummer}</td>
             {konten.map((k) => (
@@ -39,8 +39,11 @@ export function WerteJeEinheit({ objekt, jahr, einheiten, konten, onSaved }: { o
                 onChange={(ev) => setWerte({ ...werte, [`${e.id}-${k.konto_id}`]: ev.target.value })} /></td>))}
           </tr>))}
         </tbody>
+        <tfoot><tr><td>Summe</td>{konten.map((k) => <td key={k.konto_id} className="num">{k.schluessel === 'Summe'
+          ? <>{eur(einheiten.reduce((a, e) => a + zahl(werte[`${e.id}-${k.konto_id}`] ?? '0'), 0))}<div className="muted small">von {eur(k.betrag)}</div></>
+          : num(einheiten.reduce((a, e) => a + zahl(werte[`${e.id}-${k.konto_id}`] ?? '0'), 0))}</td>)}</tr></tfoot>
       </table>
-      {abw.map(({ p, s }) => <p key={p.konto_id} className="warn">Schlüssel „Summe“ bei {p.name}: eingetragen {eur(s)}, Kosten laut Buchhaltung {eur(p.betrag)}. Bitte prüfen.</p>)}
+      {abw.map(({ p, s }) => <p key={p.konto_id} className="warn">{p.name} (manuell): eingetragen {eur(s)}, Kosten laut Buchhaltung {eur(p.betrag)}. Es fehlen {eur(p.betrag - s)} zur Gesamtsumme.</p>)}
     </section>
   );
 }

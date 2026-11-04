@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { EntityTable, datum, eur, type Field } from '../components/EntityTable';
 import { db, type Row } from '../db';
+import { useObjektKontext } from '../logic/objektKontext';
 import { personLabel, personOptions } from '../db/labels';
 import { mieteImMonat } from '../logic/soll';
 
@@ -34,15 +35,18 @@ const listSql = (where = '1=1') => `SELECT v.*, o.name || ' – ' || e.nummer AS
 
 export function VertraegePage() {
   const nav = useNavigate();
+  const fix = useObjektKontext();
+  const felder = fix ? vertragFields.map((f) => f.key === 'einheit_id'
+    ? { ...f, optionsSql: `SELECT id AS value, nummer || ' (' || typ || ')' AS label FROM einheiten WHERE objekt_id = ${fix.id} ORDER BY nummer` } : f) : vertragFields;
   return (
     <EntityTable
-      title="Mietverträge"
+      title={fix ? 'Mieter und Mietverträge' : 'Mietverträge'}
       table="mietvertraege"
-      fields={[...vertragFields,
+      fields={[...felder,
         { key: 'warm', label: 'Miete aktuell', computed: true, type: 'number', format: (_v, r) => <AktuelleMiete v={r} /> },
         { key: 'status', label: 'Status', computed: true, format: (v) => <span className={'pill ' + v}>{v}</span> }]}
-      listSql={listSql()}
-      onOpen={(r) => nav(`/vertraege/${r.id}`)}
+      listSql={listSql(fix ? `o.id = ${fix.id}` : undefined)}
+      onOpen={(r) => nav(fix ? `/objekte/${fix.id}/vertrag/${r.id}` : `/vertraege/${r.id}`)}
       emptyText="Noch keine Mietverträge. Lege zuerst Einheit und Mieter an."
     />
   );
@@ -57,8 +61,10 @@ function AktuelleMiete({ v }: { v: Row }) {
   return <>{eur(m.kalt + m.nk + m.hk + m.ust)}</>;
 }
 
-export function VertragDetailPage() {
-  const id = Number(useParams().id);
+export function VertragDetailPage({ vertragId }: { vertragId?: number }) {
+  const p = useParams();
+  const id = vertragId ?? Number(p.id);
+  const fix = useObjektKontext();
   const [v, setV] = useState<Row | null>(null);
   const [anp, setAnp] = useState<Row[]>([]);
   const reload = async () => {
@@ -71,7 +77,7 @@ export function VertragDetailPage() {
   return (
     <>
       <div className="page-head">
-        <p className="muted small"><Link to="/vertraege">Mietverträge</Link> ›</p>
+        <p className="muted small"><Link to={fix ? `/objekte/${fix.id}/mieter` : '/vertraege'}>{fix ? 'Mieter und Mietverträge' : 'Mietverträge'}</Link> ›</p>
         <h1>{v.mieter_id_label} <span className={'pill ' + v.status}>{v.status}</span></h1>
         <p className="muted">{v.einheit_id_label} · seit {datum(v.beginn)}{v.ende ? ` bis ${datum(v.ende)}` : ''} · {v.mietart}
           {v.personenzahl != null ? ` · ${v.personenzahl} Pers.` : ''}</p>

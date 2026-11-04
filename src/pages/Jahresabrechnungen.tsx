@@ -2,6 +2,8 @@
 // und jährliche Eigentümerabrechnung für die Mietverwaltung.
 import { useEffect, useState } from 'react';
 import { db, type Row } from '../db';
+import { SchluesselWahl } from '../components/SchluesselWahl';
+import { useObjektKontext } from '../logic/objektKontext';
 import { eur, num, datum } from '../components/EntityTable';
 import { kostenErmitteln, nutzerErmitteln, verteilen, type Ergebnis, type Position } from '../logic/verteilung';
 import { Brief, absender, dDatum, geld } from '../lib/pdf';
@@ -15,20 +17,25 @@ const HEIZ_KONTO = '1200';
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
 function useObjekte(art: 'WEG' | 'Mietverwaltung') {
+  const fix = useObjektKontext();
   const [objekte, setObjekte] = useState<Row[]>([]);
-  const [objekt, setObjekt] = useState<number | ''>('');
-  useEffect(() => { db.select('SELECT * FROM objekte WHERE verwaltungsart = $1 ORDER BY name', [art]).then((o) => { setObjekte(o); if (o.length) setObjekt(o[0].id); }); }, []);
+  const [objekt, setObjekt] = useState<number | ''>(fix?.id ?? '');
+  useEffect(() => {
+    db.select(fix ? 'SELECT * FROM objekte WHERE id = $1' : 'SELECT * FROM objekte WHERE verwaltungsart = $1 ORDER BY name', [fix ? fix.id : art])
+      .then((o) => { setObjekte(o); if (o.length && !fix) setObjekt(o[0].id); });
+  }, []);
   return { objekte, objekt, setObjekt, o: objekte.find((x) => x.id === objekt) };
 }
 
 function Kopf({ titel, text, objekte, objekt, setObjekt, jahr, setJahr, children }: any) {
+  const fix = useObjektKontext();
   return (
     <>
       <div className="page-head"><h1>{titel}</h1><p className="muted">{text}</p></div>
       <section className="card row">
-        <select style={{ width: 300 }} value={objekt} onChange={(e) => setObjekt(Number(e.target.value))}>
+        {!fix && <select style={{ width: 300 }} value={objekt} onChange={(e) => setObjekt(Number(e.target.value))}>
           {objekte.map((o: Row) => <option key={o.id} value={o.id}>{o.name}</option>)}
-        </select>
+        </select>}
         <label className="inline">Jahr <input type="number" style={{ width: 90 }} value={jahr} onChange={(e) => setJahr(Number(e.target.value))} /></label>
         <span className="grow" />
         {children}
@@ -50,6 +57,12 @@ export function WegAbrechnungPage() {
   const [verm, setVerm] = useState<Row>({});
   const [info, setInfo] = useState('');
   const [einheiten, setEinheiten] = useState<Row[]>([]);
+  const [stand, setStand] = useState(0);
+  const anteile = (kontoId: number) => {
+    const m: Record<number, number> = {};
+    for (const r of erg) for (const z of r.zeilen) if (z.pos.konto_id === kontoId) m[r.nutzer.einheit_id] = (m[r.nutzer.einheit_id] ?? 0) + z.betrag;
+    return m;
+  };
 
   async function rechnen() {
     if (objekt === '') return;
@@ -190,10 +203,13 @@ export function WegAbrechnungPage() {
       <section className="card">
         <div className="card-head"><h2>Gesamtabrechnung: Ausgaben</h2></div>
         {pos.length === 0 ? <p className="muted">Keine Ausgaben im Jahr {jahr}.</p> : (
-          <table className="list"><thead><tr><th>Konto</th><th>Kostenart</th><th>umlagefähig</th><th>Schlüssel</th><th className="num">Betrag</th></tr></thead>
-            <tbody>{pos.map((p) => <tr key={p.konto_id}><td>{p.nummer}</td><td>{p.name}</td><td>{p.umlagefaehig ? 'ja' : 'nein'}</td><td>{p.schluessel}</td><td className="num">{eur(p.betrag)}</td></tr>)}</tbody></table>)}
+          <table className="list"><thead><tr><th>Konto</th><th>Kostenart</th><th>umlagefähig</th><th>Verteilung</th><th className="num">Betrag</th></tr></thead>
+            <tbody>{pos.map((p) => <tr key={p.konto_id}><td>{p.nummer}</td><td>{p.name}</td><td>{p.umlagefaehig ? 'ja' : 'nein'}</td>
+              <td><SchluesselWahl objekt={Number(objekt)} jahr={jahr} p={p} anteile={anteile} onChanged={(t) => { setInfo(t); setStand(stand + 1); rechnen(); }} /></td>
+              <td className="num">{eur(p.betrag)}</td></tr>)}</tbody></table>)}
+        {pos.length > 0 && <p className="muted small">Die Verteilung kannst du je Kostenposition ändern. Bei „Manuell“ trägst du den Betrag je Einheit selbst ein. Der Schlüssel gilt für diese Liegenschaft, die manuellen Beträge nur für {jahr}.</p>}
       </section>
-      {objekt !== '' && <WerteJeEinheit objekt={Number(objekt)} jahr={jahr} einheiten={einheiten}
+      {objekt !== '' && <WerteJeEinheit key={`${objekt}-${jahr}-${stand}`} objekt={Number(objekt)} jahr={jahr} einheiten={einheiten}
         konten={pos.filter((p) => p.schluessel === 'Summe' || p.schluessel === 'Verbrauch')} onSaved={() => { setInfo('Eingaben gespeichert und neu berechnet.'); rechnen(); }} />}
       <section className="card">
         <div className="card-head"><h2>Einzelabrechnungen</h2></div>

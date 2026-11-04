@@ -1,6 +1,7 @@
 import { EntityTable, eur } from '../components/EntityTable';
 import { SicherheitKarte } from '../components/SicherheitKarte';
 import { db, sicherheit } from '../db';
+import { useObjektKontext } from '../logic/objektKontext';
 import { useEffect, useState } from 'react';
 import { SCHLUESSEL, kontoOptions } from '../db/labels';
 
@@ -30,15 +31,17 @@ export function KontenPage() {
 }
 
 export function RechnungenPage() {
+  const fix = useObjektKontext();
   return (
     <EntityTable
       title="Rechnungen und Kosten"
       table="rechnungen"
+      fixed={fix ? { objekt_id: fix.id } : undefined}
       fields={[
         { key: 'datum', label: 'Datum', type: 'date', required: true },
-        { key: 'objekt_id', label: 'Objekt', type: 'select', required: true, optionsSql: 'SELECT id AS value, name AS label FROM objekte ORDER BY name' },
+        ...(fix ? [] : [{ key: 'objekt_id', label: 'Objekt', type: 'select' as const, required: true, optionsSql: 'SELECT id AS value, name AS label FROM objekte ORDER BY name' }]),
         { key: 'einheit_id', label: 'Einheit', type: 'select', hideInTable: true, leer: 'Alle Einheiten (Umlage nach Schlüssel)',
-          optionsSql: `SELECT e.id AS value, o.name || ' – ' || e.nummer AS label FROM einheiten e JOIN objekte o ON o.id = e.objekt_id ORDER BY label` },
+          optionsSql: `SELECT e.id AS value, ${fix ? '' : "o.name || ' – ' || "}e.nummer AS label FROM einheiten e JOIN objekte o ON o.id = e.objekt_id ${fix ? `WHERE e.objekt_id = ${fix.id}` : ''} ORDER BY label` },
         { key: 'firma_id', label: 'Firma', type: 'select', optionsSql: 'SELECT id AS value, name AS label FROM firmen ORDER BY name' },
         { key: 'rechnungsnr', label: 'Rechnungsnr.' },
         { key: 'buchungskonto_id', label: 'Buchungskonto', type: 'select', required: true, wide: true, optionsSql: kontoOptions("art IN ('Aufwand')") },
@@ -52,7 +55,7 @@ export function RechnungenPage() {
       ]}
       listSql={`SELECT r.*, o.name AS objekt_id_label, k.nummer || ' ' || k.name AS buchungskonto_id_label, f.name AS firma_id_label
         FROM rechnungen r LEFT JOIN objekte o ON o.id = r.objekt_id LEFT JOIN buchungskonten k ON k.id = r.buchungskonto_id
-        LEFT JOIN firmen f ON f.id = r.firma_id ORDER BY r.datum DESC`}
+        LEFT JOIN firmen f ON f.id = r.firma_id ${fix ? `WHERE r.objekt_id = ${fix.id}` : ''} ORDER BY r.datum DESC`}
       emptyText="Noch keine Rechnungen erfasst."
     />
   );

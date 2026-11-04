@@ -8,6 +8,7 @@ import { personLabel } from '../db/labels';
 import { OP_SQL } from '../logic/soll';
 import { csv, dDatum, geld, listePdf } from '../lib/pdf';
 import { oeffnen, speichern } from '../lib/dateien';
+import { useObjektKontext } from '../logic/objektKontext';
 
 const heute = () => new Date().toISOString().slice(0, 10);
 const zahl = (s: string) => Number(String(s).replace(/\./g, '').replace(',', '.')) || 0;
@@ -28,8 +29,9 @@ async function ablegen(bytes: Uint8Array, datei: string) {
 /* =================== Buchungsjournal =================== */
 
 export function JournalPage() {
+  const fix = useObjektKontext();
   const objekte = useObjekte();
-  const [objekt, setObjekt] = useState<number | ''>('');
+  const [objekt, setObjekt] = useState<number | ''>(fix?.id ?? '');
   const [jahr, setJahr] = useState(new Date().getFullYear());
   const [monat, setMonat] = useState('');
   const [konto, setKonto] = useState<number | ''>('');
@@ -80,11 +82,11 @@ export function JournalPage() {
 
   return (
     <>
-      <div className="page-head"><h1>Buchungsjournal</h1><p className="muted">Alle Buchungen aus Bankimport, Rechnungen und manuellen Buchungen</p></div>
+      <div className="page-head"><h1>{fix ? 'Einnahmen & Ausgaben' : 'Buchungsjournal'}</h1><p className="muted">{fix ? `Alle Buchungen von ${fix.name}` : 'Alle Buchungen aus Bankimport, Rechnungen und manuellen Buchungen'}</p></div>
       <section className="card row">
-        <select style={{ width: 240 }} value={objekt} onChange={(e) => setObjekt(e.target.value ? Number(e.target.value) : '')}>
+        {!fix && <select style={{ width: 240 }} value={objekt} onChange={(e) => setObjekt(e.target.value ? Number(e.target.value) : '')}>
           <option value="">Alle Liegenschaften</option>{objekte.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
-        </select>
+        </select>}
         <label className="inline">Jahr <input type="number" style={{ width: 90 }} value={jahr} onChange={(e) => setJahr(Number(e.target.value))} /></label>
         <select style={{ width: 140 }} value={monat} onChange={(e) => setMonat(e.target.value)}>
           <option value="">Alle Monate</option>
@@ -121,7 +123,7 @@ export function JournalPage() {
         <div className="modal-bg" onClick={() => setEdit(null)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <h3>{edit.id ? 'Buchung bearbeiten' : 'Buchung erfassen'}</h3>
-            <BuchungForm edit={edit} setEdit={setEdit} objekte={objekte} konten={konten} />
+            <BuchungForm edit={edit} setEdit={setEdit} objekte={objekte} konten={konten} fest={!!fix} />
             {fehler && <p className="error">{fehler}</p>}
             <div className="row end">
               {edit.id && <button className="danger" onClick={loeschen}>Löschen</button>}
@@ -135,7 +137,7 @@ export function JournalPage() {
   );
 }
 
-function BuchungForm({ edit, setEdit, objekte, konten }: { edit: Row; setEdit: (r: Row) => void; objekte: Row[]; konten: Row[] }) {
+function BuchungForm({ edit, setEdit, objekte, konten, fest }: { edit: Row; setEdit: (r: Row) => void; objekte: Row[]; konten: Row[]; fest?: boolean }) {
   const [einheiten, setEinheiten] = useState<Row[]>([]);
   useEffect(() => { if (edit.objekt_id) db.select('SELECT id, nummer FROM einheiten WHERE objekt_id = $1 ORDER BY nummer', [Number(edit.objekt_id)]).then(setEinheiten); }, [edit.objekt_id]);
   const set = (k: string, v: any) => setEdit({ ...edit, [k]: v });
@@ -143,8 +145,8 @@ function BuchungForm({ edit, setEdit, objekte, konten }: { edit: Row; setEdit: (
     <div className="form">
       <label><span>Datum *</span><input type="date" value={edit.datum ?? ''} onChange={(e) => set('datum', e.target.value)} /></label>
       <label><span>Art *</span><select value={edit.richtung} onChange={(e) => set('richtung', e.target.value)}><option>Ausgabe</option><option>Einnahme</option></select></label>
-      <label><span>Liegenschaft *</span><select value={edit.objekt_id ?? ''} onChange={(e) => setEdit({ ...edit, objekt_id: e.target.value, einheit_id: '' })}>
-        <option value="">– bitte wählen –</option>{objekte.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}</select></label>
+      {!fest && <label><span>Liegenschaft *</span><select value={edit.objekt_id ?? ''} onChange={(e) => setEdit({ ...edit, objekt_id: e.target.value, einheit_id: '' })}>
+        <option value="">– bitte wählen –</option>{objekte.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}</select></label>}
       <label><span>Einheit</span><select value={edit.einheit_id ?? ''} onChange={(e) => set('einheit_id', e.target.value)}>
         <option value="">{edit.richtung === 'Einnahme' ? 'Gesamtes Objekt' : 'Alle Einheiten (Umlage nach Schlüssel)'}</option>{einheiten.map((x) => <option key={x.id} value={x.id}>{x.nummer}</option>)}</select></label>
       <label className="wide"><span>Konto *</span><select value={edit.buchungskonto_id ?? ''} onChange={(e) => set('buchungskonto_id', e.target.value)}>
@@ -188,8 +190,9 @@ export function RegelnPage() {
 /* =================== Kontenübersicht / GuV =================== */
 
 export function AuswertungPage() {
+  const fix = useObjektKontext();
   const objekte = useObjekte();
-  const [objekt, setObjekt] = useState<number | ''>('');
+  const [objekt, setObjekt] = useState<number | ''>(fix?.id ?? '');
   const [von, setVon] = useState(`${new Date().getFullYear()}-01-01`);
   const [bis, setBis] = useState(heute());
   const [rows, setRows] = useState<Row[]>([]);
@@ -209,7 +212,7 @@ export function AuswertungPage() {
     <>
       <div className="page-head"><h1>Kontenübersicht / Auswertung</h1><p className="muted">Erträge und Aufwendungen je Konto (Zufluss/Abfluss im Zeitraum)</p></div>
       <section className="card row">
-        <select style={{ width: 260 }} value={objekt} onChange={(e) => setObjekt(Number(e.target.value))}>{objekte.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}</select>
+        {!fix && <select style={{ width: 260 }} value={objekt} onChange={(e) => setObjekt(Number(e.target.value))}>{objekte.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}</select>}
         <label className="inline">von <input type="date" value={von} onChange={(e) => setVon(e.target.value)} /></label>
         <label className="inline">bis <input type="date" value={bis} onChange={(e) => setBis(e.target.value)} /></label>
       </section>

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { db, type Row } from '../db';
+import { useObjektKontext } from '../logic/objektKontext';
 import { datum, eur } from '../components/EntityTable';
 import { kontoOptions, personOptions } from '../db/labels';
 import { BankAbruf } from '../components/BankAbruf';
@@ -11,6 +12,7 @@ import {
 type Opt = { value: number; label: string };
 
 export function BankPage() {
+  const fix = useObjektKontext();
   const [konten, setKonten] = useState<Row[]>([]);
   const [konto, setKonto] = useState<number | ''>('');
   const [rows, setRows] = useState<Row[]>([]);
@@ -24,7 +26,7 @@ export function BankPage() {
 
   useEffect(() => {
     (async () => {
-      const k = await db.select(`SELECT b.*, o.name AS objekt FROM bankkonten b LEFT JOIN objekte o ON o.id = b.objekt_id ORDER BY o.name`);
+      const k = await db.select(`SELECT b.*, o.name AS objekt FROM bankkonten b LEFT JOIN objekte o ON o.id = b.objekt_id ${fix ? `WHERE b.objekt_id = ${fix.id}` : ''} ORDER BY o.name`);
       setKonten(k);
       if (k.length && konto === '') setKonto(k[0].id);
       setPersonen(await db.select<Opt>(personOptions()));

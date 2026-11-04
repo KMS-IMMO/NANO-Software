@@ -1,6 +1,7 @@
 // Mahnwesen: Zahlungserinnerung, 1. Mahnung, 2. Mahnung als PDF mit einstellbaren Gebühren.
 import { useEffect, useState } from 'react';
 import { db, insert, type Row } from '../db';
+import { useObjektKontext } from '../logic/objektKontext';
 import { datum, eur } from '../components/EntityTable';
 import { OP_SQL } from '../logic/soll';
 import { Brief, absender, dDatum, geld } from '../lib/pdf';
@@ -14,13 +15,14 @@ interface Fall { key: string; person_id: number; einheit_id: number; schuldner: 
   verwaltungsart: string; posten: Row[]; offen: number; stufe: number; seit: string }
 
 export function MahnungenPage() {
+  const fix = useObjektKontext();
   const [faelle, setFaelle] = useState<Fall[]>([]);
   const [tage, setTage] = useState(7);
   const [info, setInfo] = useState('');
   const [busy, setBusy] = useState('');
 
   const load = async () => {
-    const ops = await db.select(`SELECT * FROM (${OP_SQL}) WHERE betrag - bezahlt > 0.005 AND faellig < date('now', $1) ORDER BY faellig`, [`-${tage} days`]);
+    const ops = await db.select(`SELECT * FROM (${OP_SQL}) WHERE betrag - bezahlt > 0.005 AND faellig < date('now', $1) ${fix ? `AND objekt_id = ${fix.id}` : ''} ORDER BY faellig`, [`-${tage} days`]);
     const m = new Map<string, Fall>();
     for (const o of ops) {
       const k = `${o.person_id}-${o.einheit_id}`;
