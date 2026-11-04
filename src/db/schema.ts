@@ -483,4 +483,8 @@ ALTER TABLE mietvertraege ADD COLUMN zahlung_an TEXT DEFAULT 'Verwaltung'; -- le
   `
 ALTER TABLE bankkonten ADD COLUMN fints_benutzer TEXT;
 `,
+  // Migration 9: Rechnungserfassung mit MwSt-Satz (Betrag bleibt brutto; Gutschrift = negativer Betrag)
+  `
+ALTER TABLE rechnungen ADD COLUMN mwst_satz REAL;
+`,
 ];
