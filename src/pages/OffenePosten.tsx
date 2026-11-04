@@ -59,7 +59,7 @@ export function OffenePostenPage() {
       <div className="page-head"><h1>Offene Posten</h1><p className="muted">Mieten und Hausgeld: Soll, gezahlt und offen</p></div>
       <div className="kpis">
         <div className="kpi"><span>Soll gesamt</span><b>{eur(soll)}</b></div>
-        <div className="kpi"><span>Gezahlt</span><b className="pos">{eur(ist)}</b></div>
+        <div className="kpi"><span>Gezahlt</span><b>{eur(ist)}</b></div>
         <div className="kpi"><span>Offen</span><b className="neg">{eur(soll - ist)}</b></div>
         <div className="kpi"><span>davon überfällig</span><b className="neg">{eur(ueber)}</b></div>
       </div>
@@ -90,7 +90,7 @@ export function OffenePostenPage() {
             <tbody>{stat.map(([k, x]) => {
               const q = x.soll ? Math.min(100, (x.ist / x.soll) * 100) : 100;
               return (
-                <tr key={k}><td>{k}</td><td className="num">{eur(x.soll)}</td><td className="num pos">{eur(x.ist)}</td>
+                <tr key={k}><td>{k}</td><td className="num">{eur(x.soll)}</td><td className="num">{eur(x.ist)}</td>
                   <td className={'num ' + (x.soll - x.ist > 0.005 ? 'neg' : '')}>{eur(x.soll - x.ist)}</td>
                   <td><div className="bar"><div style={{ width: q + '%' }} /></div><span className="small muted">{Math.round(q)} %</span></td></tr>);
             })}</tbody>

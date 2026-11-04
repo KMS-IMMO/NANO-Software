@@ -20,6 +20,8 @@ export interface Field {
   computed?: boolean;
   /** Summe in der Fußzeile bilden */
   sum?: boolean;
+  /** Text der leeren Auswahl (Standard: – bitte wählen –) */
+  leer?: string;
 }
 
 interface Props {
@@ -200,7 +202,7 @@ function Input({ f, value, opts, onChange }: { f: Field; value: any; opts?: Opt[
     case 'select':
       return (
         <select value={v} onChange={(e) => onChange(e.target.value)}>
-          <option value="">– bitte wählen –</option>
+          <option value="">{f.leer ?? '– bitte wählen –'}</option>
           {(opts ?? []).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
       );
