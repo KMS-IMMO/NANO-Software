@@ -1,9 +1,11 @@
 // Offene Posten (Miete und Hausgeld) mit Soll-Stellung und Statistik offen / gezahlt.
 import { useEffect, useMemo, useState } from 'react';
-import { db, insert, type Row } from '../db';
+import { Link } from 'react-router-dom';
+import { db, type Row } from '../db';
 import { useObjektKontext } from '../logic/objektKontext';
 import { datum, eur } from '../components/EntityTable';
-import { KONTO_FUER_ART, OP_SQL, sollStellen } from '../logic/soll';
+import { OP_SQL, mahnenAbTage, postenStatus, zahlungBuchen } from '../logic/soll';
+import { STATUS_KLASSE } from './Sollstellungen';
 
 const heute = () => new Date().toISOString().slice(0, 10);
 const offen = (r: Row) => r.betrag - r.bezahlt > 0.005;
@@ -13,33 +15,23 @@ type Gruppierung = 'Objekt' | 'Schuldner' | 'Monat' | 'Jahr';
 export function OffenePostenPage() {
   const fix = useObjektKontext();
   const [rows, setRows] = useState<Row[]>([]);
-  const [bis, setBis] = useState(heute().slice(0, 7));
-  const [filter, setFilter] = useState<'offen' | 'bezahlt' | 'alle'>('offen');
+  const [filter, setFilter] = useState<'offen' | 'erwartet' | 'fällig' | 'mahnen' | 'gemahnt' | 'bezahlt' | 'alle'>('offen');
+  const [grenze, setGrenze] = useState(14);
+  useEffect(() => { mahnenAbTage().then(setGrenze); }, []);
   const [objekt, setObjekt] = useState(fix ? String(fix.id) : '');
   const [gruppe, setGruppe] = useState<Gruppierung>(fix ? 'Schuldner' : 'Objekt');
-  const [info, setInfo] = useState('');
 
   const load = async () => setRows(await db.select(`${OP_SQL} ORDER BY s.faellig DESC, o.name, e.nummer`));
   useEffect(() => { load(); }, []);
 
-  async function stellen() {
-    const n = await sollStellen(bis);
-    setInfo(n ? `${n} neue Posten angelegt.` : 'Alles ist bereits soll-gestellt.');
-    load();
-  }
-
-  async function zahlung(r: Row) {
-    const konto = (await db.select('SELECT id FROM buchungskonten WHERE nummer = $1', [KONTO_FUER_ART[r.art] ?? '1000']))[0];
-    await insert('buchungen', {
-      datum: heute(), betrag: Math.round((r.betrag - r.bezahlt) * 100) / 100, buchungskonto_id: konto?.id ?? null,
-      objekt_id: r.objekt_id, einheit_id: r.einheit_id, sollstellung_id: r.id, text: `Zahlung ${r.art} ${r.monat} (manuell)`,
-    });
-    load();
-  }
+  async function zahlung(r: Row) { await zahlungBuchen(r); load(); }
+  const basisPfad = fix ? `/objekte/${fix.id}` : '';
 
   const objekte = useMemo(() => [...new Map(rows.map((r) => [r.objekt_id, r.objekt])).entries()], [rows]);
   const basis = rows.filter((r) => !objekt || String(r.objekt_id) === objekt);
-  const liste = basis.filter((r) => filter === 'alle' || (filter === 'offen' ? offen(r) : !offen(r)));
+  const mitStatus: Row[] = basis.map((r) => ({ ...r, status: postenStatus(r, grenze) }));
+  const liste = mitStatus.filter((r) => filter === 'alle' || (filter === 'offen' ? r.status !== 'bezahlt' : r.status === filter));
+  const zahl = (f: string) => mitStatus.filter((r) => f === 'alle' || (f === 'offen' ? r.status !== 'bezahlt' : r.status === f)).length;
   const soll = basis.reduce((a, r) => a + r.betrag, 0);
   const ist = basis.reduce((a, r) => a + r.bezahlt, 0);
   const ueber = basis.filter((r) => offen(r) && r.faellig < heute()).reduce((a, r) => a + r.betrag - r.bezahlt, 0);
@@ -68,11 +60,7 @@ export function OffenePostenPage() {
 
       <section className="card">
         <div className="card-head">
-          <div className="row">
-            <label className="inline">Soll stellen bis <input type="month" value={bis} onChange={(e) => setBis(e.target.value)} /></label>
-            <button className="primary" onClick={stellen}>Miete und Hausgeld soll stellen</button>
-            {info && <span className="muted">{info}</span>}
-          </div>
+          <p className="muted" style={{ margin: 0 }}>Welche Mieten und Hausgelder noch offen sind: <b>erwartet</b> (noch nicht fällig), <b>fällig</b> (überfällig, innerhalb von {grenze} Tagen), <b>mahnen</b> (länger überfällig) oder <b>gemahnt</b>. Neue Posten legst du unter <Link to={basisPfad + '/sollstellungen'}>Sollstellungen</Link> an.</p>
           {!fix && <select style={{ width: 220 }} value={objekt} onChange={(e) => setObjekt(e.target.value)}>
             <option value="">Alle Objekte</option>
             {objekte.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
@@ -86,7 +74,7 @@ export function OffenePostenPage() {
           <div className="seg">{(['Objekt', 'Schuldner', 'Monat', 'Jahr'] as const).map((g) =>
             <button key={g} className={gruppe === g ? 'on' : ''} onClick={() => setGruppe(g)}>pro {g === 'Schuldner' ? 'Mieter/Eigentümer' : g}</button>)}</div>
         </div>
-        {stat.length === 0 ? <p className="muted">Noch keine Posten. Klicke oben auf „soll stellen“.</p> : (
+        {stat.length === 0 ? <p className="muted">Noch keine Posten. Lege sie unter „Sollstellungen“ an.</p> : (
           <table className="list">
             <thead><tr><th>{gruppe === 'Schuldner' ? 'Mieter / Eigentümer' : gruppe}</th><th className="num">Soll</th><th className="num">Gezahlt</th><th className="num">Offen</th><th style={{ width: '30%' }}>Zahlungsquote</th></tr></thead>
             <tbody>{stat.map(([k, x]) => {
@@ -103,14 +91,14 @@ export function OffenePostenPage() {
       <section className="card">
         <div className="card-head">
           <h2>Einzelposten</h2>
-          <div className="seg">{(['offen', 'bezahlt', 'alle'] as const).map((k) =>
-            <button key={k} className={filter === k ? 'on' : ''} onClick={() => setFilter(k)}>{k[0].toUpperCase() + k.slice(1)}</button>)}</div>
+          <div className="seg">{(['offen', 'erwartet', 'fällig', 'mahnen', 'gemahnt', 'bezahlt', 'alle'] as const).map((k) =>
+            <button key={k} className={filter === k ? 'on' : ''} onClick={() => setFilter(k)}>{k[0].toUpperCase() + k.slice(1)} ({zahl(k)})</button>)}</div>
         </div>
         {liste.length === 0 ? <p className="muted">Keine Posten.</p> : (
           <table className="list">
-            <thead><tr><th>Fällig</th><th>Monat</th><th>Objekt / Einheit</th><th>Mieter / Eigentümer</th><th>Art</th><th className="num">Soll</th><th className="num">Gezahlt</th><th className="num">Offen</th><th /></tr></thead>
+            <thead><tr><th>Fällig</th><th>Monat</th><th>Objekt / Einheit</th><th>Mieter / Eigentümer</th><th>Art</th><th className="num">Soll</th><th className="num">Gezahlt</th><th className="num">Offen</th><th>Status</th><th /></tr></thead>
             <tbody>
-              {liste.slice(0, 200).map((r) => {
+              {liste.slice(0, 300).map((r) => {
                 const rest = r.betrag - r.bezahlt;
                 return (
                   <tr key={r.id}>
@@ -122,7 +110,10 @@ export function OffenePostenPage() {
                     <td className="num">{eur(r.betrag)}</td>
                     <td className="num">{eur(r.bezahlt)}</td>
                     <td className="num"><b>{eur(rest)}</b></td>
-                    <td className="actions">{rest > 0.005 && <button className="link" onClick={() => zahlung(r)}>Zahlung erfassen</button>}</td>
+                    <td><span className={'pill st-' + STATUS_KLASSE[r.status]}>{r.status}</span></td>
+                    <td className="actions">
+                      {r.status === 'mahnen' && <Link className="primary small-btn btn-link" to={basisPfad + '/mahnungen'}>Mahnen</Link>}
+                      {rest > 0.005 && <button className="link" onClick={() => zahlung(r)}>Zahlung erfassen</button>}</td>
                   </tr>
                 );
               })}

@@ -7,7 +7,7 @@ import { abholen, invoke, isTauri, kontoIban, pinGespeichert, produktId, starten
 
 type Phase = 'eingabe' | 'freigabe' | 'fertig';
 
-export function BankAbruf({ konto, onDone }: { konto: Row; onDone: (info: string) => void }) {
+export function BankAbruf({ konto, onDone, label }: { konto: Row; onDone: (info: string) => void; label?: string }) {
   const [offen, setOffen] = useState(false);
   const [benutzer, setBenutzer] = useState(konto.fints_benutzer ?? '');
   const [pin, setPin] = useState('');
@@ -64,7 +64,7 @@ export function BankAbruf({ konto, onDone }: { konto: Row; onDone: (info: string
   return (
     <>
       <button className="primary" onClick={() => setOffen(true)} disabled={!isTauri()} title={isTauri() ? '' : 'Nur in der installierten App'}>
-        <Landmark size={16} />{gespeichert ? 'Bankverbindung' : 'Bei der Bank abrufen'}</button>
+        <Landmark size={16} />{label ?? (gespeichert ? 'Bankverbindung' : 'Bei der Bank abrufen')}</button>
       {offen && (
         <div className="modal-bg" onClick={schliessen}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
@@ -100,5 +100,31 @@ export function BankAbruf({ konto, onDone }: { konto: Row; onDone: (info: string
           </div>
         </div>)}
     </>
+  );
+}
+
+/** Verbindungsstatus aller Bankkonten mit den passenden Knöpfen (verbinden, neu verbinden, abrufen) */
+export function BankVerbindungen({ konten, onDone }: { konten: Row[]; onDone: (info: string) => void }) {
+  const [pins, setPins] = useState<Record<number, boolean>>({});
+  useEffect(() => { Promise.all(konten.map(async (k) => [k.id, await pinGespeichert(k.id)] as const)).then((r) => setPins(Object.fromEntries(r))); }, [konten]);
+  if (!konten.length) return null;
+  return (
+    <section className="card">
+      <div className="card-head"><h2 className="title-ico"><Landmark size={22} />Online-Banking-Verbindung</h2></div>
+      <table className="list"><tbody>{konten.map((k) => {
+        const verbunden = !!pins[k.id];
+        const status = !verbunden ? 'nicht verbunden' : k.abruf_hinweis ? 'neu verbinden' : 'verbunden';
+        return (
+          <tr key={k.id}>
+            <td>{k.name}<div className="muted small">{[k.bank, k.iban].filter(Boolean).join(' · ')}</div></td>
+            <td><span className={'pill ' + (status === 'verbunden' ? 'st-aktiv' : status === 'neu verbinden' ? 'st-mahnen' : '')}>{status === 'verbunden' ? 'Verbunden' : status === 'neu verbinden' ? 'Neu verbinden nötig' : 'Nicht verbunden'}</span>
+              {k.abruf_hinweis && <div className="small neg">{k.abruf_hinweis}</div>}</td>
+            <td className="small muted">{k.letzter_abruf ? `Letzter Abruf ${new Date(String(k.letzter_abruf).replace(' ', 'T')).toLocaleString('de-DE')}` : 'Noch nie abgerufen'}
+              {verbunden && <div>{k.auto_abruf ? 'Automatischer Abruf beim Start an' : 'Automatischer Abruf aus'}</div>}</td>
+            <td className="actions"><BankAbruf konto={k} onDone={onDone} label={status === 'verbunden' ? 'Jetzt abrufen' : status === 'neu verbinden' ? 'Neu verbinden' : 'Verbinden'} /></td>
+          </tr>);
+      })}</tbody></table>
+      {!isTauri() && <p className="muted small">Die Verbindung zur Bank funktioniert nur in der installierten App.</p>}
+    </section>
   );
 }

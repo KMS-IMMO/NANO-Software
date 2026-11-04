@@ -86,6 +86,7 @@ const EINST: [string, string][] = [
   ['mahnung_gebuehr_2', 'Gebühr 1. Mahnung (€)'],
   ['mahnung_gebuehr_3', 'Gebühr 2. Mahnung (€)'],
   ['mahnung_frist_tage', 'Zahlungsfrist in Mahnungen (Tage)'],
+  ['mahnen_ab_tage', 'Offene Posten auf „mahnen“ setzen ab (Tage nach Fälligkeit, Standard 14)'],
   ['ablage_pfad', 'Ablageordner für Dokumente (später NAS)'],
   ['fints_produkt_id', 'FinTS-Produkt-ID für den Bankabruf (kostenlos bei fints.org)'],
 ];

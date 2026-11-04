@@ -4,7 +4,7 @@ import { db, type Row } from '../db';
 import { useObjektKontext } from '../logic/objektKontext';
 import { datum, eur } from '../components/EntityTable';
 import { kontoOptions, personOptions } from '../db/labels';
-import { BankAbruf } from '../components/BankAbruf';
+import { BankAbruf, BankVerbindungen } from '../components/BankAbruf';
 import {
   automatischZuordnen, importieren, parseDatei, vorschlag, zuordnenKonto, zuordnenPerson, zuordnenRechnung, zuordnungLoesen, type Vorschlag,
 } from '../logic/bank';
@@ -97,7 +97,7 @@ export function BankPage() {
         {k && <BankAbruf konto={k} onDone={(m) => { setInfo(m); load(); ladeKonten(); }} />}
         {k?.auto_abruf ? <span className="pill pos-pill" title={k.letzter_abruf ? `Letzter Abruf ${new Date(String(k.letzter_abruf).replace(' ', 'T')).toLocaleString('de-DE')}` : ''}>Automatischer Abruf an</span> : null}
       </div>
-      {k?.abruf_hinweis && <p className="warn">{k.abruf_hinweis}</p>}
+      <BankVerbindungen konten={konten} onDone={(m) => { setInfo(m); load(); ladeKonten(); }} />
       <div className="kpis">
         <div className="kpi"><span>Kontostand laut Import</span><b>{eur(saldo)}</b></div>
         <div className="kpi"><span>Zum Prüfen</span><b className={anzahl('offen') ? 'neg' : ''}>{anzahl('offen')}</b></div>

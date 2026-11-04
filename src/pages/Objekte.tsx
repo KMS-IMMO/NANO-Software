@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, BarChart3, BookOpen, Building2, ClipboardList, Coins, DoorOpen, FileSignature, FileText, FolderOpen, Gavel, Home, Landmark, Layers, ListChecks, Mail,
-  Maximize2, PiggyBank, Receipt, Scale, Trash2, User, Users, Wallet, Wrench } from 'lucide-react';
+import { ArrowLeft, BarChart3, CalendarRange, BookOpen, Building2, ClipboardList, Coins, DoorOpen, FileSignature, FileText, FolderOpen, Gavel, Home, Landmark, Layers, ListChecks, Mail,
+  Maximize2, PiggyBank, Scale, Trash2, User, Users, Wallet, Wrench } from 'lucide-react';
 import { BeschluesseTab, RuecklagenTab, VorgaengeTab, WirtschaftsplanTab } from './Weg';
 import { EntityTable, datum, eur, num, type Field } from '../components/EntityTable';
 import { ObjektKontext } from '../logic/objektKontext';
@@ -11,7 +11,7 @@ import { VertragDetailPage, VertraegePage } from './Vertraege';
 import { JournalPage, AuswertungPage } from './Buchhaltung';
 import { BankPage } from './Bank';
 import { OffenePostenPage } from './OffenePosten';
-import { RechnungenPage } from './Konten';
+import { SollstellungenPage } from './Sollstellungen';
 import { MahnungenPage } from './Mahnungen';
 import { NebenkostenPage } from './Nebenkosten';
 import { EigentuemerAbrechnungPage, WegAbrechnungPage } from './Jahresabrechnungen';
@@ -76,12 +76,12 @@ const ebenen = (weg: boolean): Ebene[] => [
     weg && { slug: 'eigentuemer', label: 'Eigentümer', icon: Users },
     { slug: 'mieter', label: weg ? 'Mieter vermieteter Einheiten' : 'Mieter & Mietverträge', icon: User }] },
   { titel: 'Finanzen', punkte: [
+    { slug: 'sollstellungen', label: 'Sollstellungen', icon: CalendarRange },
     { slug: 'buchungen', label: 'Einnahmen & Ausgaben', icon: BookOpen },
-    { slug: 'bank', label: 'Bank & Zuordnung', icon: Landmark },
     { slug: 'offene-posten', label: 'Offene Posten', icon: ListChecks },
-    { slug: 'rechnungen', label: 'Rechnungen', icon: Receipt },
     { slug: 'mahnungen', label: 'Mahnungen', icon: Mail },
-    { slug: 'auswertung', label: 'Auswertung (GuV)', icon: BarChart3 }] },
+    { slug: 'auswertung', label: 'Auswertung (GuV)', icon: BarChart3 },
+    { slug: 'bank', label: 'Bank & Zuordnung', icon: Landmark }] },
   { titel: weg ? 'Hausgeld & Vorauszahlungen' : 'Miete & Vorauszahlungen', punkte: [
     weg && { slug: 'hausgeld', label: 'Hausgeld anpassen', icon: Wallet },
     { slug: 'vorauszahlungen', label: weg ? 'NK-Vorauszahlungen Mieter' : 'Miete & NK-Vorauszahlungen', icon: Coins },
@@ -169,7 +169,8 @@ function Bereich({ slug, rest, o, sum, weg, reload }: { slug: string; rest: stri
     case 'buchungen': return <JournalPage />;
     case 'bank': return <BankPage />;
     case 'offene-posten': return <OffenePostenPage />;
-    case 'rechnungen': return <RechnungenPage />;
+    case 'sollstellungen': return <SollstellungenPage />;
+    case 'rechnungen': return <JournalPage />;
     case 'mahnungen': return <MahnungenPage />;
     case 'auswertung': return <AuswertungPage />;
     case 'hausgeld': return <HausgeldTab objektId={id} />;

@@ -270,3 +270,39 @@ label.check input { width: auto; margin-top: 3px; }
 .pill.pos-pill { background: #e2f3e7; color: #1e7a3c; }
 .toasts { position: fixed; right: 20px; bottom: 20px; display: flex; flex-direction: column; gap: 10px; z-index: 30; max-width: 420px; }
 .toast { display: flex; gap: 10px; align-items: flex-start; background: #1d2733; color: #fff; padding: 12px 16px; border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,.25); font-size: 13.5px; line-height: 1.4; text-decoration: none; }
+
+/* Auswahlpunkte stehen neben dem Text (Safari/WebKit nahm sonst die volle Breite) */
+input[type=radio] { width: auto; margin: 0; flex: none; }
+label.radio { flex-direction: row !important; white-space: nowrap; }
+
+/* Breites Fenster für die Rechnungserfassung */
+.modal.breit { width: 1180px; }
+.modal.breit .rerf { box-shadow: none; border: none; padding: 0; }
+.modal .card-head h3 { margin: 0; }
+
+/* Mehrfachauswahl Buchungskonten */
+.kfilter { position: relative; }
+.kfilter-btn { min-width: 220px; justify-content: space-between; display: inline-flex; gap: 10px; }
+.kfilter-bg { position: fixed; inset: 0; z-index: 19; }
+.kfilter-pop { position: absolute; top: calc(100% + 6px); left: 0; z-index: 20; background: #fff; border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 12px 30px rgba(0,0,0,.15); padding: 10px; width: 360px; display: flex; flex-direction: column; gap: 8px; }
+.kfilter-liste { max-height: 300px; overflow: auto; display: flex; flex-direction: column; gap: 4px; }
+
+/* Status offener Posten */
+.pill.st-erwartet { background: #e7eefb; color: #2f5aa8; }
+.pill.st-faellig { background: #fdf0d5; color: #9a6a00; }
+.pill.st-mahnen { background: #fbdcdc; color: #b42318; font-weight: 600; }
+.pill.st-gemahnt { background: #efe3f8; color: #6b3fa0; }
+.pill.st-aktiv, .pill.st-beglichen { background: #e2f3e7; color: #1e7a3c; }
+.pill.st-offen { background: #fbdcdc; color: #b42318; }
+a.btn-link { display: inline-block; background: var(--accent); color: #fff; border-radius: 8px; text-decoration: none; margin-right: 8px; }
+
+/* Jahresübersicht GuV */
+.jahr-chart { width: 100%; height: auto; margin-top: 8px; }
+.jahr-chart .gitter { stroke: var(--line); stroke-width: 1; }
+.jahr-chart .achse { font-size: 11px; fill: var(--muted); }
+.bar-e { fill: #34495e; background: #34495e; } .bar-a { fill: #c0392b; background: #c0392b; }
+.jahr-chart .prog { opacity: .35; }
+.leg { display: inline-block; width: 11px; height: 11px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+.prog-leg { background: repeating-linear-gradient(45deg, #34495e55, #34495e55 3px, transparent 3px, transparent 6px); border: 1px solid #34495e55; }
+.kpi.prognose { border: 1px dashed var(--accent); }
+.bar .neg-bar { background: #c0392b; height: 100%; border-radius: inherit; }

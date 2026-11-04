@@ -21,7 +21,16 @@ export function MahnungenPage() {
   const [info, setInfo] = useState('');
   const [busy, setBusy] = useState('');
 
+  const [verlauf, setVerlauf] = useState<Row[]>([]);
+  const [vFilter, setVFilter] = useState<'alle' | 'offen' | 'beglichen'>('alle');
   const load = async () => {
+    // Alle erstellten Mahnungen; beglichen, sobald alle gemahnten Posten bezahlt sind
+    const mv = await db.select(`SELECT m.*, o.name AS objekt, e.nummer AS einheit FROM mahnungen m LEFT JOIN objekte o ON o.id = m.objekt_id LEFT JOIN einheiten e ON e.id = m.einheit_id
+      ${fix ? `WHERE m.objekt_id = ${fix.id}` : ''} ORDER BY m.datum DESC, m.id DESC`);
+    const ids = [...new Set(mv.flatMap((x) => String(x.posten).split(',').filter(Boolean).map(Number)))];
+    const gemahnt = ids.length ? await db.select(`SELECT id, betrag, bezahlt FROM (${OP_SQL}) WHERE id IN (${ids.join(',')})`) : [];
+    const rest = new Map(gemahnt.map((o) => [o.id, Math.max(0, o.betrag - o.bezahlt)]));
+    setVerlauf(mv.map((x) => { const r = String(x.posten).split(',').filter(Boolean).reduce((a, id) => a + (rest.get(Number(id)) ?? 0), 0); return { ...x, rest: r, beglichen: r <= 0.005 }; }));
     const ops = await db.select(`SELECT * FROM (${OP_SQL}) WHERE betrag - bezahlt > 0.005 AND faellig < date('now', $1) ${fix ? `AND objekt_id = ${fix.id}` : ''} ORDER BY faellig`, [`-${tage} days`]);
     const m = new Map<string, Fall>();
     for (const o of ops) {
@@ -82,6 +91,9 @@ export function MahnungenPage() {
 
       const datei = `${heute()} ${STUFEN[stufe]} ${f.einheit} ${f.schuldner}.pdf`;
       const pfad = await speichern(brief.bytes(), datei, { bezug: 'Objekt', bezugId: f.objekt_id, ordner: [o.name, 'Mahnungen'] });
+      // Verlauf: jede Mahnung mit den gemahnten Posten merken; der Status (offen/beglichen) ergibt sich laufend aus den Zahlungen
+      await insert('mahnungen', { objekt_id: f.objekt_id, einheit_id: f.einheit_id, person_id: f.person_id, schuldner: f.schuldner, stufe, datum: heute(), frist,
+        betrag: Math.round(f.offen * 100) / 100, gebuehr, posten: f.posten.map((x) => x.id).join(','), pfad });
       setInfo(`${STUFEN[stufe]} für ${f.schuldner} erstellt und abgelegt: ${pfad}`);
       oeffnen(pfad);
       load();
@@ -121,6 +133,25 @@ export function MahnungenPage() {
             </tbody>
           </table>
         )}
+      </section>
+      <section className="card">
+        <div className="card-head"><h2>Erstellte Mahnungen ({verlauf.length})</h2>
+          <div className="seg">{(['alle', 'offen', 'beglichen'] as const).map((k) => <button key={k} className={vFilter === k ? 'on' : ''} onClick={() => setVFilter(k)}>
+            {k[0].toUpperCase() + k.slice(1)} ({verlauf.filter((v) => k === 'alle' || (k === 'beglichen') === v.beglichen).length})</button>)}</div></div>
+        {verlauf.length === 0 ? <p className="muted">Noch keine Mahnungen erstellt.</p> : (
+          <table className="list">
+            <thead><tr><th>Datum</th><th>Stufe</th><th>Mieter / Eigentümer</th><th>Objekt / Einheit</th><th>Frist</th><th className="num">Gemahnt</th><th className="num">Noch offen</th><th>Status</th><th /></tr></thead>
+            <tbody>{verlauf.filter((v) => vFilter === 'alle' || (vFilter === 'beglichen') === v.beglichen).map((v) => (
+              <tr key={v.id}>
+                <td>{datum(v.datum)}</td><td>{STUFEN[v.stufe]}</td><td>{v.schuldner}</td><td>{v.objekt} – {v.einheit}</td>
+                <td className={!v.beglichen && v.frist < heute() ? 'neg' : ''}>{datum(v.frist)}</td>
+                <td className="num">{eur(v.betrag + (Number(v.gebuehr) || 0))}{v.gebuehr ? <div className="muted small">inkl. {eur(v.gebuehr)} Gebühr</div> : null}</td>
+                <td className={'num ' + (v.beglichen ? '' : 'neg')}>{eur(v.rest)}</td>
+                <td><span className={'pill st-' + (v.beglichen ? 'beglichen' : 'offen')}>{v.beglichen ? 'beglichen' : 'offen'}</span></td>
+                <td className="actions">{v.pfad && <button className="link" onClick={() => oeffnen(v.pfad)}>PDF öffnen</button>}</td>
+              </tr>))}</tbody>
+          </table>)}
+        <p className="muted small">Der Status springt automatisch auf „beglichen“, sobald die gemahnten Posten bezahlt sind, egal ob per Bankzuordnung oder von Hand.</p>
       </section>
     </>
   );
