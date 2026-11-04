@@ -58,7 +58,7 @@ export function KalenderPage() {
       ...(await q(`SELECT v.*, o.name AS objekt FROM vorgaenge v JOIN objekte o ON o.id = v.objekt_id WHERE v.status <> 'Erledigt' AND v.faellig BETWEEN $1 AND $2`))
         .map((v) => ({ datum: v.faellig, titel: `${v.betreff} · ${v.objekt}`, art: 'Instandhaltung', ziel: `/objekte/${v.objekt_id}/instandhaltung` })),
       ...(await q(`SELECT r.*, f.name AS firma FROM rechnungen r LEFT JOIN firmen f ON f.id = r.firma_id WHERE r.bezahlt_am IS NULL AND r.faellig BETWEEN $1 AND $2`))
-        .map((r) => ({ datum: r.faellig, titel: `Rechnung ${r.rechnungsnr ?? ''} ${r.firma ?? ''}`.trim(), art: 'Rechnung', ziel: `/objekte/${r.objekt_id}/rechnungen` })),
+        .map((r) => ({ datum: r.faellig, titel: `Rechnung ${r.rechnungsnr ?? ''} ${r.firma ?? ''}`.trim(), art: 'Rechnung', ziel: `/objekte/${r.objekt_id}/buchungen` })),
       ...(await q(`SELECT t.*, b.name AS board FROM tickets t JOIN boards b ON b.id = t.board_id WHERE t.status <> 'Erledigt' AND t.faellig BETWEEN $1 AND $2`))
         .map((t) => ({ datum: t.faellig, titel: `${t.titel} (${t.board})`, art: 'Ticket', ziel: '/tickets' })),
     ];

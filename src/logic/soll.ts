@@ -43,20 +43,23 @@ async function soll(row: Row): Promise<number> {
   return r.rowsAffected;
 }
 
-/** Legt alle fehlenden Soll-Stellungen bis einschließlich `bisMonat` an. Gibt die Anzahl neuer Posten zurück. */
-export async function sollStellen(bisMonat: string): Promise<number> {
+/** Legt alle fehlenden Soll-Stellungen bis einschließlich `bisMonat` an (optional erst ab `von` und nur für eine Liegenschaft).
+ *  Gibt die Anzahl neuer Posten zurück. Vorhandene Posten bleiben unverändert. */
+export async function sollStellen(bisMonat: string, opt: { von?: string; objektId?: number } = {}): Promise<number> {
   let n = 0;
+  const imZeitraum = (m: string) => !opt.von || m >= opt.von;
+  const nurObjekt = opt.objektId ? ` AND einheit_id IN (SELECT id FROM einheiten WHERE objekt_id = ${Number(opt.objektId)})` : '';
 
   // Mieten
   // Zahlt der Mieter an den Eigentümer (vermietete WEG-Einheit), entstehen bei uns keine Soll-Stellungen
-  const vertraege = await db.select(`SELECT * FROM mietvertraege WHERE COALESCE(zahlung_an, 'Verwaltung') <> 'Eigentümer'`);
+  const vertraege = await db.select(`SELECT * FROM mietvertraege WHERE COALESCE(zahlung_an, 'Verwaltung') <> 'Eigentümer'${nurObjekt}`);
   const alleAnp = await db.select('SELECT * FROM mietanpassungen');
   for (const v of vertraege) {
     const anp = alleAnp.filter((a) => a.vertrag_id === v.id);
     const start = String(v.beginn).slice(0, 7);
     const ende = v.ende ? String(v.ende).slice(0, 7) : bisMonat;
     const last = ende < bisMonat ? ende : bisMonat;
-    for (const monat of monate(start, last)) {
+    for (const monat of monate(start, last).filter(imZeitraum)) {
       const m = mieteImMonat(v, anp, monat);
       const base = { vertrag_id: v.id, einheit_id: v.einheit_id, person_id: v.mieter_id, monat, faellig: faelligAm(monat, v.faellig_tag) };
       for (const [art, betrag] of [['Kaltmiete', m.kalt], ['NK', m.nk], ['HK', m.hk], ['USt', m.ust]] as const) {
@@ -67,12 +70,12 @@ export async function sollStellen(bisMonat: string): Promise<number> {
 
   // Hausgeld (WEG): Schuldner ist der jeweilige Eigentümer im Monat
   const hg = await db.select(`SELECT h.*, e.objekt_id FROM hausgeld h JOIN einheiten e ON e.id = h.einheit_id
-    JOIN objekte o ON o.id = e.objekt_id WHERE o.verwaltungsart = 'WEG' ORDER BY h.gueltig_ab`);
+    JOIN objekte o ON o.id = e.objekt_id WHERE o.verwaltungsart = 'WEG'${opt.objektId ? ` AND o.id = ${Number(opt.objektId)}` : ''} ORDER BY h.gueltig_ab`);
   const eig = await db.select('SELECT * FROM eigentum ORDER BY anteil DESC');
   const einheiten = [...new Set(hg.map((h) => h.einheit_id))];
   for (const eid of einheiten) {
     const saetze = hg.filter((h) => h.einheit_id === eid);
-    for (const monat of monate(String(saetze[0].gueltig_ab).slice(0, 7), bisMonat)) {
+    for (const monat of monate(String(saetze[0].gueltig_ab).slice(0, 7), bisMonat).filter(imZeitraum)) {
       const stichtag = `${monat}-01`;
       const satz = [...saetze].reverse().find((h) => h.gueltig_ab <= stichtag);
       if (!satz || !satz.betrag) continue;
@@ -99,3 +102,21 @@ export const OP_SQL = `
   JOIN einheiten e ON e.id = s.einheit_id
   JOIN objekte o ON o.id = e.objekt_id
   LEFT JOIN personen p ON p.id = s.person_id`;
+
+/** Restbetrag eines offenen Postens als Zahlung buchen (z. B. bar oder ohne Bankumsatz) */
+export async function zahlungBuchen(r: Row, datum = new Date().toISOString().slice(0, 10)) {
+  const konto = (await db.select('SELECT id FROM buchungskonten WHERE nummer = $1', [KONTO_FUER_ART[r.art] ?? '1000']))[0];
+  await db.execute(`INSERT INTO buchungen (datum, betrag, buchungskonto_id, objekt_id, einheit_id, sollstellung_id, text) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+    [datum, Math.round((r.betrag - r.bezahlt) * 100) / 100, konto?.id ?? null, r.objekt_id, r.einheit_id, r.id, `Zahlung ${r.art} ${r.monat} (manuell)`]);
+}
+
+/** Status eines Postens: bezahlt, erwartet (noch nicht fällig), fällig (überfällig in der Frist), mahnen, gemahnt */
+export function postenStatus(r: Row, mahnenAbTage = 14, heute = new Date().toISOString().slice(0, 10)): 'bezahlt' | 'erwartet' | 'fällig' | 'mahnen' | 'gemahnt' {
+  if (r.betrag - r.bezahlt <= 0.005) return 'bezahlt';
+  if (r.faellig >= heute) return 'erwartet';
+  if (Number(r.mahnstufe) > 0) return 'gemahnt';
+  const grenze = new Date(heute); grenze.setDate(grenze.getDate() - mahnenAbTage);
+  return r.faellig < grenze.toISOString().slice(0, 10) ? 'mahnen' : 'fällig';
+}
+
+export const mahnenAbTage = async () => Number((await db.select(`SELECT wert FROM einstellungen WHERE schluessel = 'mahnen_ab_tage'`))[0]?.wert) || 14;

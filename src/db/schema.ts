@@ -540,4 +540,22 @@ ALTER TABLE bankkonten ADD COLUMN auto_abruf INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE bankkonten ADD COLUMN letzter_abruf TEXT;
 ALTER TABLE bankkonten ADD COLUMN abruf_hinweis TEXT;
 `,
+  // Migration 12: Firma an Buchungen, Verlauf aller erstellten Mahnungen
+  `
+ALTER TABLE buchungen ADD COLUMN firma_id INTEGER REFERENCES firmen(id) ON DELETE SET NULL;
+CREATE TABLE mahnungen (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  objekt_id INTEGER REFERENCES objekte(id) ON DELETE CASCADE,
+  einheit_id INTEGER REFERENCES einheiten(id) ON DELETE CASCADE,
+  person_id INTEGER,
+  schuldner TEXT,
+  stufe INTEGER NOT NULL,
+  datum TEXT NOT NULL,
+  frist TEXT,
+  betrag REAL NOT NULL,
+  gebuehr REAL DEFAULT 0,
+  posten TEXT NOT NULL,      -- IDs der gemahnten Soll-Stellungen, durch Komma getrennt
+  pfad TEXT
+);
+`,
 ];

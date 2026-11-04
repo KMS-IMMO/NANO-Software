@@ -9,6 +9,7 @@ import { OP_SQL } from '../logic/soll';
 import { csv, dDatum, geld, listePdf } from '../lib/pdf';
 import { oeffnen, speichern } from '../lib/dateien';
 import { useObjektKontext } from '../logic/objektKontext';
+import { RechnungErfassen } from '../components/RechnungErfassen';
 
 const heute = () => new Date().toISOString().slice(0, 10);
 const zahl = (s: string) => Number(String(s).replace(/\./g, '').replace(',', '.')) || 0;
@@ -34,55 +35,92 @@ export function JournalPage() {
   const [objekt, setObjekt] = useState<number | ''>(fix?.id ?? '');
   const [jahr, setJahr] = useState(new Date().getFullYear());
   const [monat, setMonat] = useState('');
-  const [konto, setKonto] = useState<number | ''>('');
+  const [kontoWahl, setKontoWahl] = useState<number[]>([]);
   const [konten, setKonten] = useState<Row[]>([]);
   const [rows, setRows] = useState<Row[]>([]);
+  const [offeneRechnungen, setOffeneRechnungen] = useState<Row[]>([]);
+  const [ansicht, setAnsicht] = useState<'buchungen' | 'rechnungen'>('buchungen');
   const [edit, setEdit] = useState<Row | null>(null);
+  const [modus, setModus] = useState<'rechnung' | 'buchung'>('rechnung');
   const [fehler, setFehler] = useState('');
+  const [info, setInfo] = useState('');
 
   useEffect(() => { db.select(kontoOptions).then(setKonten); }, []);
   const load = async () => {
     const w = [`substr(b.datum, 1, 4) = '${jahr}'`];
     if (monat) w.push(`substr(b.datum, 6, 2) = '${monat}'`);
     if (objekt !== '') w.push(`b.objekt_id = ${Number(objekt)}`);
-    if (konto !== '') w.push(`b.buchungskonto_id = ${Number(konto)}`);
-    setRows(await db.select(`SELECT b.*, k.nummer, k.name AS konto, o.name AS objekt, e.nummer AS einheit
+    if (kontoWahl.length) w.push(`b.buchungskonto_id IN (${kontoWahl.map(Number).join(',')})`);
+    setRows(await db.select(`SELECT b.*, k.nummer, k.name AS konto, o.name AS objekt, e.nummer AS einheit, COALESCE(f.name, rf.name) AS firma, r.rechnungsnr
       FROM buchungen b LEFT JOIN buchungskonten k ON k.id = b.buchungskonto_id LEFT JOIN objekte o ON o.id = b.objekt_id LEFT JOIN einheiten e ON e.id = b.einheit_id
+      LEFT JOIN firmen f ON f.id = b.firma_id LEFT JOIN rechnungen r ON r.id = b.rechnung_id LEFT JOIN firmen rf ON rf.id = r.firma_id
       WHERE ${w.join(' AND ')} ORDER BY b.datum, b.id`));
+    const wr = ['r.bezahlt_am IS NULL'];
+    if (objekt !== '') wr.push(`r.objekt_id = ${Number(objekt)}`);
+    if (kontoWahl.length) wr.push(`r.buchungskonto_id IN (${kontoWahl.map(Number).join(',')})`);
+    setOffeneRechnungen(await db.select(`SELECT r.*, f.name AS firma, k.nummer, k.name AS konto, o.name AS objekt, e.nummer AS einheit
+      FROM rechnungen r LEFT JOIN firmen f ON f.id = r.firma_id LEFT JOIN buchungskonten k ON k.id = r.buchungskonto_id LEFT JOIN objekte o ON o.id = r.objekt_id LEFT JOIN einheiten e ON e.id = r.einheit_id
+      WHERE ${wr.join(' AND ')} AND NOT EXISTS (SELECT 1 FROM buchungen b WHERE b.rechnung_id = r.id) ORDER BY COALESCE(r.faellig, r.datum)`));
   };
-  useEffect(() => { load(); }, [objekt, jahr, monat, konto]);
+  useEffect(() => { load(); }, [objekt, jahr, monat, kontoWahl.join(',')]);
 
   const soll = rows.reduce((a, r) => a + (r.betrag < 0 ? -r.betrag : 0), 0), haben = rows.reduce((a, r) => a + (r.betrag > 0 ? r.betrag : 0), 0);
-  const bez = [objekte.find((o) => o.id === objekt)?.name ?? 'Alle Liegenschaften', monat ? `${monat}/${jahr}` : String(jahr)].join(' · ');
+  const kontoText = kontoWahl.length ? konten.filter((k) => kontoWahl.includes(k.value)).map((k) => String(k.label).split(' ')[0]).join(', ') : '';
+  const bez = [objekte.find((o) => o.id === objekt)?.name ?? 'Alle Liegenschaften', monat ? `${monat}/${jahr}` : String(jahr), kontoText && `Konten ${kontoText}`].filter(Boolean).join(' · ');
 
   async function speichernBuchung() {
     if (!edit) return;
     setFehler('');
     if (!edit.datum || !edit.objekt_id || !edit.buchungskonto_id || !edit.betrag) { setFehler('Bitte Datum, Liegenschaft, Konto und Betrag ausfüllen.'); return; }
-    const betrag = Math.abs(zahl(String(edit.betrag))) * (edit.richtung === 'Einnahme' ? 1 : -1);
-    const v = { datum: edit.datum, objekt_id: Number(edit.objekt_id), buchungskonto_id: Number(edit.buchungskonto_id), einheit_id: edit.einheit_id ? Number(edit.einheit_id) : null, betrag, text: edit.text || null };
-    if (edit.id) await update('buchungen', edit.id, v); else await insert('buchungen', v);
+    const vz = edit.richtung === 'Einnahme' ? 1 : -1;
+    const gesamt = Math.abs(zahl(String(edit.betrag)));
+    // Firma: gewählter Kontakt oder neuer Name wird als Firmenkontakt angelegt
+    let firma_id: number | null = null;
+    const fname = String(edit.firma ?? '').trim();
+    if (fname) {
+      const da = (await db.select('SELECT id FROM firmen WHERE lower(name) = lower($1)', [fname]))[0];
+      firma_id = da ? da.id : await insert('firmen', { name: fname });
+    }
+    const basis = { datum: edit.datum, objekt_id: Number(edit.objekt_id), buchungskonto_id: Number(edit.buchungskonto_id), text: edit.text || null, firma_id };
+    if (edit.einheit_id === 'eigen') {
+      const teile = Object.entries((edit.anteile ?? {}) as Record<string, string>).filter(([, v]) => v !== '');
+      const summe = Math.round(teile.reduce((a, [, v]) => a + zahl(v), 0) * 100) / 100;
+      if (!teile.length) { setFehler('Bitte mindestens eine Einheit anhaken.'); return; }
+      if (Math.abs(summe - gesamt) > 0.005) { setFehler(`Die Beträge der Einheiten (${eur(summe)}) ergeben nicht den Gesamtbetrag (${eur(gesamt)}).`); return; }
+      for (const [eid, v] of teile) await insert('buchungen', { ...basis, einheit_id: Number(eid), betrag: vz * zahl(v) });
+      setInfo(`Buchung über ${eur(gesamt)} auf ${teile.length} Einheiten verteilt.`);
+    } else {
+      const v = { ...basis, einheit_id: edit.einheit_id ? Number(edit.einheit_id) : null, betrag: vz * gesamt };
+      if (edit.id) await update('buchungen', edit.id, v); else await insert('buchungen', v);
+    }
     setEdit(null); load();
   }
   async function loeschen() {
     if (!edit?.id || !window.confirm('Buchung löschen?')) return;
     await remove('buchungen', edit.id); setEdit(null); load();
   }
+  async function rechnungBezahlt(r: Row) {
+    const tag = heute();
+    await insert('buchungen', { datum: tag, betrag: -Number(r.betrag), buchungskonto_id: r.buchungskonto_id, objekt_id: r.objekt_id, einheit_id: r.einheit_id,
+      rechnung_id: r.id, firma_id: r.firma_id, text: `Rechnung ${r.rechnungsnr ?? ''} ${r.firma ?? ''}`.replace(/\s+/g, ' ').trim() });
+    await update('rechnungen', r.id, { bezahlt_am: tag });
+    setInfo(`Rechnung ${r.rechnungsnr ?? ''} als bezahlt gebucht.`); load();
+  }
 
   const exportieren = async (art: 'csv' | 'pdf') => {
-    const head = ['Bu.-Nr.', 'Datum', 'Liegenschaft', 'Konto', 'Buchungstext', 'Soll', 'Haben'];
+    const head = ['Bu.-Nr.', 'Datum', 'Liegenschaft', 'Konto', 'Unternehmen', 'Buchungstext', 'Soll', 'Haben'];
     if (art === 'csv') {
-      await ablegen(csv(head, rows.map((r) => [r.id, datum(r.datum), r.objekt, `${r.nummer ?? ''} ${r.konto ?? ''}`.trim(), r.text, r.betrag < 0 ? -r.betrag : null, r.betrag > 0 ? r.betrag : null])), `Buchungsjournal ${bez}.csv`);
+      await ablegen(csv(head, rows.map((r) => [r.id, datum(r.datum), r.objekt, `${r.nummer ?? ''} ${r.konto ?? ''}`.trim(), r.firma, r.text, r.betrag < 0 ? -r.betrag : null, r.betrag > 0 ? r.betrag : null])), `Buchungsjournal ${bez}.csv`);
     } else {
       await ablegen(await listePdf('Buchungsjournal', bez, head,
-        rows.map((r) => [String(r.id), dDatum(r.datum), r.objekt ?? '', `${r.nummer ?? ''} ${r.konto ?? 'ohne Konto'}`, r.text ?? '', r.betrag < 0 ? geld(-r.betrag) : '', r.betrag > 0 ? geld(r.betrag) : '']),
-        [['', '', '', '', 'Summe', geld(soll), geld(haben)]], [5, 6]), `Buchungsjournal ${bez}.pdf`);
+        rows.map((r) => [String(r.id), dDatum(r.datum), r.objekt ?? '', `${r.nummer ?? ''} ${r.konto ?? 'ohne Konto'}`, r.firma ?? '', r.text ?? '', r.betrag < 0 ? geld(-r.betrag) : '', r.betrag > 0 ? geld(r.betrag) : '']),
+        [['', '', '', '', '', 'Summe', geld(soll), geld(haben)]], [6, 7]), `Buchungsjournal ${bez}.pdf`);
     }
   };
 
   return (
     <>
-      <div className="page-head"><h1>{fix ? 'Einnahmen & Ausgaben' : 'Buchungsjournal'}</h1><p className="muted">{fix ? `Alle Buchungen von ${fix.name}` : 'Alle Buchungen aus Bankimport, Rechnungen und manuellen Buchungen'}</p></div>
+      <div className="page-head"><h1>{fix ? 'Einnahmen & Ausgaben' : 'Buchungsjournal'}</h1><p className="muted">{fix ? `Alle Buchungen und Rechnungen von ${fix.name}` : 'Alle Buchungen aus Bankimport, Rechnungen und manuellen Buchungen'}</p></div>
       <section className="card row">
         {!fix && <select style={{ width: 240 }} value={objekt} onChange={(e) => setObjekt(e.target.value ? Number(e.target.value) : '')}>
           <option value="">Alle Liegenschaften</option>{objekte.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
@@ -92,67 +130,144 @@ export function JournalPage() {
           <option value="">Alle Monate</option>
           {Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, '0')).map((m) => <option key={m} value={m}>{new Date(2000, Number(m) - 1).toLocaleDateString('de-DE', { month: 'long' })}</option>)}
         </select>
-        <select style={{ width: 260 }} value={konto} onChange={(e) => setKonto(e.target.value ? Number(e.target.value) : '')}>
-          <option value="">Alle Konten</option>{konten.map((k) => <option key={k.value} value={k.value}>{k.label}</option>)}
-        </select>
+        <KontenFilter konten={konten} wahl={kontoWahl} setWahl={setKontoWahl} />
         <span className="grow" />
         <button onClick={() => exportieren('csv')}><FileSpreadsheet size={16} />CSV</button>
         <button onClick={() => exportieren('pdf')}><Download size={16} />PDF</button>
-        <button className="primary" onClick={() => setEdit({ datum: heute(), richtung: 'Ausgabe', objekt_id: objekt || '' })}><Plus size={16} />Buchung erfassen</button>
+        <button className="primary" onClick={() => { setFehler(''); setModus('rechnung'); setEdit({ datum: heute(), richtung: 'Ausgabe', objekt_id: objekt || '' }); }}><Plus size={16} />Buchung erfassen</button>
       </section>
+      {info && <p className="info">{info}</p>}
+      <div className="seg">
+        <button className={ansicht === 'buchungen' ? 'on' : ''} onClick={() => setAnsicht('buchungen')}>Buchungen ({rows.length})</button>
+        <button className={ansicht === 'rechnungen' ? 'on' : ''} onClick={() => setAnsicht('rechnungen')}>Offene Rechnungen ({offeneRechnungen.length})</button>
+      </div>
+      {ansicht === 'rechnungen' ? (
+        <section className="card">
+          <div className="card-head"><h2 className="title-ico"><Receipt size={22} />Offene Rechnungen</h2><span className="muted">noch nicht bezahlt: <b className="neg">{eur(offeneRechnungen.reduce((a, r) => a + Number(r.betrag), 0))}</b></span></div>
+          {offeneRechnungen.length === 0 ? <p className="muted">Keine offenen Rechnungen.</p> : (
+            <div className="tablewrap"><table className="list">
+              <thead><tr><th>Datum</th><th>Fällig</th><th>Unternehmen</th><th>Rechnungs-Nr.</th><th>Konto</th><th>Einheit</th><th className="num">Betrag</th><th /></tr></thead>
+              <tbody>{offeneRechnungen.map((r) => (
+                <tr key={r.id}>
+                  <td>{datum(r.datum)}</td><td className={r.faellig && r.faellig < heute() ? 'neg' : ''}>{datum(r.faellig) || '–'}</td>
+                  <td>{r.firma ?? '–'}</td><td>{r.rechnungsnr ?? '–'}</td><td>{r.nummer} {r.konto}</td>
+                  <td>{!fix && <span className="muted small">{r.objekt} · </span>}{r.einheit ?? 'alle'}</td>
+                  <td className="num neg">{eur(Number(r.betrag))}</td>
+                  <td className="actions"><button className="link" onClick={() => rechnungBezahlt(r)}>Als bezahlt buchen</button></td>
+                </tr>))}</tbody>
+            </table></div>)}
+          <p className="muted small">Bezahlt per Bank? Dann ordnest du den Bankumsatz unter „Bank &amp; Zuordnung“ der Rechnung zu, dann wird sie automatisch gebucht.</p>
+        </section>
+      ) : (
       <section className="card">
         <div className="card-head"><h2 className="title-ico"><BookOpen size={22} />Buchungen ({rows.length})</h2></div>
         {rows.length === 0 ? <p className="muted">Keine Buchungen im Zeitraum.</p> : (
           <div className="tablewrap"><table className="list">
-            <thead><tr><th>Bu.-Nr.</th><th>Datum</th><th>Liegenschaft</th><th>Konto</th><th>Buchungstext</th><th className="num">Soll</th><th className="num">Haben</th><th /></tr></thead>
+            <thead><tr><th>Bu.-Nr.</th><th>Datum</th><th>Liegenschaft</th><th>Konto</th><th>Unternehmen</th><th>Buchungstext</th><th className="num">Soll</th><th className="num">Haben</th><th /></tr></thead>
             <tbody>{rows.map((r) => (
               <tr key={r.id}>
                 <td>{r.id}</td><td>{datum(r.datum)}</td><td>{r.objekt}<div className="muted small">{r.einheit ?? (r.betrag < 0 ? 'alle Einheiten' : '')}</div></td>
                 <td>{r.nummer ? `${r.nummer} ${r.konto}` : <span className="tag">ohne Konto</span>}</td>
-                <td className="small">{r.text}{r.bankumsatz_id ? <span className="muted"> · Bank</span> : ''}</td>
+                <td>{r.firma ?? <span className="muted">–</span>}</td>
+                <td className="small">{r.text}{r.rechnungsnr && !String(r.text ?? "").includes(r.rechnungsnr) ? <span className="muted"> · Rechnung {r.rechnungsnr}</span> : ''}{r.bankumsatz_id ? <span className="muted"> · Bank</span> : ''}</td>
                 <td className="num neg">{r.betrag < 0 ? eur(-r.betrag) : '–'}</td><td className="num">{r.betrag > 0 ? eur(r.betrag) : '–'}</td>
                 <td className="actions">{!r.bankumsatz_id && !r.sollstellung_id && !r.rechnung_id &&
-                  <button className="link" onClick={() => setEdit({ ...r, richtung: r.betrag > 0 ? 'Einnahme' : 'Ausgabe', betrag: String(Math.abs(r.betrag)).replace('.', ',') })}>Bearbeiten</button>}</td>
+                  <button className="link" onClick={() => { setFehler(''); setModus('buchung'); setEdit({ ...r, firma: r.firma ?? '', richtung: r.betrag > 0 ? 'Einnahme' : 'Ausgabe', betrag: String(Math.abs(r.betrag)).replace('.', ',') }); }}>Bearbeiten</button>}</td>
               </tr>))}
             </tbody>
-            <tfoot><tr><td colSpan={5}>Summe</td><td className="num neg">{eur(soll)}</td><td className="num">{eur(haben)}</td><td /></tr></tfoot>
+            <tfoot><tr><td colSpan={6}>Summe</td><td className="num neg">{eur(soll)}</td><td className="num">{eur(haben)}</td><td /></tr></tfoot>
           </table></div>)}
-        <p className="muted small">Bankbuchungen änderst du unter „Banken &amp; Konten“ (Zuordnung lösen). Hier erfasst du Buchungen ohne Bankumsatz, z. B. Barzahlungen oder Umbuchungen.</p>
-      </section>
+        <p className="muted small">Bankbuchungen änderst du unter „Bank &amp; Zuordnung“ (Zuordnung lösen). Hier erfasst du Rechnungen und Buchungen ohne Bankumsatz, z. B. Barzahlungen oder Umbuchungen.</p>
+      </section>)}
       {edit && (
         <div className="modal-bg" onClick={() => setEdit(null)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <h3>{edit.id ? 'Buchung bearbeiten' : 'Buchung erfassen'}</h3>
-            <BuchungForm edit={edit} setEdit={setEdit} objekte={objekte} konten={konten} fest={!!fix} />
-            {fehler && <p className="error">{fehler}</p>}
-            <div className="row end">
-              {edit.id && <button className="danger" onClick={loeschen}>Löschen</button>}
-              <span className="grow" />
-              <button onClick={() => setEdit(null)}>Abbrechen</button>
-              <button className="primary" onClick={speichernBuchung}>Buchung speichern</button>
-            </div>
+          <div className={'modal' + (modus === 'rechnung' && !edit.id ? ' breit' : '')} onClick={(e) => e.stopPropagation()}>
+            <div className="card-head"><h3>{edit.id ? 'Buchung bearbeiten' : 'Buchung erfassen'}</h3>
+              {!edit.id && <div className="seg">
+                <button className={modus === 'rechnung' ? 'on' : ''} onClick={() => setModus('rechnung')}>Rechnung / Gutschrift</button>
+                <button className={modus === 'buchung' ? 'on' : ''} onClick={() => setModus('buchung')}>Einfache Buchung</button></div>}</div>
+            {modus === 'rechnung' && !edit.id
+              ? <RechnungErfassen objektFest={fix?.id} onSaved={(t) => { setInfo(t); setEdit(null); load(); }} />
+              : <>
+                <BuchungForm edit={edit} setEdit={setEdit} objekte={objekte} konten={konten} fest={!!fix} />
+                {fehler && <p className="error">{fehler}</p>}
+                <div className="row end">
+                  {edit.id && <button className="danger" onClick={loeschen}>Löschen</button>}
+                  <span className="grow" />
+                  <button onClick={() => setEdit(null)}>Abbrechen</button>
+                  <button className="primary" onClick={speichernBuchung}>Buchung speichern</button>
+                </div></>}
           </div>
         </div>)}
     </>
   );
 }
 
+/** Mehrere Buchungskonten als Filter wählen */
+function KontenFilter({ konten, wahl, setWahl }: { konten: Row[]; wahl: number[]; setWahl: (w: number[]) => void }) {
+  const [offen, setOffen] = useState(false);
+  const [suche, setSuche] = useState('');
+  const liste = konten.filter((k) => !suche || String(k.label).toLowerCase().includes(suche.toLowerCase()));
+  const text = !wahl.length ? 'Alle Konten' : wahl.length === 1 ? konten.find((k) => k.value === wahl[0])?.label : `${wahl.length} Konten gewählt`;
+  return (
+    <div className="kfilter">
+      <button className="kfilter-btn" onClick={() => setOffen(!offen)}>{text}<span className="muted">▾</span></button>
+      {offen && <>
+        <div className="kfilter-bg" onClick={() => setOffen(false)} />
+        <div className="kfilter-pop">
+          <input autoFocus placeholder="Konto suchen …" value={suche} onChange={(e) => setSuche(e.target.value)} />
+          <div className="kfilter-liste">{liste.map((k) => (
+            <label key={k.value} className="check"><input type="checkbox" checked={wahl.includes(k.value)} onChange={() => setWahl(wahl.includes(k.value) ? wahl.filter((x) => x !== k.value) : [...wahl, k.value])} />{k.label}</label>))}</div>
+          <div className="row"><button className="link" onClick={() => setWahl([])}>Alle Konten</button><span className="grow" /><button onClick={() => setOffen(false)}>Fertig</button></div>
+        </div></>}
+    </div>
+  );
+}
+
 function BuchungForm({ edit, setEdit, objekte, konten, fest }: { edit: Row; setEdit: (r: Row) => void; objekte: Row[]; konten: Row[]; fest?: boolean }) {
   const [einheiten, setEinheiten] = useState<Row[]>([]);
+  const [firmen, setFirmen] = useState<Row[]>([]);
+  useEffect(() => { db.select('SELECT id, name FROM firmen ORDER BY name').then(setFirmen); }, []);
   useEffect(() => { if (edit.objekt_id) db.select('SELECT id, nummer FROM einheiten WHERE objekt_id = $1 ORDER BY nummer', [Number(edit.objekt_id)]).then(setEinheiten); }, [edit.objekt_id]);
   const set = (k: string, v: any) => setEdit({ ...edit, [k]: v });
+  const anteile: Record<string, string> = edit.anteile ?? {};
+  const gesamt = Math.abs(zahl(String(edit.betrag ?? '')));
+  const gewaehlt = Object.keys(anteile).filter((k) => anteile[k] !== '');
+  const verteilen = (ids: string[]) => {
+    if (!ids.length) return {};
+    const teil = Math.floor((gesamt / ids.length) * 100) / 100, rest = Math.round((gesamt - teil * ids.length) * 100) / 100;
+    return Object.fromEntries(ids.map((id, i) => [id, gesamt ? String(i === 0 ? Math.round((teil + rest) * 100) / 100 : teil).replace('.', ',') : '']));
+  };
+  const umschalten = (id: string) => set('anteile', verteilen(gewaehlt.includes(id) ? gewaehlt.filter((x) => x !== id) : [...gewaehlt, id]));
+  const summe = Math.round(gewaehlt.reduce((a, k) => a + zahl(anteile[k]), 0) * 100) / 100;
   return (
     <div className="form">
       <label><span>Datum *</span><input type="date" value={edit.datum ?? ''} onChange={(e) => set('datum', e.target.value)} /></label>
       <label><span>Art *</span><select value={edit.richtung} onChange={(e) => set('richtung', e.target.value)}><option>Ausgabe</option><option>Einnahme</option></select></label>
-      {!fest && <label><span>Liegenschaft *</span><select value={edit.objekt_id ?? ''} onChange={(e) => setEdit({ ...edit, objekt_id: e.target.value, einheit_id: '' })}>
+      {!fest && <label><span>Liegenschaft *</span><select value={edit.objekt_id ?? ''} onChange={(e) => setEdit({ ...edit, objekt_id: e.target.value, einheit_id: '', anteile: {} })}>
         <option value="">– bitte wählen –</option>{objekte.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}</select></label>}
-      <label><span>Einheit</span><select value={edit.einheit_id ?? ''} onChange={(e) => set('einheit_id', e.target.value)}>
-        <option value="">{edit.richtung === 'Einnahme' ? 'Gesamtes Objekt' : 'Alle Einheiten (Umlage nach Schlüssel)'}</option>{einheiten.map((x) => <option key={x.id} value={x.id}>{x.nummer}</option>)}</select></label>
+      <label><span>Einheit</span><select value={edit.einheit_id ?? ''} onChange={(e) => setEdit({ ...edit, einheit_id: e.target.value, anteile: {} })}>
+        <option value="">{edit.richtung === 'Einnahme' ? 'Gesamtes Objekt' : 'Alle Einheiten (Umlage nach Schlüssel)'}</option>
+        {!edit.id && einheiten.length > 1 && <option value="eigen">Benutzerdefiniert (mehrere Einheiten) …</option>}
+        {einheiten.map((x) => <option key={x.id} value={x.id}>{x.nummer}</option>)}</select></label>
       <label className="wide"><span>Konto *</span><select value={edit.buchungskonto_id ?? ''} onChange={(e) => set('buchungskonto_id', e.target.value)}>
         <option value="">– bitte wählen –</option>{konten.map((k) => <option key={k.value} value={k.value}>{k.label}</option>)}</select></label>
-      <label><span>Betrag € *</span><input inputMode="decimal" value={edit.betrag ?? ''} onChange={(e) => set('betrag', e.target.value)} /></label>
-      <label><span>Buchungstext</span><input value={edit.text ?? ''} onChange={(e) => set('text', e.target.value)} /></label>
+      <label><span>Betrag € *</span><input inputMode="decimal" value={edit.betrag ?? ''} onChange={(e) => setEdit({ ...edit, betrag: e.target.value, ...(edit.einheit_id === 'eigen' && gewaehlt.length ? { anteile: {} } : {}) })} /></label>
+      <label><span>Unternehmen</span><input list="buchung-firmen" value={edit.firma ?? ''} placeholder="z. B. Stadtwerke, Handwerker" onChange={(e) => set('firma', e.target.value)} /></label>
+      <datalist id="buchung-firmen">{firmen.map((f) => <option key={f.id} value={f.name} />)}</datalist>
+      <label className="wide"><span>Buchungstext</span><input value={edit.text ?? ''} onChange={(e) => set('text', e.target.value)} /></label>
+      {edit.einheit_id === 'eigen' && (
+        <div className="wide rerf-einheiten">
+          {einheiten.map((x) => {
+            const an = gewaehlt.includes(String(x.id));
+            return (
+              <div key={x.id} className="row">
+                <label className="check grow"><input type="checkbox" checked={an} onChange={() => umschalten(String(x.id))} />{x.nummer}</label>
+                {an && <input className="cell" inputMode="decimal" value={anteile[x.id]} onChange={(e) => set('anteile', { ...anteile, [x.id]: e.target.value })} />}
+              </div>);
+          })}
+          <p className={'small ' + (gewaehlt.length && Math.abs(summe - gesamt) > 0.005 ? 'warn' : 'muted')}>Summe {eur(summe)} von {eur(gesamt)}. Beim Anhaken wird gleichmäßig aufgeteilt, danach kannst du die Beträge ändern.</p>
+        </div>)}
     </div>
   );
 }
@@ -187,6 +302,82 @@ export function RegelnPage() {
   );
 }
 
+/* =================== Jahresübersicht mit Statistik und Prognose =================== */
+
+const MON = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'];
+
+function Jahresuebersicht({ objektId }: { objektId: number }) {
+  const [jahr, setJahr] = useState(new Date().getFullYear());
+  const [d, setD] = useState<{ ist: { e: number; a: number }[]; vj: { e: number; a: number }[]; sollRest: number[]; top: Row[] } | null>(null);
+  useEffect(() => {
+    (async () => {
+      const monate = async (j: number) => {
+        const r = await db.select(`SELECT CAST(substr(datum, 6, 2) AS INTEGER) AS m, SUM(CASE WHEN betrag > 0 THEN betrag ELSE 0 END) AS e, SUM(CASE WHEN betrag < 0 THEN -betrag ELSE 0 END) AS a
+          FROM buchungen WHERE objekt_id = $1 AND substr(datum, 1, 4) = $2 GROUP BY m`, [objektId, String(j)]);
+        return Array.from({ length: 12 }, (_, i) => { const x = r.find((y) => Number(y.m) === i + 1); return { e: Number(x?.e) || 0, a: Number(x?.a) || 0 }; });
+      };
+      const soll = await db.select(`SELECT CAST(substr(s.monat, 6, 2) AS INTEGER) AS m, SUM(s.betrag) AS b FROM sollstellungen s JOIN einheiten e ON e.id = s.einheit_id
+        WHERE e.objekt_id = $1 AND substr(s.monat, 1, 4) = $2 GROUP BY m`, [objektId, String(jahr)]);
+      const top = await db.select(`SELECT k.nummer, k.name, -SUM(b.betrag) AS summe FROM buchungen b JOIN buchungskonten k ON k.id = b.buchungskonto_id
+        WHERE b.objekt_id = $1 AND substr(b.datum, 1, 4) = $2 AND b.betrag < 0 GROUP BY k.id ORDER BY summe DESC LIMIT 5`, [objektId, String(jahr)]);
+      setD({ ist: await monate(jahr), vj: await monate(jahr - 1), sollRest: Array.from({ length: 12 }, (_, i) => Number(soll.find((y) => Number(y.m) === i + 1)?.b) || 0), top });
+    })();
+  }, [objektId, jahr]);
+  if (!d) return null;
+
+  const jetzt = new Date();
+  // Abgeschlossene Monate: im laufenden Jahr bis zum aktuellen Monat, frühere Jahre ganz, spätere gar nicht
+  const bisMonat = jahr < jetzt.getFullYear() ? 12 : jahr > jetzt.getFullYear() ? 0 : jetzt.getMonth() + 1;
+  const sum = (x: { e: number; a: number }[], k: 'e' | 'a', n = 12) => x.slice(0, n).reduce((s, v) => s + v[k], 0);
+  const istE = sum(d.ist, 'e'), istA = sum(d.ist, 'a'), vjE = sum(d.vj, 'e'), vjA = sum(d.vj, 'a');
+  const vergangen = Math.max(1, bisMonat);
+  const schnittA = sum(d.ist, 'a', bisMonat) / vergangen, schnittE = sum(d.ist, 'e', bisMonat) / vergangen;
+  // Prognose der Restmonate: Einnahmen aus den Sollstellungen (sonst Durchschnitt), Ausgaben aus dem bisherigen Durchschnitt
+  const prog = d.ist.map((_v, i) => i < bisMonat ? null : { e: d.sollRest[i] || schnittE, a: schnittA });
+  const progE = istE + prog.reduce((s, v) => s + (v?.e ?? 0), 0), progA = istA + prog.reduce((s, v) => s + (v?.a ?? 0), 0);
+  const delta = (a: number, b: number) => b ? `${a >= b ? '+' : ''}${Math.round(((a - b) / b) * 100)} % zum Vorjahr` : 'kein Vorjahr';
+
+  const max = Math.max(1, ...d.ist.map((v, i) => Math.max(v.e, v.a, prog[i]?.e ?? 0, prog[i]?.a ?? 0)));
+  const W = 920, H = 230, pad = 34, gw = (W - pad) / 12, bw = gw * 0.32;
+  const y = (v: number) => H - 22 - (v / max) * (H - 40);
+  const stufen = [0, 0.5, 1].map((f) => f * max);
+  return (
+    <section className="card">
+      <div className="card-head"><h2 className="title-ico"><BarChart3 size={22} />Jahresübersicht {jahr}</h2>
+        <div className="row"><button className="icon-btn" onClick={() => setJahr(jahr - 1)}>‹</button><b>{jahr}</b><button className="icon-btn" onClick={() => setJahr(jahr + 1)}>›</button></div></div>
+      <div className="kpis">
+        <div className="kpi"><span>Einnahmen {jahr}</span><b>{eur(istE)}</b><small>{delta(istE, vjE)}</small></div>
+        <div className="kpi"><span>Ausgaben {jahr}</span><b className="neg">{eur(istA)}</b><small>{delta(istA, vjA)}</small></div>
+        <div className="kpi"><span>Ergebnis {jahr}</span><b className={istE - istA < 0 ? 'neg' : ''}>{eur(istE - istA)}</b><small>Vorjahr {eur(vjE - vjA)}</small></div>
+        {bisMonat < 12 && <div className="kpi prognose"><span>Prognose Jahresende</span><b className={progE - progA < 0 ? 'neg' : ''}>{eur(progE - progA)}</b><small>Einnahmen {eur(progE)} · Ausgaben {eur(progA)}</small></div>}
+      </div>
+      <svg className="jahr-chart" viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`Einnahmen und Ausgaben je Monat ${jahr}`}>
+        {stufen.map((v) => <g key={v}><line x1={pad} x2={W} y1={y(v)} y2={y(v)} className="gitter" /><text x={pad - 6} y={y(v) + 4} textAnchor="end" className="achse">{v >= 1000 ? `${Math.round(v / 1000)}k` : Math.round(v)}</text></g>)}
+        {d.ist.map((v, i) => {
+          const x = pad + i * gw + gw * 0.16, p = prog[i];
+          const e = p ? p.e : v.e, a = p ? p.a : v.a;
+          return (
+            <g key={i}>
+              <rect x={x} y={y(e)} width={bw} height={Math.max(0, H - 22 - y(e))} rx={3} className={'bar-e' + (p ? ' prog' : '')}><title>{`${MON[i]} ${jahr}: Einnahmen ${eur(e)}${p ? ' (Prognose)' : ''}`}</title></rect>
+              <rect x={x + bw + 2} y={y(a)} width={bw} height={Math.max(0, H - 22 - y(a))} rx={3} className={'bar-a' + (p ? ' prog' : '')}><title>{`${MON[i]} ${jahr}: Ausgaben ${eur(a)}${p ? ' (Prognose)' : ''}`}</title></rect>
+              <text x={x + bw} y={H - 6} textAnchor="middle" className="achse">{MON[i]}</text>
+            </g>);
+        })}
+      </svg>
+      <div className="row small muted" style={{ gap: 16 }}>
+        <span><i className="leg bar-e" />Einnahmen</span><span><i className="leg bar-a" />Ausgaben</span>{bisMonat < 12 && <span><i className="leg prog-leg" />Prognose (Einnahmen aus Sollstellungen, Ausgaben aus dem bisherigen Monatsschnitt)</span>}
+      </div>
+      {d.top.length > 0 && <>
+        <h3 style={{ margin: '18px 0 6px' }}>Größte Kostenarten {jahr}</h3>
+        <table className="list"><tbody>{d.top.map((t) => (
+          <tr key={t.nummer}><td style={{ width: 70 }}>{t.nummer}</td><td>{t.name}</td>
+            <td style={{ width: '35%' }}><div className="bar"><div className="neg-bar" style={{ width: `${Math.round((t.summe / d.top[0].summe) * 100)}%` }} /></div></td>
+            <td className="num neg">{eur(t.summe)}</td><td className="num muted small" style={{ width: 70 }}>{istA ? Math.round((t.summe / istA) * 100) : 0} %</td></tr>))}</tbody></table>
+      </>}
+    </section>
+  );
+}
+
 /* =================== Kontenübersicht / GuV =================== */
 
 export function AuswertungPage() {
@@ -210,12 +401,13 @@ export function AuswertungPage() {
   const zeile = (r: Row, wert: number) => <tr key={(r.nummer ?? 'x') + wert}><td>{r.nummer ?? '–'}</td><td>{r.name ?? 'ohne Konto (Überzahlung / Guthaben)'}</td><td className="num">{eur(wert)}</td></tr>;
   return (
     <>
-      <div className="page-head"><h1>Kontenübersicht / Auswertung</h1><p className="muted">Erträge und Aufwendungen je Konto (Zufluss/Abfluss im Zeitraum)</p></div>
+      <div className="page-head"><h1>Auswertung (GuV)</h1><p className="muted">Jahresübersicht mit Statistik und Prognose, darunter Erträge und Aufwendungen je Konto im gewählten Zeitraum</p></div>
       <section className="card row">
         {!fix && <select style={{ width: 260 }} value={objekt} onChange={(e) => setObjekt(Number(e.target.value))}>{objekte.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}</select>}
         <label className="inline">von <input type="date" value={von} onChange={(e) => setVon(e.target.value)} /></label>
         <label className="inline">bis <input type="date" value={bis} onChange={(e) => setBis(e.target.value)} /></label>
       </section>
+      {objekt !== '' && <Jahresuebersicht objektId={Number(objekt)} />}
       <div className="kpis">
         <div className="kpi"><span>Erträge</span><b>{eur(sE)}</b></div>
         <div className="kpi"><span>Aufwendungen</span><b className="neg">{eur(sA)}</b></div>

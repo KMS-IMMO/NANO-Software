@@ -23,6 +23,7 @@ import { EinstellungenPage, KontenPage, RechnungenPage } from './pages/Konten';
 import { BeschluessePage, InstandhaltungPage } from './pages/Weg';
 import { AuswertungPage, BerichtePage, JournalPage, RegelnPage } from './pages/Buchhaltung';
 import { ObjektAssistentPage } from './pages/ObjektAssistent';
+import { SollstellungenPage } from './pages/Sollstellungen';
 import { autoAbruf, BANK_INFO } from './logic/bankAbruf';
 import { ErinnerungenPage, KalenderPage, KontaktePage, NotizenPage, TicketBoardsPage, TodoPage } from './pages/Produktiv';
 
@@ -45,6 +46,7 @@ const NAV: Abschnitt[] = [
       { to: '/regeln', label: 'Buchungsregeln' },
     ] },
     { label: 'Sollstellung', icon: <Banknote size={I} />, items: [
+      { to: '/sollstellungen', label: 'Sollstellungen' },
       { to: '/offene-posten', label: 'Offene Posten' },
       { to: '/vertraege', label: 'Mietverträge' },
       { to: '/mahnungen', label: 'Mahnungen' },
@@ -202,6 +204,7 @@ function Rahmen() {
               <Route path="/firmen" element={<FirmenPage />} />
               <Route path="/vertraege" element={<VertraegePage />} />
               <Route path="/vertraege/:id" element={<VertragDetailPage />} />
+              <Route path="/sollstellungen" element={<SollstellungenPage />} />
               <Route path="/offene-posten" element={<OffenePostenPage />} />
               <Route path="/rechnungen" element={<RechnungenPage />} />
               <Route path="/konten" element={<KontenPage />} />

@@ -98,7 +98,10 @@ export function RechnungErfassen({ objektFest, onSaved }: { objektFest?: number;
         mwst_satz: mitMwst ? s : 0, faellig: faellig || null, bezahlt_am: bezahlt || null, dokument_id: dokId, notiz: notiz.trim() || null };
       const teile: [number | null, number][] = modus === 'alle' ? [[null, brutto]] : gewaehlt.map(([k, v]) => [Number(k), zahl(v)]);
       for (const [eid, b] of teile) {
-        await insert('rechnungen', { ...basis, einheit_id: eid, betrag: r2(vz * b), anteil_lohn: lohn ? r2((zahl(lohn) * b) / brutto) : null });
+        const rid = await insert('rechnungen', { ...basis, einheit_id: eid, betrag: r2(vz * b), anteil_lohn: lohn ? r2((zahl(lohn) * b) / brutto) : null });
+        // Schon bezahlt (z. B. bar oder ohne Bankumsatz): gleich als Ausgabe buchen, damit sie in Einnahmen & Ausgaben steht
+        if (bezahlt) await insert('buchungen', { datum: bezahlt, betrag: r2(-vz * b), buchungskonto_id: Number(konto), objekt_id: Number(objekt), einheit_id: eid,
+          rechnung_id: rid, firma_id: fid, text: `Rechnung ${nr.trim()} ${name}`.replace(/\s+/g, ' ').trim() });
       }
       onSaved(`${art === 'Gutschrift' ? 'Gutschrift' : 'Rechnung'}${nr ? ' ' + nr : ''} über ${eur(brutto)} gespeichert${teile.length > 1 ? `, aufgeteilt auf ${teile.length} Einheiten` : ''}${datei ? ', Beleg abgelegt' : ''}.`);
       zuruecksetzen();
