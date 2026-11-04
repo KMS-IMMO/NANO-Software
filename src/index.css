@@ -217,3 +217,46 @@ button.pill-btn { align-self: flex-start; border-radius: 20px; display: inline-f
 .rerf-drop { min-height: 320px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; cursor: pointer; border-radius: 12px; color: var(--gray); position: sticky; top: 20px; }
 .rerf-mehr summary { cursor: pointer; color: var(--accent-dark); font-size: 13.5px; margin-bottom: 8px; }
 @media (max-width: 1100px) { .rerf-grid { grid-template-columns: 1fr; } .rerf-drop { min-height: 160px; position: static; } }
+
+/* Hauptleiste in Abschnitten */
+.nav-abschnitt { display: flex; flex-direction: column; gap: 2px; margin-bottom: 14px; }
+.nav-titel { font-size: 11px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; opacity: .5; padding: 4px 14px 6px; }
+.nav-item.zwei span { display: flex; flex-direction: column; line-height: 1.2; }
+.nav-item.zwei small { font-size: 11.5px; opacity: .6; font-weight: 400; }
+.chev.open { transform: rotate(90deg); }
+.nav-unten { margin-top: auto; border-top: 1px solid rgba(255,255,255,.08); padding-top: 10px; }
+.side nav { flex: 1; }
+.app.kompakt .nav-titel { display: none; }
+.app.kompakt .nav-abschnitt { margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,.08); }
+
+/* Kalender */
+.kal { display: grid; grid-template-columns: repeat(7, 1fr); border-top: 1px solid var(--line); border-left: 1px solid var(--line); }
+.kal-kopf { padding: 6px 8px; font-size: 12px; font-weight: 600; color: var(--muted); border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); background: #f8f9fb; }
+.kal-tag { min-height: 104px; padding: 4px 5px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 2px; overflow: hidden; }
+.kal-tag.leer { background: #fafbfc; }
+.kal-tag.heute .kal-nr { background: var(--accent); color: #fff; border-radius: 10px; padding: 0 7px; }
+.kal-nr { font-size: 12px; font-weight: 600; align-self: flex-start; margin-bottom: 2px; }
+.kal-e { display: block; text-align: left; font-size: 11.5px; padding: 2px 6px; border-radius: 4px; border: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #1d2733; text-decoration: none; cursor: pointer; }
+.kal-punkt { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+.k-termin { background: #dbe7fb; } .k-erinnerung { background: #fde8c8; } .k-versammlung { background: #e5dcf7; }
+.k-vorgang { background: #fbdada; } .k-rechnung { background: #d9f1e3; } .k-ticket { background: #e3e7ec; }
+
+/* Listen zum Abhaken */
+.checkliste { list-style: none; margin: 0; padding: 0; }
+.checkliste li { display: flex; align-items: center; gap: 10px; padding: 8px 4px; border-bottom: 1px solid var(--line); }
+.checkliste li:last-child { border-bottom: none; }
+.checkliste li.fertig .grow { text-decoration: line-through; opacity: .55; }
+.checkliste input[type=checkbox] { width: 17px; height: 17px; }
+
+/* Ticket-Boards */
+.board { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; align-items: start; }
+.board-spalte { background: #f1f3f6; border-radius: 10px; padding: 10px; min-height: 260px; display: flex; flex-direction: column; gap: 8px; border: 2px dashed transparent; }
+.board-spalte.over { border-color: var(--accent); background: var(--accent-soft); }
+.board-kopf { display: flex; justify-content: space-between; padding: 2px 4px 4px; }
+.board-karte { background: #fff; border-radius: 8px; padding: 10px 12px; box-shadow: 0 1px 2px rgba(0,0,0,.08); cursor: grab; border-left: 4px solid #c5ccd6; display: flex; flex-direction: column; gap: 3px; }
+.board-karte.prio-hoch { border-left-color: #d64545; } .board-karte.prio-mittel { border-left-color: #e0a030; }
+
+/* Notizen */
+.notizen { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; }
+.notiz { text-align: left; background: #fffbea; border: 1px solid #efe3b0; border-radius: 10px; padding: 14px; display: flex; flex-direction: column; gap: 6px; min-height: 140px; cursor: pointer; }
+.notiz p { margin: 0; white-space: pre-wrap; font-size: 13.5px; color: #3a4552; flex: 1; }

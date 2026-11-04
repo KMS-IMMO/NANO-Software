@@ -2,17 +2,17 @@ import { User, Users, Hammer } from 'lucide-react';
 import { EntityTable } from '../components/EntityTable';
 import { personLabel } from '../db/labels';
 
-export function PersonenPage({ rolle }: { rolle?: 'Eigentümer' | 'Mieter' }) {
+export function PersonenPage({ rolle, titel }: { rolle?: 'Eigentümer' | 'Mieter' | 'Verwalter' | 'Sonstige'; titel?: string }) {
   return (
     <EntityTable
       key={rolle ?? 'alle'}
-      title={rolle ?? 'Eigentümer und Mieter'}
+      title={titel ?? rolle ?? 'Eigentümer und Mieter'}
       icon={rolle === 'Mieter' ? <User size={22} /> : <Users size={22} />}
       newLabel={rolle ? `${rolle} hinzufügen` : 'Person hinzufügen'}
       table="personen"
       fixed={rolle ? { rolle } : undefined}
       fields={[
-        ...(rolle ? [] : [{ key: 'rolle', label: 'Rolle', type: 'select' as const, options: ['Mieter', 'Eigentümer', 'Sonstige'], required: true }]),
+        ...(rolle ? [] : [{ key: 'rolle', label: 'Rolle', type: 'select' as const, options: ['Mieter', 'Eigentümer', 'Verwalter', 'Sonstige'], required: true }]),
         { key: 'anrede', label: 'Anrede', type: 'select', options: ['Herr', 'Frau', 'Divers', 'Firma', 'Eheleute'], hideInTable: true },
         { key: 'titel', label: 'Titel', hideInTable: true },
         { key: 'vorname', label: 'Vorname' },

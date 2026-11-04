@@ -487,4 +487,50 @@ ALTER TABLE bankkonten ADD COLUMN fints_benutzer TEXT;
   `
 ALTER TABLE rechnungen ADD COLUMN mwst_satz REAL;
 `,
+  // Migration 10: Produktivität – Termine, Erinnerungen, Ticket-Boards, Todos, Notizen
+  `
+CREATE TABLE termine (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  titel TEXT NOT NULL, datum TEXT NOT NULL, uhrzeit TEXT,
+  objekt_id INTEGER REFERENCES objekte(id) ON DELETE CASCADE,
+  notiz TEXT
+);
+CREATE TABLE erinnerungen (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  titel TEXT NOT NULL, faellig TEXT NOT NULL, uhrzeit TEXT,
+  erledigt INTEGER NOT NULL DEFAULT 0,
+  objekt_id INTEGER REFERENCES objekte(id) ON DELETE CASCADE,
+  notiz TEXT
+);
+CREATE TABLE boards (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL
+);
+CREATE TABLE tickets (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  board_id INTEGER NOT NULL REFERENCES boards(id) ON DELETE CASCADE,
+  titel TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'Offen',      -- Offen, In Arbeit, Erledigt
+  prioritaet TEXT NOT NULL DEFAULT 'Mittel',
+  faellig TEXT,
+  objekt_id INTEGER REFERENCES objekte(id) ON DELETE SET NULL,
+  notiz TEXT,
+  angelegt TEXT NOT NULL DEFAULT (date('now'))
+);
+CREATE TABLE todos (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  text TEXT NOT NULL,
+  erledigt INTEGER NOT NULL DEFAULT 0,
+  faellig TEXT,
+  objekt_id INTEGER REFERENCES objekte(id) ON DELETE SET NULL,
+  angelegt TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE notizen (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  titel TEXT, text TEXT,
+  objekt_id INTEGER REFERENCES objekte(id) ON DELETE SET NULL,
+  geaendert TEXT NOT NULL DEFAULT (datetime('now'))
+);
+INSERT INTO boards (name) VALUES ('Allgemein');
+`,
 ];
