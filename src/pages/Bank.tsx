@@ -24,10 +24,14 @@ export function BankPage() {
   const [bkonten, setBkonten] = useState<Opt[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  const ladeKonten = async () => {
+    const k = await db.select(`SELECT b.*, o.name AS objekt FROM bankkonten b LEFT JOIN objekte o ON o.id = b.objekt_id ${fix ? `WHERE b.objekt_id = ${fix.id}` : ''} ORDER BY o.name`);
+    setKonten(k);
+    return k;
+  };
   useEffect(() => {
     (async () => {
-      const k = await db.select(`SELECT b.*, o.name AS objekt FROM bankkonten b LEFT JOIN objekte o ON o.id = b.objekt_id ${fix ? `WHERE b.objekt_id = ${fix.id}` : ''} ORDER BY o.name`);
-      setKonten(k);
+      const k = await ladeKonten();
       if (k.length && konto === '') setKonto(k[0].id);
       setPersonen(await db.select<Opt>(personOptions()));
       setBkonten(await db.select<Opt>(kontoOptions()));
@@ -90,8 +94,10 @@ export function BankPage() {
         <select style={{ width: 360 }} value={konto} onChange={(e) => setKonto(Number(e.target.value))}>
           {konten.map((x) => <option key={x.id} value={x.id}>{x.objekt} – {x.name}{x.iban ? ` (${x.iban})` : ''}</option>)}
         </select>
-        {k && <BankAbruf konto={k} onDone={(m) => { setInfo(m); load(); }} />}
+        {k && <BankAbruf konto={k} onDone={(m) => { setInfo(m); load(); ladeKonten(); }} />}
+        {k?.auto_abruf ? <span className="pill pos-pill" title={k.letzter_abruf ? `Letzter Abruf ${new Date(String(k.letzter_abruf).replace(' ', 'T')).toLocaleString('de-DE')}` : ''}>Automatischer Abruf an</span> : null}
       </div>
+      {k?.abruf_hinweis && <p className="warn">{k.abruf_hinweis}</p>}
       <div className="kpis">
         <div className="kpi"><span>Kontostand laut Import</span><b>{eur(saldo)}</b></div>
         <div className="kpi"><span>Zum Prüfen</span><b className={anzahl('offen') ? 'neg' : ''}>{anzahl('offen')}</b></div>

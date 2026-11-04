@@ -23,6 +23,7 @@ import { EinstellungenPage, KontenPage, RechnungenPage } from './pages/Konten';
 import { BeschluessePage, InstandhaltungPage } from './pages/Weg';
 import { AuswertungPage, BerichtePage, JournalPage, RegelnPage } from './pages/Buchhaltung';
 import { ObjektAssistentPage } from './pages/ObjektAssistent';
+import { autoAbruf, BANK_INFO } from './logic/bankAbruf';
 import { ErinnerungenPage, KalenderPage, KontaktePage, NotizenPage, TicketBoardsPage, TodoPage } from './pages/Produktiv';
 
 type Item = { to: string; label: string; icon?: ReactNode; sub?: string };
@@ -162,6 +163,14 @@ export default function App() {
 function Rahmen() {
   // In einer geöffneten Liegenschaft wird die Hauptleiste schmal, daneben erscheint die Spalte der Liegenschaft
   const kompakt = /^\/objekte\/\d+/.test(useLocation().pathname);
+  // Bankverbindung: beim Start automatisch abrufen und das Ergebnis kurz einblenden
+  const [hinweis, setHinweis] = useState<string[]>([]);
+  useEffect(() => {
+    const f = (e: Event) => { const t = String((e as CustomEvent).detail); setHinweis((h) => [...h, t]); setTimeout(() => setHinweis((h) => h.filter((x) => x !== t)), 12000); };
+    window.addEventListener(BANK_INFO, f);
+    const t = setTimeout(() => { autoAbruf(); }, 1500);
+    return () => { window.removeEventListener(BANK_INFO, f); clearTimeout(t); };
+  }, []);
   return (
       <div className={'app' + (kompakt ? ' kompakt' : '')}>
         <aside className="side">
@@ -176,6 +185,7 @@ function Rahmen() {
               </div>))}
             <div className="nav-unten"><NavEintrag n={{ to: '/einstellungen', label: 'Einstellungen', icon: <Settings size={I} /> }} kompakt={kompakt} /></div>
           </nav>
+          {hinweis.length > 0 && <div className="toasts">{hinweis.map((t) => <NavLink key={t} to="/bank" className="toast" onClick={() => setHinweis((h) => h.filter((x) => x !== t))}><Landmark size={16} />{t}</NavLink>)}</div>}
           <div className="side-foot"><Landmark size={13} /> KMS Immobilienverwaltung · Version 0.2</div>
         </aside>
         <div className="content">

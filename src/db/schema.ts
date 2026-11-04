@@ -533,4 +533,11 @@ CREATE TABLE notizen (
 );
 INSERT INTO boards (name) VALUES ('Allgemein');
 `,
+  // Migration 11: Dauerhafte Bankverbindung – System-ID der Bank, automatischer Abruf, Stand des letzten Abrufs
+  `
+ALTER TABLE bankkonten ADD COLUMN fints_system_id TEXT;
+ALTER TABLE bankkonten ADD COLUMN auto_abruf INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE bankkonten ADD COLUMN letzter_abruf TEXT;
+ALTER TABLE bankkonten ADD COLUMN abruf_hinweis TEXT;
+`,
 ];

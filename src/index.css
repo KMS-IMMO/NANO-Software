@@ -260,3 +260,13 @@ button.pill-btn { align-self: flex-start; border-radius: 20px; display: inline-f
 .notizen { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; }
 .notiz { text-align: left; background: #fffbea; border: 1px solid #efe3b0; border-radius: 10px; padding: 14px; display: flex; flex-direction: column; gap: 6px; min-height: 140px; cursor: pointer; }
 .notiz p { margin: 0; white-space: pre-wrap; font-size: 13.5px; color: #3a4552; flex: 1; }
+
+/* Dauerhafte Bankverbindung */
+.bank-verbunden { display: flex; flex-direction: column; gap: 12px; background: #f3f7f1; border: 1px solid #d5e6cf; border-radius: 10px; padding: 14px; margin-bottom: 12px; }
+.bank-verbunden label:not(.check) { display: flex; flex-direction: column; gap: 4px; max-width: 220px; }
+.bank-verbunden .link { align-self: flex-start; color: var(--neg, #c0392b); }
+label.check { display: flex; flex-direction: row !important; align-items: flex-start; gap: 10px; font-size: 13.5px; line-height: 1.4; cursor: pointer; }
+label.check input { width: auto; margin-top: 3px; }
+.pill.pos-pill { background: #e2f3e7; color: #1e7a3c; }
+.toasts { position: fixed; right: 20px; bottom: 20px; display: flex; flex-direction: column; gap: 10px; z-index: 30; max-width: 420px; }
+.toast { display: flex; gap: 10px; align-items: flex-start; background: #1d2733; color: #fff; padding: 12px 16px; border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,.25); font-size: 13.5px; line-height: 1.4; text-decoration: none; }
