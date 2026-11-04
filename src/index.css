@@ -151,3 +151,23 @@ input.cell { width: 110px; text-align: right; padding: 4px 6px; }
 .berichte { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }
 .bericht { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 6px; }
 .bericht > svg { color: var(--accent); } .bericht p { margin: 0 0 6px; min-height: 30px; }
+
+/* Anmeldung / Sperre */
+.sperre { position: fixed; inset: 0; display: grid; place-items: center; background: linear-gradient(135deg, #2b2d31 0%, #3a3c42 100%); z-index: 1000; padding: 16px; }
+.sperre-karte { background: #fff; border-radius: 14px; padding: 36px 40px; width: 100%; max-width: 440px; box-shadow: 0 20px 60px rgba(0,0,0,.35); display: flex; flex-direction: column; gap: 14px; }
+.sperre-karte > svg, .sperre-karte .logo { align-self: center; margin-bottom: 6px; }
+.sperre-karte h2 { margin: 4px 0 0; justify-content: center; }
+.sperre-karte > p.muted { text-align: center; margin: 0; }
+.sperre-karte label { display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+.sperre-karte label.check { flex-direction: row; align-items: flex-start; gap: 10px; font-size: 13px; line-height: 1.4; }
+.sperre-karte label.check input { margin-top: 3px; width: auto; }
+.sperre-karte .pw { display: flex; align-items: center; gap: 6px; }
+.sperre-karte .pw input { flex: 1; }
+.sperre-karte button.primary { padding: 12px; font-size: 15px; justify-content: center; }
+.staerke { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--muted, #777); }
+.staerke i { height: 6px; border-radius: 3px; width: 90px; background: #ddd; position: relative; overflow: hidden; }
+.staerke i::after { content: ''; position: absolute; inset: 0; border-radius: 3px; }
+.staerke.schwach i::after { width: 33%; background: #c0392b; }
+.staerke.mittel i::after { width: 66%; background: #d4a017; }
+.staerke.stark i::after { width: 100%; background: #2e7d32; }
+button.bell { background: none; border: 0; cursor: pointer; padding: 6px; color: inherit; }

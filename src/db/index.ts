@@ -1,4 +1,4 @@
-// Datenbankzugriff. In der Desktop-App: SQLite-Datei über tauri-plugin-sql.
+// Datenbankzugriff. In der Desktop-App: verschlüsselte SQLite-Datei (SQLCipher) über Rust-Befehle.
 // Im Browser (Entwicklung/Vorschau): sql.js im Speicher, damit die Oberfläche auch ohne Tauri läuft.
 import { MIGRATIONS } from './schema';
 
@@ -12,16 +12,16 @@ interface Driver {
 
 const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 
-async function tauriDriver(): Promise<Driver> {
-  const { default: Database } = await import('@tauri-apps/plugin-sql');
-  const db = await Database.load('sqlite:kms-verwaltung.db');
-  await db.execute('PRAGMA foreign_keys = ON');
+async function invoke<T>(cmd: string, args: Record<string, unknown> = {}): Promise<T> {
+  const { invoke } = await import('@tauri-apps/api/core');
+  return invoke<T>(cmd, args);
+}
+
+// In der Desktop-App: verschlüsselte SQLite-Datei (SQLCipher) über eigene Rust-Befehle, erst nach Eingabe des App-Passworts
+function tauriDriver(): Driver {
   return {
-    select: (sql, p) => db.select<Row[]>(sql, p),
-    execute: async (sql, p) => {
-      const r = await db.execute(sql, p);
-      return { lastInsertId: r.lastInsertId, rowsAffected: r.rowsAffected };
-    },
+    select: (sql, params) => invoke<Row[]>('db_select', { sql, params }),
+    execute: (sql, params) => invoke<{ lastInsertId: number; rowsAffected: number }>('db_execute', { sql, params }),
   };
 }
 
@@ -64,9 +64,40 @@ async function migrate(d: Driver) {
 }
 
 function driver(): Promise<Driver> {
-  if (!ready) ready = (isTauri ? tauriDriver() : browserDriver()).then(async (d) => { await migrate(d); return d; });
+  if (!ready) {
+    if (isTauri) return Promise.reject(new Error('Die Datenbank ist gesperrt.'));
+    ready = browserDriver().then(async (d) => { await migrate(d); return d; });
+  }
   return ready;
 }
+
+/** Anmeldung, Sperre und Datensicherung (nur Desktop-App) */
+export const sicherheit = {
+  aktiv: isTauri,
+  status: () => invoke<{ eingerichtet: boolean; alte_daten: boolean; offen: boolean }>('db_status'),
+  async entsperren(passwort: string, neu: boolean) {
+    await invoke(neu ? 'db_einrichten' : 'db_oeffnen', { passwort });
+    const d = tauriDriver();
+    ready = migrate(d).then(() => d);
+    await ready;
+    // Ablageordner aus den Einstellungen für Dateizugriff freigeben, tägliche Sicherung anlegen
+    const a = (await d.select(`SELECT wert FROM einstellungen WHERE schluessel = 'ablage_pfad'`, []))[0]?.wert;
+    if (a) await invoke('ablage_freigeben', { pfad: String(a) }).catch(() => {});
+    await invoke('db_auto_sicherung').catch(() => {});
+  },
+  async sperren() {
+    ready = null;
+    await invoke('db_sperren');
+  },
+  passwortAendern: (alt: string, neu: string) => invoke('db_passwort_aendern', { alt, neu }),
+  sicherungErstellen: (ordnerPfad?: string) => invoke<string>('db_sicherung_erstellen', { ordnerPfad: ordnerPfad ?? null }),
+  sicherungen: () => invoke<{ name: string; pfad: string; groesse: number }[]>('db_sicherungen'),
+  async wiederherstellen(pfad: string, passwort: string) {
+    ready = null;
+    await invoke('db_wiederherstellen', { pfad, passwort });
+  },
+  ablageFreigeben: (pfad: string) => invoke('ablage_freigeben', { pfad }),
+};
 
 export const db = {
   async select<T = Row>(sql: string, params: Param[] = []): Promise<T[]> {

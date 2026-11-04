@@ -1,5 +1,6 @@
 import { EntityTable, eur } from '../components/EntityTable';
-import { db } from '../db';
+import { SicherheitKarte } from '../components/SicherheitKarte';
+import { db, sicherheit } from '../db';
 import { useEffect, useState } from 'react';
 import { SCHLUESSEL, kontoOptions } from '../db/labels';
 
@@ -79,6 +80,7 @@ export function EinstellungenPage() {
   async function save() {
     for (const [k] of EINST) await db.execute(`INSERT INTO einstellungen (schluessel, wert) VALUES ($1, $2)
       ON CONFLICT (schluessel) DO UPDATE SET wert = excluded.wert`, [k, w[k] ?? '']);
+    if (sicherheit.aktiv && w.ablage_pfad) await sicherheit.ablageFreigeben(w.ablage_pfad).catch(() => {});
     setSaved(true); setTimeout(() => setSaved(false), 2000);
   }
   return (
@@ -93,6 +95,7 @@ export function EinstellungenPage() {
         </div>
         <div className="row end"><span className="grow" />{saved && <span className="pos">Gespeichert</span>}<button className="primary" onClick={save}>Speichern</button></div>
       </section>
+      <SicherheitKarte />
       <EntityTable
         title="Bankkonten je Objekt"
         table="bankkonten"
