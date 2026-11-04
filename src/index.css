@@ -171,3 +171,28 @@ input.cell { width: 110px; text-align: right; padding: 4px 6px; }
 .staerke.mittel i::after { width: 66%; background: #d4a017; }
 .staerke.stark i::after { width: 100%; background: #2e7d32; }
 button.bell { background: none; border: 0; cursor: pointer; padding: 6px; color: inherit; }
+
+/* Geöffnete Liegenschaft: schmale Hauptleiste und eigene Spalte der Liegenschaft */
+.app.kompakt .side { width: 68px; }
+.app.kompakt .side-logo { padding: 14px 6px; } .app.kompakt .side-logo > * { transform: scale(.42); transform-origin: center; margin: -22px -60px; }
+.app.kompakt .side nav { padding: 12px 8px; }
+.app.kompakt .nav-item { justify-content: center; padding: 11px 0; }
+.app.kompakt .nav-item span, .app.kompakt .nav-item .chev, .app.kompakt .side-foot { display: none; }
+.app.kompakt .main { padding-left: 0; padding-top: 0; }
+.obereich { display: flex; gap: 26px; align-items: flex-start; min-height: calc(100vh - 70px); }
+.oside { width: 250px; flex-shrink: 0; background: #fff; border-right: 1px solid var(--line); align-self: stretch; padding: 18px 12px 30px; display: flex; flex-direction: column; gap: 10px;
+  position: sticky; top: 0; max-height: 100vh; overflow-y: auto; }
+.oside-zurueck { display: flex; gap: 6px; align-items: center; font-size: 13px; color: var(--muted); padding: 0 8px; }
+.oside-zurueck:hover { color: var(--accent-dark); }
+.oside-kopf { display: flex; gap: 10px; align-items: center; padding: 6px 8px 2px; }
+.oside-kopf b { display: block; font-size: 15px; line-height: 1.25; } .oside-kopf span { font-size: 12px; color: var(--muted); }
+.oside-thumb { width: 40px; height: 40px; border-radius: 8px; background: linear-gradient(135deg, #ece4d6, #d9cdb7); color: #fff; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.oside-wechsel { margin: 0 6px; font-size: 13px; }
+.oside nav { display: flex; flex-direction: column; gap: 12px; margin-top: 4px; }
+.oside-ebene { display: flex; flex-direction: column; gap: 1px; }
+.oside-titel { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); padding: 4px 10px; font-weight: 600; }
+.oside-punkt { display: flex; gap: 10px; align-items: center; padding: 7px 10px; border-radius: 7px; color: var(--text); font-size: 13.5px; }
+.oside-punkt svg { color: var(--gray); flex-shrink: 0; }
+.oside-punkt:hover { background: var(--accent-soft); }
+.oside-punkt.on { background: var(--accent); color: #fff; font-weight: 600; } .oside-punkt.on svg { color: #fff; }
+.obody { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 18px; padding-top: 22px; }

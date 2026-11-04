@@ -56,17 +56,18 @@ const NAV: (Item | Group)[] = [
   { to: '/einstellungen', label: 'Einstellungen', icon: <Settings size={18} /> },
 ];
 
-function NavGroup({ g }: { g: Group }) {
+function NavGroup({ g, kompakt }: { g: Group; kompakt: boolean }) {
   const loc = useLocation();
+  const nav = useNavigate();
   const inside = g.items.some((i) => loc.pathname.startsWith(i.to));
   const [open, setOpen] = useState(inside);
   useEffect(() => { if (inside) setOpen(true); }, [inside]);
   return (
     <>
-      <button className={'nav-item group-btn' + (inside ? ' inside' : '')} onClick={() => setOpen(!open)}>
+      <button className={'nav-item group-btn' + (inside ? ' inside' : '')} title={kompakt ? g.label : undefined} onClick={() => (kompakt ? nav(g.items[0].to) : setOpen(!open))}>
         {g.icon}<span>{g.label}</span><ChevronDown size={16} className={'chev' + (open ? ' open' : '')} />
       </button>
-      {open && g.items.map((i) => <NavLink key={i.to} to={i.to} className="nav-item sub">{i.label}</NavLink>)}
+      {open && !kompakt && g.items.map((i) => <NavLink key={i.to} to={i.to} className="nav-item sub">{i.label}</NavLink>)}
     </>
   );
 }
@@ -132,13 +133,23 @@ export default function App() {
   return (
     <Sperre>
     <HashRouter>
-      <div className="app">
+      <Rahmen />
+    </HashRouter>
+    </Sperre>
+  );
+}
+
+function Rahmen() {
+  // In einer geöffneten Liegenschaft wird die Hauptleiste schmal, daneben erscheint die Spalte der Liegenschaft
+  const kompakt = /^\/objekte\/\d+/.test(useLocation().pathname);
+  return (
+      <div className={'app' + (kompakt ? ' kompakt' : '')}>
         <aside className="side">
           <div className="side-logo"><Logo /></div>
           <nav>
             {NAV.map((n) => 'items' in n
-              ? <NavGroup key={n.label} g={n} />
-              : <NavLink key={n.to} to={n.to} end={n.to === '/'} className="nav-item">{n.icon}<span>{n.label}</span></NavLink>)}
+              ? <NavGroup key={n.label} g={n} kompakt={kompakt} />
+              : <NavLink key={n.to} to={n.to} end={n.to === '/'} className="nav-item" title={kompakt ? n.label : undefined}>{n.icon}<span>{n.label}</span></NavLink>)}
           </nav>
           <div className="side-foot"><Landmark size={13} /> KMS Immobilienverwaltung · Version 0.2</div>
         </aside>
@@ -149,7 +160,7 @@ export default function App() {
               <Route path="/" element={<DashboardPage />} />
               <Route path="/objekte" element={<ObjektePage />} />
               <Route path="/objekte/neu" element={<ObjektAssistentPage />} />
-              <Route path="/objekte/:id" element={<ObjektDetailPage />} />
+              <Route path="/objekte/:id/*" element={<ObjektDetailPage />} />
               <Route path="/personen" element={<PersonenPage />} />
               <Route path="/eigentuemer" element={<PersonenPage rolle="Eigentümer" />} />
               <Route path="/mieter" element={<PersonenPage rolle="Mieter" />} />
@@ -176,7 +187,5 @@ export default function App() {
           </main>
         </div>
       </div>
-    </HashRouter>
-    </Sperre>
   );
 }

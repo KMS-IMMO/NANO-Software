@@ -1,6 +1,7 @@
 // Dokumentenablage je Objekt, Einheit, Person, Mietvertrag oder Firma mit eigenen Ordnervorlagen.
 import { useEffect, useRef, useState } from 'react';
 import { db, type Row } from '../db';
+import { useObjektKontext } from '../logic/objektKontext';
 import { datum } from '../components/EntityTable';
 import { ablagePfad, oeffnen, sicher, speichern, type Ablage } from '../lib/dateien';
 import { personLabel } from '../db/labels';
@@ -35,6 +36,7 @@ async function basisOrdner(bezug: Bezug, id: number): Promise<string[]> {
 }
 
 export function DokumentePage() {
+  const fix = useObjektKontext();
   const [bezug, setBezug] = useState<Bezug>('Objekt');
   const [opts, setOpts] = useState<Row[]>([]);
   const [id, setId] = useState<number | ''>('');
@@ -50,7 +52,7 @@ export function DokumentePage() {
   useEffect(() => {
     (async () => {
       const o = await db.select(AUSWAHL[bezug]);
-      setOpts(o); setId(o[0]?.value ?? '');
+      setOpts(o); setId(fix && bezug === 'Objekt' ? fix.id : o[0]?.value ?? '');
       const v = await db.select('SELECT * FROM ordnervorlagen WHERE bezug = $1 ORDER BY name', [bezug]);
       setVorlagen(v); setVorlage(v[0]?.id ?? '');
     })();
@@ -100,10 +102,10 @@ export function DokumentePage() {
     <>
       <div className="page-head"><h1>Dokumente</h1><p className="muted">Ablage nach deiner Ordnervorlage. Dateien hineinziehen oder über „Durchsuchen“ auswählen.</p></div>
       <section className="card row">
-        <div className="seg">{BEZUEGE.map((b) => <button key={b} className={bezug === b ? 'on' : ''} onClick={() => setBezug(b)}>{b}</button>)}</div>
-        <select style={{ width: 340 }} value={id} onChange={(e) => setId(Number(e.target.value))}>
+        {!fix && <div className="seg">{BEZUEGE.map((b) => <button key={b} className={bezug === b ? 'on' : ''} onClick={() => setBezug(b)}>{b}</button>)}</div>}
+        {!fix && <select style={{ width: 340 }} value={id} onChange={(e) => setId(Number(e.target.value))}>
           {opts.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-        </select>
+        </select>}
         <select style={{ width: 220 }} value={vorlage} onChange={(e) => setVorlage(Number(e.target.value))}>
           {vorlagen.length === 0 && <option value="">keine Vorlage für {bezug}</option>}
           {vorlagen.map((v) => <option key={v.id} value={v.id}>Vorlage: {v.name}</option>)}

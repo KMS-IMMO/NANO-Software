@@ -1,6 +1,8 @@
 // Nebenkostenabrechnung je Objekt und Kalenderjahr (Mietverwaltung und vermietete WEG-Einheiten).
 import { useEffect, useState } from 'react';
 import { db, type Row } from '../db';
+import { SchluesselWahl } from '../components/SchluesselWahl';
+import { useObjektKontext } from '../logic/objektKontext';
 import { eur, num, datum } from '../components/EntityTable';
 import { tageImJahr, type Position, type Schluessel } from '../logic/verteilung';
 import { HEIZ_KONTO, nkBerechnen, type NkErgebnis } from '../logic/nebenkosten';
@@ -11,8 +13,9 @@ const einheitText: Record<string, string> = { Fläche: 'm²', MEA: 'MEA', Einhei
 const basisFmt = (s: Schluessel, v: number) => (s === 'Personen' ? num(v, 0) : s === 'Einheiten' ? num(v, 3) : num(v, 2));
 
 export function NebenkostenPage() {
+  const fix = useObjektKontext();
   const [objekte, setObjekte] = useState<Row[]>([]);
-  const [objekt, setObjekt] = useState<number | ''>('');
+  const [objekt, setObjekt] = useState<number | ''>(fix?.id ?? '');
   const [jahr, setJahr] = useState(new Date().getFullYear() - 1);
   const [einheiten, setEinheiten] = useState<Row[]>([]);
   const [pos, setPos] = useState<Position[]>([]);
@@ -23,7 +26,7 @@ export function NebenkostenPage() {
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    db.select(`SELECT * FROM objekte ORDER BY verwaltungsart, name`).then((o) => { setObjekte(o); if (o.length) setObjekt(o[0].id); });
+    db.select(`SELECT * FROM objekte ORDER BY verwaltungsart, name`).then((o) => { setObjekte(o); if (o.length && !fix) setObjekt(o[0].id); });
   }, []);
 
   async function laden() {
@@ -102,9 +105,9 @@ export function NebenkostenPage() {
     <>
       <div className="page-head"><h1>Nebenkostenabrechnung</h1><p className="muted">Kalenderjahr, Umlage nach den Schlüsseln des Objekts, Leerstand trägt der Eigentümer</p></div>
       <section className="card row">
-        <select style={{ width: 300 }} value={objekt} onChange={(e) => setObjekt(Number(e.target.value))}>
+        {!fix && <select style={{ width: 300 }} value={objekt} onChange={(e) => setObjekt(Number(e.target.value))}>
           {objekte.map((o) => <option key={o.id} value={o.id}>{o.name} ({o.verwaltungsart})</option>)}
-        </select>
+        </select>}
         <label className="inline">Jahr <input type="number" style={{ width: 90 }} value={jahr} onChange={(e) => setJahr(Number(e.target.value))} /></label>
         <span className="muted small">01.01.{jahr} bis 31.12.{jahr} · {tageImJahr(jahr)} Tage</span>
         <span className="grow" />
@@ -147,8 +150,12 @@ export function NebenkostenPage() {
         <div className="card-head"><h2>Kosten {jahr}</h2></div>
         {pos.length === 0 ? <p className="muted">Keine umlagefähigen Kosten im Jahr {jahr}. Kosten kommen aus dem Bankimport und aus erfassten Rechnungen.</p> : (
           <table className="list">
-            <thead><tr><th>Konto</th><th>Kostenart</th><th>Schlüssel</th><th>§35a</th><th className="num">Betrag</th></tr></thead>
-            <tbody>{pos.map((p) => <tr key={p.konto_id}><td>{p.nummer}</td><td>{p.name}</td><td>{p.schluessel}</td><td>{[p.hdl && 'HDL', p.hwl && 'HWL'].filter(Boolean).join(', ')}</td><td className="num">{eur(p.betrag)}</td></tr>)}</tbody>
+            <thead><tr><th>Konto</th><th>Kostenart</th><th>Verteilung</th><th>§35a</th><th className="num">Betrag</th></tr></thead>
+            <tbody>{pos.map((p) => <tr key={p.konto_id}><td>{p.nummer}</td><td>{p.name}</td>
+              <td><SchluesselWahl objekt={Number(objekt)} jahr={jahr} p={p} onChanged={(t) => { setInfo(t); laden(); }} anteile={(k) => {
+                const m: Record<number, number> = {};
+                for (const r of erg) for (const z of r.zeilen) if (z.pos.konto_id === k) m[r.nutzer.einheit_id] = (m[r.nutzer.einheit_id] ?? 0) + z.betrag;
+                return m; }} /></td><td>{[p.hdl && 'HDL', p.hwl && 'HWL'].filter(Boolean).join(', ')}</td><td className="num">{eur(p.betrag)}</td></tr>)}</tbody>
           </table>)}
       </section>
 

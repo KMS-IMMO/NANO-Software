@@ -1,6 +1,7 @@
 // Offene Posten (Miete und Hausgeld) mit Soll-Stellung und Statistik offen / gezahlt.
 import { useEffect, useMemo, useState } from 'react';
 import { db, insert, type Row } from '../db';
+import { useObjektKontext } from '../logic/objektKontext';
 import { datum, eur } from '../components/EntityTable';
 import { KONTO_FUER_ART, OP_SQL, sollStellen } from '../logic/soll';
 
@@ -10,11 +11,12 @@ const offen = (r: Row) => r.betrag - r.bezahlt > 0.005;
 type Gruppierung = 'Objekt' | 'Schuldner' | 'Monat' | 'Jahr';
 
 export function OffenePostenPage() {
+  const fix = useObjektKontext();
   const [rows, setRows] = useState<Row[]>([]);
   const [bis, setBis] = useState(heute().slice(0, 7));
   const [filter, setFilter] = useState<'offen' | 'bezahlt' | 'alle'>('offen');
-  const [objekt, setObjekt] = useState('');
-  const [gruppe, setGruppe] = useState<Gruppierung>('Objekt');
+  const [objekt, setObjekt] = useState(fix ? String(fix.id) : '');
+  const [gruppe, setGruppe] = useState<Gruppierung>(fix ? 'Schuldner' : 'Objekt');
   const [info, setInfo] = useState('');
 
   const load = async () => setRows(await db.select(`${OP_SQL} ORDER BY s.faellig DESC, o.name, e.nummer`));
@@ -71,10 +73,10 @@ export function OffenePostenPage() {
             <button className="primary" onClick={stellen}>Miete und Hausgeld soll stellen</button>
             {info && <span className="muted">{info}</span>}
           </div>
-          <select style={{ width: 220 }} value={objekt} onChange={(e) => setObjekt(e.target.value)}>
+          {!fix && <select style={{ width: 220 }} value={objekt} onChange={(e) => setObjekt(e.target.value)}>
             <option value="">Alle Objekte</option>
             {objekte.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
-          </select>
+          </select>}
         </div>
       </section>
 
