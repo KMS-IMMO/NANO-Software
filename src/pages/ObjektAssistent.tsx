@@ -40,6 +40,7 @@ export function ObjektAssistentPage() {
     setFehler('');
     if (schritt === 1) {
       if (!o.strasse || !o.plz || !o.ort) { setFehler('Bitte Straße, PLZ und Ort ausfüllen.'); return; }
+      if (!weg && o.eigentuemer_id === 'neu' && !String(o.neu_nachname ?? '').trim()) { setFehler('Bitte Nachname oder Firma des neuen Eigentümers eintragen.'); return; }
       if (!o.name) setO({ ...o, name: o.strasse });
     }
     if (schritt === 2) {
@@ -64,8 +65,16 @@ export function ObjektAssistentPage() {
       const id = await insert('objekte', {
         verwaltungsart: o.verwaltungsart, name: o.name || o.strasse, strasse: o.strasse, plz: o.plz, ort: o.ort, status: o.status || 'Aktiv',
         baujahr: o.baujahr ? zahl(o.baujahr) : null, gesamt_mea: meaSoll || (sMea || null), heizungsart: o.heizungsart || null,
-        eigentuemer_id: !weg && o.eigentuemer_id ? Number(o.eigentuemer_id) : null, notiz: o.notiz || null,
+        eigentuemer_id: null, notiz: o.notiz || null,
       });
+      // Eigentümer des Hauses (Mietverwaltung): vorhandene Person oder direkt neu angelegt
+      if (!weg && o.eigentuemer_id) {
+        const eid = o.eigentuemer_id === 'neu'
+          ? await insert('personen', { rolle: 'Eigentümer', vorname: (o.neu_vorname ?? '').trim() || null, nachname: String(o.neu_nachname).trim(),
+              telefon: (o.neu_telefon ?? '').trim() || null, email: (o.neu_email ?? '').trim() || null })
+          : Number(o.eigentuemer_id);
+        await db.execute('UPDATE objekte SET eigentuemer_id = $1 WHERE id = $2', [eid, id]);
+      }
       // Eigentümer je Einheit: gleicher Name = dieselbe Person (auch bereits vorhandene Eigentümer)
       const personen = new Map<string, Row>();
       if (weg) for (const p of await db.select(`SELECT id, vorname, nachname, telefon, email FROM personen WHERE rolle = 'Eigentümer'`)) personen.set(nameKey(p.vorname, p.nachname), p);
@@ -128,8 +137,17 @@ export function ObjektAssistentPage() {
               <label><span>Heizungsart</span><select value={o.heizungsart ?? ''} onChange={(e) => set('heizungsart', e.target.value)}><option value="">–</option>{HEIZUNG.map((h) => <option key={h}>{h}</option>)}</select></label>
               <label><span>Gesamt-MEA {weg ? '*' : ''}</span><input inputMode="decimal" placeholder="z. B. 1.000 oder 10.000" value={o.gesamt_mea ?? ''} onChange={(e) => set('gesamt_mea', e.target.value)} /></label>
               {!weg && <label><span>Eigentümer des Hauses</span><select value={o.eigentuemer_id ?? ''} onChange={(e) => set('eigentuemer_id', e.target.value)}>
-                <option value="">–</option>{eigentuemer.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}</select></label>}
+                <option value="">–</option><option value="neu">+ Neuen Eigentümer anlegen …</option>{eigentuemer.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}</select></label>}
             </div>
+            {!weg && o.eigentuemer_id === 'neu' && <>
+              <div className="sec">Neuer Eigentümer</div>
+              <div className="form f4">
+                <label><span>Vorname</span><input value={o.neu_vorname ?? ''} onChange={(e) => set('neu_vorname', e.target.value)} /></label>
+                <label><span>Nachname / Firma *</span><input value={o.neu_nachname ?? ''} onChange={(e) => set('neu_nachname', e.target.value)} /></label>
+                <label><span>Telefon</span><input value={o.neu_telefon ?? ''} onChange={(e) => set('neu_telefon', e.target.value)} /></label>
+                <label><span>E-Mail</span><input type="email" value={o.neu_email ?? ''} onChange={(e) => set('neu_email', e.target.value)} /></label>
+              </div>
+            </>}
           </>
         )}
 
@@ -185,6 +203,7 @@ export function ObjektAssistentPage() {
               <tr><td>Bezeichnung</td><td><b>{o.name || o.strasse}</b></td></tr>
               <tr><td>Anschrift</td><td>{o.strasse}, {o.plz} {o.ort}</td></tr>
               <tr><td>Baujahr / Heizung</td><td>{o.baujahr || '–'} / {o.heizungsart || '–'}</td></tr>
+              {!weg && <tr><td>Eigentümer des Hauses</td><td>{o.eigentuemer_id === 'neu' ? <>{[o.neu_vorname, o.neu_nachname].filter(Boolean).join(' ')} <span className="muted">(wird neu angelegt)</span></> : eigentuemer.find((p) => String(p.value) === String(o.eigentuemer_id))?.label ?? '–'}</td></tr>}
               <tr><td>Einheiten</td><td>{einheiten.length} ({[...new Set(einheiten.map((e) => e.typ))].join(', ')})</td></tr>
               {weg && <tr><td>Hausgeld / vermietet</td><td>{num(sHg)} € im Monat · {nMieter} von {einheiten.length} Einheiten vermietet (NK-Vorauszahlungen {num(sNk)} € im Monat)</td></tr>}
               {weg && <tr><td>Eigentümer</td><td>{nEig} erfasst{einheiten.some((e) => !e.nachname.trim()) ? `, ${einheiten.filter((e) => !e.nachname.trim()).length} Einheiten noch ohne` : ''}</td></tr>}
