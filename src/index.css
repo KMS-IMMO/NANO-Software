@@ -196,3 +196,7 @@ button.bell { background: none; border: 0; cursor: pointer; padding: 6px; color:
 .oside-punkt:hover { background: var(--accent-soft); }
 .oside-punkt.on { background: var(--accent); color: #fff; font-weight: 600; } .oside-punkt.on svg { color: #fff; }
 .obody { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 18px; padding-top: 22px; }
+button.danger-voll { background: var(--neg); border-color: var(--neg); color: #fff; font-weight: 600; }
+button.danger-voll:disabled { opacity: .45; cursor: not-allowed; }
+.oside-loeschen { margin-top: 10px; display: flex; gap: 8px; align-items: center; padding: 7px 10px; font-size: 13px; color: var(--neg); background: none; border: none; text-align: left; }
+.oside-loeschen:hover { text-decoration: underline; }

@@ -43,11 +43,15 @@ interface Props {
   icon?: ReactNode;
   /** Eigener Ablauf statt Formular beim Anlegen (z. B. Assistent) */
   onNew?: () => void;
+  /** Eigener Ablauf beim Löschen (z. B. mit Bestätigungsfeld) */
+  onDelete?: (row: Row) => void;
+  /** Ändert sich der Wert, wird die Liste neu geladen */
+  version?: number;
 }
 
 type Opt = { value: string | number; label: string };
 
-export function EntityTable({ title, table, fields, listSql, listParams = [], fixed, onOpen, emptyText, onChange, groupBy, newLabel, icon, onNew }: Props) {
+export function EntityTable({ title, table, fields, listSql, listParams = [], fixed, onOpen, emptyText, onChange, groupBy, newLabel, icon, onNew, onDelete, version }: Props) {
   const [rows, setRows] = useState<Row[]>([]);
   const [editing, setEditing] = useState<Row | null>(null);
   const [opts, setOpts] = useState<Record<string, Opt[]>>({});
@@ -56,7 +60,7 @@ export function EntityTable({ title, table, fields, listSql, listParams = [], fi
 
   const load = useCallback(async () => {
     setRows(await db.select(listSql, listParams));
-  }, [listSql, JSON.stringify(listParams)]);
+  }, [listSql, JSON.stringify(listParams), version]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -104,6 +108,7 @@ export function EntityTable({ title, table, fields, listSql, listParams = [], fi
 
   async function del() {
     if (!editing?.id) return;
+    if (onDelete) { const r = editing; setEditing(null); onDelete(r); return; }
     if (!window.confirm('Datensatz wirklich löschen?')) return;
     try {
       await remove(table, editing.id);
