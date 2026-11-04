@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, BarChart3, BookOpen, Building2, ClipboardList, Coins, DoorOpen, FileSignature, FileText, FolderOpen, Gavel, Home, Landmark, Layers, ListChecks, Mail,
-  Maximize2, PiggyBank, Receipt, Scale, User, Users, Wallet, Wrench } from 'lucide-react';
+  Maximize2, PiggyBank, Receipt, Scale, Trash2, User, Users, Wallet, Wrench } from 'lucide-react';
 import { BeschluesseTab, RuecklagenTab, VorgaengeTab, WirtschaftsplanTab } from './Weg';
 import { EntityTable, datum, eur, num, type Field } from '../components/EntityTable';
 import { ObjektKontext } from '../logic/objektKontext';
+import { ObjektLoeschen } from '../components/ObjektLoeschen';
 import { OP_SQL, mieteImMonat } from '../logic/soll';
 import { VertragDetailPage, VertraegePage } from './Vertraege';
 import { JournalPage, AuswertungPage } from './Buchhaltung';
@@ -40,8 +41,17 @@ const objektFields: Field[] = [
 
 export function ObjektePage() {
   const nav = useNavigate();
+  const [loeschen, setLoeschen] = useState<Row | null>(null);
+  const [info, setInfo] = useState('');
+  const [version, setVersion] = useState(0);
   return (
+    <>
+    {info && <p className="info">{info}</p>}
+    {loeschen && <ObjektLoeschen objekt={{ id: loeschen.id, name: loeschen.name }} onClose={() => setLoeschen(null)}
+      onDone={(t) => { setLoeschen(null); setInfo(t); setVersion(version + 1); }} />}
     <EntityTable
+      version={version}
+      onDelete={setLoeschen}
       title="Liegenschaften"
       icon={<Building2 size={24} />}
       newLabel="Liegenschaft hinzufügen"
@@ -53,6 +63,7 @@ export function ObjektePage() {
       onOpen={(r) => nav(`/objekte/${r.id}`)}
       emptyText="Noch keine Liegenschaften. Lege mit „Liegenschaft hinzufügen“ dein erstes Haus oder deine erste WEG an."
     />
+    </>
   );
 }
 
@@ -97,6 +108,7 @@ export function ObjektDetailPage() {
   const [o, setO] = useState<Row | null>(null);
   const [alle, setAlle] = useState<Row[]>([]);
   const [sum, setSum] = useState<Row>({});
+  const [loeschen, setLoeschen] = useState(false);
   const reload = async () => {
     setO((await db.select(`SELECT o.*, ${personLabel('p')} AS eigentuemer, p.telefon, p.email
       FROM objekte o LEFT JOIN personen p ON p.id = o.eigentuemer_id WHERE o.id = $1`, [id]))[0] ?? null);
@@ -135,7 +147,9 @@ export function ObjektDetailPage() {
                     <p.icon size={16} />{p.label}</Link>))}
               </div>))}
           </nav>
+          <button className="oside-loeschen" onClick={() => setLoeschen(true)}><Trash2 size={15} />Liegenschaft löschen</button>
         </aside>
+        {loeschen && <ObjektLoeschen objekt={{ id, name: o.name }} onClose={() => setLoeschen(false)} onDone={() => nav('/objekte')} />}
         <div className="obody" key={id}>
           <div className="crumbs"><Link to="/">Dashboard</Link> › <Link to="/objekte">Liegenschaften</Link> › {slug ? <><Link to={`/objekte/${id}`}>{o.name}</Link> › <span>{aktuell?.label ?? ''}</span></> : <span>{o.name}</span>}</div>
           <Bereich slug={slug} rest={rest} o={o} sum={sum} weg={weg} reload={reload} />
