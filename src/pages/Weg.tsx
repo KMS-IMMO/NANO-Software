@@ -98,7 +98,7 @@ export function VorgaengeTab({ objektId }: { objektId?: number }) {
         fields={[
           { key: 'nr', label: 'Nr.', computed: true, format: (_, r) => <b>I-{1000 + Number(r.id)}</b> },
           ...(objektId ? [] : [{ key: 'objekt_id', label: 'Liegenschaft', type: 'select' as const, optionsSql: objektOptions, required: true }]),
-          { key: 'einheit_id', label: 'Einheit (optional)', type: 'select', hideInTable: true,
+          { key: 'einheit_id', label: 'Einheit', type: 'select', hideInTable: true, leer: 'Gesamtes Objekt',
             optionsSql: `SELECT e.id AS value, o.name || ' – ' || e.nummer AS label FROM einheiten e JOIN objekte o ON o.id = e.objekt_id
               ${objektId ? `WHERE e.objekt_id = ${Number(objektId)}` : ''} ORDER BY label` },
           { key: 'betreff', label: 'Betreff', required: true, wide: true, format: (v, r) => <>{v}{r.einheit_id_label && <div className="muted small">{r.einheit_id_label}</div>}</> },

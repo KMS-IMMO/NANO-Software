@@ -37,7 +37,7 @@ export function RechnungenPage() {
       fields={[
         { key: 'datum', label: 'Datum', type: 'date', required: true },
         { key: 'objekt_id', label: 'Objekt', type: 'select', required: true, optionsSql: 'SELECT id AS value, name AS label FROM objekte ORDER BY name' },
-        { key: 'einheit_id', label: 'Einheit (nur bei Direktkosten)', type: 'select', hideInTable: true,
+        { key: 'einheit_id', label: 'Einheit', type: 'select', hideInTable: true, leer: 'Alle Einheiten (Umlage nach Schlüssel)',
           optionsSql: `SELECT e.id AS value, o.name || ' – ' || e.nummer AS label FROM einheiten e JOIN objekte o ON o.id = e.objekt_id ORDER BY label` },
         { key: 'firma_id', label: 'Firma', type: 'select', optionsSql: 'SELECT id AS value, name AS label FROM firmen ORDER BY name' },
         { key: 'rechnungsnr', label: 'Rechnungsnr.' },

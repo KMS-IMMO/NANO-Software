@@ -105,15 +105,15 @@ export function JournalPage() {
             <thead><tr><th>Bu.-Nr.</th><th>Datum</th><th>Liegenschaft</th><th>Konto</th><th>Buchungstext</th><th className="num">Soll</th><th className="num">Haben</th><th /></tr></thead>
             <tbody>{rows.map((r) => (
               <tr key={r.id}>
-                <td>{r.id}</td><td>{datum(r.datum)}</td><td>{r.objekt}{r.einheit && <div className="muted small">{r.einheit}</div>}</td>
+                <td>{r.id}</td><td>{datum(r.datum)}</td><td>{r.objekt}<div className="muted small">{r.einheit ?? (r.betrag < 0 ? 'alle Einheiten' : '')}</div></td>
                 <td>{r.nummer ? `${r.nummer} ${r.konto}` : <span className="tag">ohne Konto</span>}</td>
                 <td className="small">{r.text}{r.bankumsatz_id ? <span className="muted"> · Bank</span> : ''}</td>
-                <td className="num">{r.betrag < 0 ? eur(-r.betrag) : '–'}</td><td className="num pos">{r.betrag > 0 ? eur(r.betrag) : '–'}</td>
+                <td className="num neg">{r.betrag < 0 ? eur(-r.betrag) : '–'}</td><td className="num">{r.betrag > 0 ? eur(r.betrag) : '–'}</td>
                 <td className="actions">{!r.bankumsatz_id && !r.sollstellung_id && !r.rechnung_id &&
                   <button className="link" onClick={() => setEdit({ ...r, richtung: r.betrag > 0 ? 'Einnahme' : 'Ausgabe', betrag: String(Math.abs(r.betrag)).replace('.', ',') })}>Bearbeiten</button>}</td>
               </tr>))}
             </tbody>
-            <tfoot><tr><td colSpan={5}>Summe</td><td className="num">{eur(soll)}</td><td className="num">{eur(haben)}</td><td /></tr></tfoot>
+            <tfoot><tr><td colSpan={5}>Summe</td><td className="num neg">{eur(soll)}</td><td className="num">{eur(haben)}</td><td /></tr></tfoot>
           </table></div>)}
         <p className="muted small">Bankbuchungen änderst du unter „Banken &amp; Konten“ (Zuordnung lösen). Hier erfasst du Buchungen ohne Bankumsatz, z. B. Barzahlungen oder Umbuchungen.</p>
       </section>
@@ -145,8 +145,8 @@ function BuchungForm({ edit, setEdit, objekte, konten }: { edit: Row; setEdit: (
       <label><span>Art *</span><select value={edit.richtung} onChange={(e) => set('richtung', e.target.value)}><option>Ausgabe</option><option>Einnahme</option></select></label>
       <label><span>Liegenschaft *</span><select value={edit.objekt_id ?? ''} onChange={(e) => setEdit({ ...edit, objekt_id: e.target.value, einheit_id: '' })}>
         <option value="">– bitte wählen –</option>{objekte.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}</select></label>
-      <label><span>Einheit (optional)</span><select value={edit.einheit_id ?? ''} onChange={(e) => set('einheit_id', e.target.value)}>
-        <option value="">–</option>{einheiten.map((x) => <option key={x.id} value={x.id}>{x.nummer}</option>)}</select></label>
+      <label><span>Einheit</span><select value={edit.einheit_id ?? ''} onChange={(e) => set('einheit_id', e.target.value)}>
+        <option value="">{edit.richtung === 'Einnahme' ? 'Gesamtes Objekt' : 'Alle Einheiten (Umlage nach Schlüssel)'}</option>{einheiten.map((x) => <option key={x.id} value={x.id}>{x.nummer}</option>)}</select></label>
       <label className="wide"><span>Konto *</span><select value={edit.buchungskonto_id ?? ''} onChange={(e) => set('buchungskonto_id', e.target.value)}>
         <option value="">– bitte wählen –</option>{konten.map((k) => <option key={k.value} value={k.value}>{k.label}</option>)}</select></label>
       <label><span>Betrag € *</span><input inputMode="decimal" value={edit.betrag ?? ''} onChange={(e) => set('betrag', e.target.value)} /></label>
@@ -214,9 +214,9 @@ export function AuswertungPage() {
         <label className="inline">bis <input type="date" value={bis} onChange={(e) => setBis(e.target.value)} /></label>
       </section>
       <div className="kpis">
-        <div className="kpi"><span>Erträge</span><b className="pos">{eur(sE)}</b></div>
-        <div className="kpi"><span>Aufwendungen</span><b>{eur(sA)}</b></div>
-        <div className="kpi"><span>Ergebnis (Überschuss / Fehlbetrag)</span><b className={sE - sA < 0 ? 'neg' : 'pos'}>{eur(sE - sA)}</b></div>
+        <div className="kpi"><span>Erträge</span><b>{eur(sE)}</b></div>
+        <div className="kpi"><span>Aufwendungen</span><b className="neg">{eur(sA)}</b></div>
+        <div className="kpi"><span>Ergebnis (Überschuss / Fehlbetrag)</span><b className={sE - sA < 0 ? 'neg' : ''}>{eur(sE - sA)}</b></div>
         <div className="kpi"><span>Kontostände {datum(bis)}</span><b>{eur(banken.reduce((a, b) => a + Number(b.saldo), 0))}</b><small>{banken.length} Bankkonten</small></div>
       </div>
       <section className="card">

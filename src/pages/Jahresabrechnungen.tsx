@@ -182,7 +182,7 @@ export function WegAbrechnungPage() {
       {!objekte.length && <p className="muted">Noch keine WEG angelegt.</p>}
       {info && <p className="info">{info}</p>}
       <div className="kpis">
-        <div className="kpi"><span>Ausgaben {jahr}</span><b>{eur(pos.reduce((a, p) => a + p.betrag, 0))}</b></div>
+        <div className="kpi"><span>Ausgaben {jahr}</span><b className="neg">{eur(pos.reduce((a, p) => a + p.betrag, 0))}</b></div>
         <div className="kpi"><span>Hausgeld Soll / Ist</span><b>{eur(erg.reduce((a, r) => a + r.soll, 0))}</b><small>gezahlt {eur(erg.reduce((a, r) => a + r.ist, 0))}</small></div>
         <div className="kpi"><span>Erhaltungsrücklage 31.12.</span><b>{eur(verm.ruecklage ?? 0)}</b><small>Zuführung {eur(verm.zufJahr ?? 0)}</small></div>
         <div className="kpi"><span>Summe Abrechnungsspitzen</span><b>{eur(erg.reduce((a, r) => a + r.spitze, 0))}</b></div>
@@ -276,10 +276,10 @@ export function EigentuemerAbrechnungPage() {
       </Kopf>
       {info && <p className="info">{info}</p>}
       <div className="kpis">
-        <div className="kpi"><span>Einnahmen</span><b className="pos">{eur(summeEin)}</b></div>
-        <div className="kpi"><span>Umlagefähige Kosten</span><b>{eur(sU)}</b></div>
-        <div className="kpi"><span>Nicht umlagefähige Kosten</span><b>{eur(sN)}</b></div>
-        <div className="kpi"><span>Überschuss</span><b className={summeEin - sU - sN < 0 ? 'neg' : 'pos'}>{eur(summeEin - sU - sN)}</b></div>
+        <div className="kpi"><span>Einnahmen</span><b>{eur(summeEin)}</b></div>
+        <div className="kpi"><span>Umlagefähige Kosten</span><b className="neg">{eur(sU)}</b></div>
+        <div className="kpi"><span>Nicht umlagefähige Kosten</span><b className="neg">{eur(sN)}</b></div>
+        <div className="kpi"><span>Überschuss</span><b className={summeEin - sU - sN < 0 ? 'neg' : ''}>{eur(summeEin - sU - sN)}</b></div>
       </div>
       <div className="grid2">
         {[['Einnahmen', ein.map((x) => ({ k: x.nummer, n: x.name, b: Number(x.betrag) }))], ['Umlagefähige Kosten', uml.map((x) => ({ k: x.nummer, n: x.name, b: x.betrag }))],

@@ -123,7 +123,7 @@ export function BankPage() {
                   <td>{datum(u.datum)}</td>
                   <td>{u.gegenpartei}<div className="muted small">{u.gegen_iban}</div></td>
                   <td className="small">{u.verwendungszweck}</td>
-                  <td className={'num ' + (u.betrag < 0 ? 'neg' : 'pos')}><b>{eur(u.betrag)}</b></td>
+                  <td className={'num ' + (u.betrag < 0 ? 'neg' : '')}><b>{eur(u.betrag)}</b></td>
                   <td>
                     {u.status === 'offen'
                       ? <Zuordnen u={u} v={vorschlaege[u.id]} personen={personen} konten={bkonten} done={load} />
