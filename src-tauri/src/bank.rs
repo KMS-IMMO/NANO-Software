@@ -1,7 +1,10 @@
 //! Bankabruf per FinTS 3.0 (PIN/TAN) mit Freigabe in der Banking-App (pushTAN / decoupled).
 //! Ablauf: `bank_start` meldet sich an und löst die Freigabe aus, `bank_abholen` fragt so lange nach,
-//! bis die Freigabe erteilt ist, und liefert dann die Umsätze. Die PIN wird nicht gespeichert.
-use fints::{Flow, Pin, ProductId, UserId};
+//! bis die Freigabe erteilt ist, und liefert dann die Umsätze.
+//! Auf Wunsch liegt die PIN verschlüsselt im Schlüsselbund des Betriebssystems (macOS-Schlüsselbund,
+//! Windows-Anmeldeinformationen), nie in der Datenbank. Zusammen mit der gemerkten System-ID der Bank
+//! erlaubt das den automatischen Abruf ohne Freigabe, solange die Bank ihn zulässt (PSD2: etwa 90 Tage).
+use fints::{Flow, Pin, ProductId, SystemId, UserId};
 use serde::Serialize;
 use tokio::sync::Mutex;
 
@@ -29,6 +32,7 @@ pub struct Umsatz {
 #[derive(Serialize)]
 pub struct Abruf {
   pub wartet: bool,
+  pub system_id: Option<String>,
   pub umsaetze: Vec<Umsatz>,
   pub saldo: Option<f64>,
   pub saldo_datum: Option<String>,
@@ -45,29 +49,63 @@ fn fehler(e: fints::FinTSError) -> String {
   t
 }
 
+const DIENST: &str = "NANO Verwaltung Online-Banking";
+
+fn eintrag(konto: i64) -> Result<keyring::Entry, String> {
+  keyring::Entry::new(DIENST, &format!("bankkonto-{konto}")).map_err(|e| format!("Schlüsselbund nicht verfügbar: {e}"))
+}
+
+/// Liegt für dieses Bankkonto eine PIN im Schlüsselbund?
+#[tauri::command]
+pub fn bank_pin_vorhanden(konto: i64) -> bool {
+  eintrag(konto).and_then(|e| e.get_password().map_err(|e| e.to_string())).is_ok()
+}
+
+/// Gespeicherte PIN aus dem Schlüsselbund entfernen
+#[tauri::command]
+pub fn bank_pin_loeschen(konto: i64) -> Result<(), String> {
+  match eintrag(konto)?.delete_credential() {
+    Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+    Err(e) => Err(e.to_string()),
+  }
+}
+
 #[tauri::command]
 pub async fn bank_start(
   state: tauri::State<'_, BankState>,
+  konto: i64,
   blz: String,
   benutzer: String,
-  pin: String,
+  pin: Option<String>,
+  merken: bool,
+  system_id: Option<String>,
   produkt_id: String,
   iban: String,
   bic: String,
 ) -> Result<Start, String> {
   let iban_t = fints::Iban::new(&iban);
   let bic_t = fints::Bic::new(&bic);
+  // Ohne eingegebene PIN die gespeicherte aus dem Schlüsselbund nehmen
+  let pin_t = match pin.as_deref().filter(|p| !p.is_empty()) {
+    Some(p) => p.to_string(),
+    None => eintrag(konto)?.get_password().map_err(|_| "Für dieses Konto ist keine PIN gespeichert.".to_string())?,
+  };
+  let sys = system_id.filter(|s| !s.is_empty() && s != "0").map(|s| SystemId::new(&s));
   let (flow, info) = Flow::initiate(
     &blz,
     &UserId::new(&benutzer),
-    &Pin::new(&pin),
+    &Pin::new(&pin_t),
     &ProductId::new(&produkt_id),
-    None,
+    sys.as_ref(),
     Some(&iban_t),
     Some(&bic_t),
   )
   .await
   .map_err(fehler)?;
+  // Erst nach erfolgreicher Anmeldung speichern, damit keine falsche PIN im Schlüsselbund landet
+  if merken && pin.is_some() {
+    eintrag(konto)?.set_password(&pin_t).map_err(|e| format!("PIN konnte nicht im Schlüsselbund gespeichert werden: {e}"))?;
+  }
   *state.0.lock().await = Some(flow);
   Ok(Start { text: info.challenge.as_str().to_string(), freigabe_in_app: info.decoupled, ohne_tan: info.no_tan_required })
 }
@@ -94,6 +132,7 @@ pub async fn bank_abholen(state: tauri::State<'_, BankState>, iban: String, bic:
         .collect();
       Ok(Abruf {
         wartet: false,
+        system_id: r.system_id.as_ref().filter(|s| s.is_assigned()).map(|s| s.as_str().to_string()),
         umsaetze,
         saldo: r.balance.as_ref().and_then(|b| b.amount.to_string().parse().ok()),
         saldo_datum: r.balance.as_ref().map(|b| b.date.to_string()),
@@ -102,7 +141,7 @@ pub async fn bank_abholen(state: tauri::State<'_, BankState>, iban: String, bic:
     Err(e) => {
       let t = e.to_string();
       if t.contains("TAN still pending") {
-        return Ok(Abruf { wartet: true, umsaetze: vec![], saldo: None, saldo_datum: None });
+        return Ok(Abruf { wartet: true, system_id: None, umsaetze: vec![], saldo: None, saldo_datum: None });
       }
       *guard = None;
       Err(fehler(e))
