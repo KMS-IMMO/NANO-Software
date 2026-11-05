@@ -7,6 +7,7 @@ import { Donut } from '../components/Donut';
 import { personLabel } from '../db/labels';
 import { OP_SQL } from '../logic/soll';
 import { InternChat } from '../components/InternChat';
+import { Zaehler } from '../components/Zaehler';
 
 const monat = () => new Date().toISOString().slice(0, 7);
 const monatName = () => new Date().toLocaleDateString('de-DE', { month: 'long', year: 'numeric' });
@@ -63,10 +64,10 @@ export function DashboardPage() {
         {db.isDemo && <p className="muted">Vorschau mit Beispieldaten. In der installierten App werden deine Daten lokal gespeichert.</p>}
       </div>
       <div className="kpis">
-        <div className="kpi icon"><Building2 size={40} strokeWidth={1.5} /><div><b>{k.objekte ?? 0}</b><span>Liegenschaften</span></div></div>
-        <div className="kpi icon"><DoorOpen size={40} strokeWidth={1.5} /><div><b>{k.einheiten ?? 0}</b><span>Einheiten · {num(k.flaeche, 0)} m²</span></div></div>
-        <div className="kpi icon"><Users size={40} strokeWidth={1.5} /><div><b>{k.mieter ?? 0}</b><span>Mieter</span></div></div>
-        <div className="kpi icon"><Wallet size={40} strokeWidth={1.5} /><div><b className={k.offen > 0 ? 'neg' : ''}>{eur(k.offen ?? 0)}</b><span>Überfällig ({k.offen_n ?? 0} Posten)</span></div></div>
+        <div className="kpi icon"><Building2 size={40} strokeWidth={1.5} /><div><b><Zaehler wert={Number(k.objekte) || 0} /></b><span>Liegenschaften</span></div></div>
+        <div className="kpi icon"><DoorOpen size={40} strokeWidth={1.5} /><div><b><Zaehler wert={Number(k.einheiten) || 0} /></b><span>Einheiten · {num(k.flaeche, 0)} m²</span></div></div>
+        <div className="kpi icon"><Users size={40} strokeWidth={1.5} /><div><b><Zaehler wert={Number(k.mieter) || 0} /></b><span>Mieter</span></div></div>
+        <div className="kpi icon"><Wallet size={40} strokeWidth={1.5} /><div><b className={k.offen > 0 ? 'neg' : ''}><Zaehler wert={Number(k.offen) || 0} format={eur} /></b><span>Überfällig ({k.offen_n ?? 0} Posten)</span></div></div>
       </div>
       <div className="grid2">
         <section className="card">
