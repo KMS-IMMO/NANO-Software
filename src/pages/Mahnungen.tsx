@@ -58,7 +58,7 @@ export function MahnungenPage() {
       const brief = new Brief(await absender());
       const name = [p.anrede === 'Firma' ? '' : p.anrede, p.titel, p.vorname, p.nachname].filter(Boolean).join(' ');
       brief.kopf([p.firma, name, p.strasse, [p.plz, p.ort].filter(Boolean).join(' ')], heute());
-      const was = f.verwaltungsart === 'WEG' && f.posten.every((x) => x.art === 'Hausgeld') ? 'Hausgeld' : 'Miete';
+      const was = f.verwaltungsart === 'WEG' && f.posten.every((x) => x.art === 'Hausgeld' || x.art === 'Rücklage') ? 'Hausgeld' : 'Miete';
       brief.betreff(`${STUFEN[stufe]}: ${o.name}, Einheit ${f.einheit}`);
       const anrede = p.anrede === 'Frau' ? `Sehr geehrte Frau ${p.nachname},` : p.anrede === 'Herr' ? `Sehr geehrter Herr ${p.nachname},` : 'Sehr geehrte Damen und Herren,';
       brief.absatz(anrede);

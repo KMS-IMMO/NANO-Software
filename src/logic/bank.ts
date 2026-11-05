@@ -192,6 +192,13 @@ export async function zuordnenPerson(u: Row, personId: number) {
   const objekt = (await db.select('SELECT objekt_id FROM bankkonten WHERE id = $1', [u.bankkonto_id]))[0]?.objekt_id ?? null;
   const ops = (await db.select(`SELECT * FROM (${OP_SQL}) WHERE person_id = $1 AND betrag - bezahlt > 0.005 ORDER BY faellig, id`, [personId]))
     .filter((o) => !objekt || o.objekt_id === objekt);
+  // Hausgeld und Rücklage getrennt überwiesen: Verwendungszweck „Rücklage“ oder genau passender Betrag bestimmt,
+  // welcher Posten zuerst bezahlt wird. Sonst gilt die Reihenfolge nach Fälligkeit.
+  const offen = (o: Row) => Math.round((o.betrag - o.bezahlt) * 100) / 100;
+  const betragU = Math.round(u.betrag * 100) / 100;
+  const zweckRl = /r(ü|ue)cklage/i.test(`${u.verwendungszweck ?? ''}`);
+  const rang = (o: Row) => (zweckRl && o.art === 'Rücklage' ? 0 : !zweckRl && offen(o) === betragU ? 1 : 2);
+  ops.sort((a, b) => rang(a) - rang(b));
   const konten = await db.select('SELECT id, nummer FROM buchungskonten');
   const kontoId = (art: string) => konten.find((k) => k.nummer === (KONTO_FUER_ART[art] ?? '1000'))?.id ?? null;
   let rest = Math.round(u.betrag * 100) / 100;

@@ -1,6 +1,7 @@
 // Nebenkostenabrechnung je Objekt und Kalenderjahr (Mietverwaltung und vermietete WEG-Einheiten).
 import { useEffect, useState } from 'react';
 import { db, type Row } from '../db';
+import { wid } from '../db/labels';
 import { AbrechnungsUebersicht } from '../components/AbrechnungsUebersicht';
 import { SchluesselWahl } from '../components/SchluesselWahl';
 import { useObjektKontext } from '../logic/objektKontext';
@@ -189,7 +190,7 @@ function abrechnungPdf(abs: Awaited<ReturnType<typeof absender>>, o: Row, jahr: 
   const b = new Brief(abs);
   b.kopf([r.nutzer.name, o.strasse, [o.plz, o.ort].filter(Boolean).join(' ')], new Date().toISOString().slice(0, 10));
   b.betreff(`Betriebs- und Heizkostenabrechnung ${jahr}`);
-  b.absatz(`Objekt: ${o.name}, ${[o.strasse, [o.plz, o.ort].filter(Boolean).join(' ')].filter(Boolean).join(', ')} · Einheit ${r.einheit.nummer}` +
+  b.absatz(`Objekt: ${o.name}, ${[o.strasse, [o.plz, o.ort].filter(Boolean).join(' ')].filter(Boolean).join(', ')} · Einheit ${r.einheit.nummer}${wid(o.objekt_nr, r.einheit.lfd_nr) ? ` (W-ID ${wid(o.objekt_nr, r.einheit.lfd_nr)})` : ''}` +
     `${r.einheit.flaeche ? `, ${num(r.einheit.flaeche)} m²` : ''}\nAbrechnungszeitraum: 01.01.${jahr} bis 31.12.${jahr} · Ihr Nutzungszeitraum: ${dDatum(r.nutzer.von)} bis ${dDatum(r.nutzer.bis)} (${r.nutzer.tage} Tage)`);
   const body = r.zeilen.map((z) => [z.pos.name, geld(z.pos.betrag), z.pos.schluessel === 'Messdienst' ? 'lt. Messdienst' : z.pos.schluessel,
     `${basisFmt(z.pos.schluessel, z.gesamtBasis)} ${einheitText[z.pos.schluessel] ?? ''}`, basisFmt(z.pos.schluessel, z.nutzerBasis), geld(z.betrag)]);

@@ -6,7 +6,7 @@ import { BeschluesseTab, RuecklagenTab, VorgaengeTab, WirtschaftsplanTab } from 
 import { EntityTable, datum, eur, num, type Field } from '../components/EntityTable';
 import { ObjektKontext } from '../logic/objektKontext';
 import { ObjektLoeschen } from '../components/ObjektLoeschen';
-import { OP_SQL, mieteImMonat } from '../logic/soll';
+import { OP_SQL, hausgeldNeuStellen, mieteImMonat } from '../logic/soll';
 import { VertragDetailPage, VertraegePage } from './Vertraege';
 import { JournalPage, AuswertungPage } from './Buchhaltung';
 import { BankPage } from './Bank';
@@ -17,7 +17,7 @@ import { NebenkostenPage } from './Nebenkosten';
 import { EigentuemerAbrechnungPage, WegAbrechnungPage } from './Jahresabrechnungen';
 import { DokumentePage } from './Dokumente';
 import { db, type Row } from '../db';
-import { AKTIV, EINHEIT_TYPEN, SCHLUESSEL, personLabel, personOptions } from '../db/labels';
+import { AKTIV, EINHEIT_TYPEN, SCHLUESSEL, personLabel, personOptions, widSql } from '../db/labels';
 
 const adresse = (o: Row) => [o.strasse, [o.plz, o.ort].filter(Boolean).join(' ')].filter(Boolean).join(', ');
 const statusPill = (v: any) => <span className={'pill ' + String(v ?? 'Aktiv').toLowerCase()}>{v ?? 'Aktiv'}</span>;
@@ -296,6 +296,7 @@ function EinheitenTab({ objektId, weg, onChange }: { objektId: number; weg: bool
       newLabel="Einheit hinzufügen"
       table="einheiten"
       fields={[
+        { key: 'wid', label: 'W-ID', computed: true, format: (v: any) => <b className="nowrap">{v}</b> },
         { key: 'nummer', label: 'Nr.', required: true, format: (v) => <b>{v}</b> },
         { key: 'typ', label: 'Bezeichnung', type: 'select', options: EINHEIT_TYPEN, required: true },
         { key: 'nutzung', label: 'Nutzung', computed: true, format: (v: any) => v === 'Miete' ? <span className="pill künftig">Miete</span>
@@ -318,6 +319,7 @@ function EinheitenTab({ objektId, weg, onChange }: { objektId: number; weg: bool
         { key: 'status', label: 'Status', computed: true, format: status },
       ] as Field[]}
       listSql={`SELECT x.*, x.soll - x.ist AS saldo FROM (SELECT e.*,
+          ((SELECT o.objekt_nr FROM objekte o WHERE o.id = e.objekt_id) || '-' || substr('00' || COALESCE(e.lfd_nr, 0), -2, 2)) AS wid,
           (SELECT GROUP_CONCAT(${personLabel('p')}, '; ') FROM eigentum ei JOIN personen p ON p.id = ei.person_id
              WHERE ei.einheit_id = e.id AND (ei.bis IS NULL OR ei.bis >= date('now'))) AS eigentuemer,
           (SELECT GROUP_CONCAT(p.telefon, '; ') FROM eigentum ei JOIN personen p ON p.id = ei.person_id
@@ -333,10 +335,10 @@ function EinheitenTab({ objektId, weg, onChange }: { objektId: number; weg: bool
             ? `(SELECT h.betrag FROM hausgeld h WHERE h.einheit_id = e.id AND h.gueltig_ab <= date('now') ORDER BY h.gueltig_ab DESC LIMIT 1)`
             : `(SELECT v.kaltmiete + v.nk_vorauszahlung + v.hk_vorauszahlung FROM mietvertraege v WHERE v.einheit_id = e.id AND ${AKTIV()} LIMIT 1)`} AS monat,
           COALESCE((SELECT SUM(s.betrag) FROM sollstellungen s WHERE s.einheit_id = e.id AND substr(s.monat, 1, 4) = '${jahr}'
-             AND s.faellig <= date('now') AND s.art IN (${weg ? `'Hausgeld'` : `'Kaltmiete', 'NK', 'HK', 'USt'`})), 0) AS soll,
+             AND s.faellig <= date('now') AND s.art IN (${weg ? `'Hausgeld', 'Rücklage'` : `'Kaltmiete', 'NK', 'HK', 'USt'`})), 0) AS soll,
           COALESCE((SELECT SUM(b.betrag) FROM buchungen b JOIN sollstellungen s ON s.id = b.sollstellung_id WHERE s.einheit_id = e.id
-             AND substr(s.monat, 1, 4) = '${jahr}' AND s.faellig <= date('now') AND s.art IN (${weg ? `'Hausgeld'` : `'Kaltmiete', 'NK', 'HK', 'USt'`})), 0) AS ist
-        FROM einheiten e WHERE e.objekt_id = $1) x ORDER BY x.nummer`}
+             AND substr(s.monat, 1, 4) = '${jahr}' AND s.faellig <= date('now') AND s.art IN (${weg ? `'Hausgeld', 'Rücklage'` : `'Kaltmiete', 'NK', 'HK', 'USt'`})), 0) AS ist
+        FROM einheiten e WHERE e.objekt_id = $1) x ORDER BY x.lfd_nr, x.nummer`}
       listParams={[objektId]}
       fixed={{ objekt_id: objektId }}
       onChange={onChange}
@@ -346,28 +348,129 @@ function EinheitenTab({ objektId, weg, onChange }: { objektId: number; weg: bool
 
 const einheitOptions = (objektId: number) => `SELECT id AS value, nummer AS label FROM einheiten WHERE objekt_id = ${objektId} ORDER BY nummer`;
 
+const ZAHLWEISE: Record<string, string> = { zusammen: 'Hausgeld und Rücklage in einer Summe', getrennt: 'Hausgeld und Rücklage getrennt' };
+const zahlStr = (n: number) => (n ? n.toFixed(2).replace('.', ',') : '');
+const zahlIn = (s: string) => Number(String(s).replace(/\./g, '').replace(',', '.')) || 0;
+
+/** Eigentümer je Einheit mit Hausgeld, Erhaltungsrücklage und Zahlweise (eine Überweisung oder zwei getrennte) */
 function EigentuemerTab({ objektId }: { objektId: number }) {
+  const [standard, setStandard] = useState('zusammen');
+  const [rows, setRows] = useState<Row[]>([]);
+  const [edit, setEdit] = useState<Record<number, { bew: string; rl: string; zw: string }>>({});
+  const [ab, setAb] = useState(() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`; });
+  const [info, setInfo] = useState('');
+  const [version, setVersion] = useState(0);
+  const load = async () => {
+    setStandard((await db.select('SELECT ruecklage_zahlweise FROM objekte WHERE id = $1', [objektId]))[0]?.ruecklage_zahlweise ?? 'zusammen');
+    const r = await db.select(`SELECT e.id AS einheit_id, e.nummer, ${widSql('e', 'o')} AS wid, ei.id AS eigentum_id, ei.zahlweise, ${personLabel('p')} AS eigentuemer,
+        h.betrag AS hausgeld, COALESCE(h.davon_ruecklage, 0) AS ruecklage, h.gueltig_ab
+      FROM einheiten e JOIN objekte o ON o.id = e.objekt_id
+      LEFT JOIN eigentum ei ON ei.id = (SELECT x.id FROM eigentum x WHERE x.einheit_id = e.id AND (x.bis IS NULL OR x.bis >= date('now')) ORDER BY x.anteil DESC LIMIT 1)
+      LEFT JOIN personen p ON p.id = ei.person_id
+      LEFT JOIN hausgeld h ON h.id = (SELECT y.id FROM hausgeld y WHERE y.einheit_id = e.id AND y.gueltig_ab <= $2 ORDER BY y.gueltig_ab DESC LIMIT 1)
+      WHERE e.objekt_id = $1 ORDER BY e.lfd_nr, e.nummer`, [objektId, ab]);
+    setRows(r);
+    setEdit(Object.fromEntries(r.map((x) => [x.einheit_id, { bew: zahlStr((Number(x.hausgeld) || 0) - Number(x.ruecklage)), rl: zahlStr(Number(x.ruecklage)), zw: x.zahlweise ?? '' }])));
+  };
+  useEffect(() => { load(); }, [objektId, ab]);
+
+  async function standardSetzen(z: string) {
+    await db.execute('UPDATE objekte SET ruecklage_zahlweise = $1 WHERE id = $2', [z, objektId]);
+    const n = await hausgeldNeuStellen(objektId, ab.slice(0, 7));
+    setInfo(`Zahlweise der Liegenschaft: ${ZAHLWEISE[z]}.${n ? ` ${n} offene Hausgeld-Posten ab ${datum(ab)} neu gestellt.` : ''}`); load();
+  }
+
+  async function speichern() {
+    let geaendert = 0;
+    for (const r of rows) {
+      const e = edit[r.einheit_id]; if (!e) continue;
+      const bew = zahlIn(e.bew), rl = zahlIn(e.rl), gesamt = Math.round((bew + rl) * 100) / 100;
+      if (Math.abs(gesamt - (Number(r.hausgeld) || 0)) > 0.005 || Math.abs(rl - Number(r.ruecklage)) > 0.005) {
+        const vorhanden = (await db.select('SELECT id FROM hausgeld WHERE einheit_id = $1 AND gueltig_ab = $2', [r.einheit_id, ab]))[0];
+        if (vorhanden) await db.execute('UPDATE hausgeld SET betrag = $1, davon_ruecklage = $2 WHERE id = $3', [gesamt, rl, vorhanden.id]);
+        else await db.execute('INSERT INTO hausgeld (einheit_id, gueltig_ab, betrag, davon_ruecklage) VALUES ($1, $2, $3, $4)', [r.einheit_id, ab, gesamt, rl]);
+        geaendert++;
+      }
+      if (r.eigentum_id && (e.zw || null) !== (r.zahlweise || null)) {
+        await db.execute('UPDATE eigentum SET zahlweise = $1 WHERE id = $2', [e.zw || null, r.eigentum_id]); geaendert++;
+      }
+    }
+    if (!geaendert) { setInfo('Keine Änderungen.'); return; }
+    const n = await hausgeldNeuStellen(objektId, ab.slice(0, 7));
+    setInfo(`Gespeichert. Gilt ab ${datum(ab)}.${n ? ` ${n} offene Hausgeld-Posten neu gestellt (bereits bezahlte bleiben unverändert).` : ''}`);
+    load(); setVersion(version + 1);
+  }
+
+  const effektiv = (zw: string) => zw || standard;
   return (
-    <EntityTable
-      title="Eigentümer je Einheit"
-      icon={<Users size={22} />}
-      newLabel="Eigentümer zuordnen"
-      table="eigentum"
-      fields={[
-        { key: 'einheit_id', label: 'Einheit', type: 'select', required: true, optionsSql: einheitOptions(objektId) },
-        { key: 'person_id', label: 'Eigentümer', type: 'select', required: true, optionsSql: personOptions('Eigentümer') },
-        { key: 'anteil', label: 'Anteil %', type: 'number' },
-        { key: 'von', label: 'Eigentümer seit', type: 'date' },
-        { key: 'bis', label: 'bis (Verkauf)', type: 'date' },
-        { key: 'kontakt', label: 'Kontakt', computed: true },
-      ]}
-      listSql={`SELECT ei.*, e.nummer AS einheit_id_label, ${personLabel('p')} AS person_id_label,
-          TRIM(COALESCE(p.telefon, '') || ' ' || COALESCE(p.email, '')) AS kontakt
-        FROM eigentum ei JOIN einheiten e ON e.id = ei.einheit_id JOIN personen p ON p.id = ei.person_id
-        WHERE e.objekt_id = $1 ORDER BY e.nummer, ei.von DESC`}
-      listParams={[objektId]}
-      emptyText="Noch keine Eigentümer zugeordnet. Eigentümer legst du zuerst unter „Personen“ an."
-    />
+    <>
+      <section className="card">
+        <div className="card-head"><h2 className="title-ico"><PiggyBank size={22} />Hausgeld und Erhaltungsrücklage je Eigentümer</h2></div>
+        <div className="row">
+          <span>Zahlweise in dieser Liegenschaft:</span>
+          <div className="seg">{Object.entries(ZAHLWEISE).map(([k, t]) => <button key={k} className={standard === k ? 'on' : ''} onClick={() => standardSetzen(k)}>{t}</button>)}</div>
+        </div>
+        <p className="muted small">Bei „getrennt“ entstehen jeden Monat zwei offene Posten (Hausgeld und Rücklage), damit zwei Überweisungen sauber zugeordnet werden.
+          Je Eigentümer kannst du davon abweichen.</p>
+        <div className="row" style={{ margin: '10px 0' }}>
+          <label className="inline">Beträge gültig ab <input type="date" value={ab} onChange={(x) => x.target.value && setAb(x.target.value)} /></label>
+          <span className="muted small">Zuerst das Datum wählen, dann die Beträge ändern.</span>
+        </div>
+        {info && <p className="info">{info}</p>}
+        <div className="tablewrap"><table className="list">
+          <thead><tr><th>W-ID</th><th>Einheit</th><th>Eigentümer</th><th className="num">Hausgeld ohne Rücklage €</th><th className="num">Erhaltungsrücklage €</th><th className="num">Hausgeld gesamt</th><th>Zahlweise</th><th>Überweisung</th></tr></thead>
+          <tbody>{rows.map((r) => {
+            const e = edit[r.einheit_id] ?? { bew: '', rl: '', zw: '' };
+            const bew = zahlIn(e.bew), rl = zahlIn(e.rl), z = effektiv(e.zw);
+            return (
+              <tr key={r.einheit_id}>
+                <td className="nowrap"><b>{r.wid}</b></td><td>{r.nummer}</td><td>{r.eigentuemer ?? <span className="muted">kein Eigentümer</span>}</td>
+                <td className="num"><input className="cell" inputMode="decimal" value={e.bew} onChange={(x) => setEdit({ ...edit, [r.einheit_id]: { ...e, bew: x.target.value } })} /></td>
+                <td className="num"><input className="cell" inputMode="decimal" value={e.rl} onChange={(x) => setEdit({ ...edit, [r.einheit_id]: { ...e, rl: x.target.value } })} /></td>
+                <td className="num"><b>{eur(bew + rl)}</b></td>
+                <td><select className="cell" value={e.zw} disabled={!r.eigentum_id} onChange={(x) => setEdit({ ...edit, [r.einheit_id]: { ...e, zw: x.target.value } })}>
+                  <option value="">wie Liegenschaft ({standard === 'getrennt' ? 'getrennt' : 'eine Summe'})</option>
+                  <option value="zusammen">in einer Summe</option><option value="getrennt">getrennt</option></select></td>
+                <td className="small nowrap">{!bew && !rl ? '–' : z === 'getrennt' && rl > 0 ? <>2 Überweisungen: {eur(bew)} Hausgeld + {eur(rl)} Rücklage</> : <>1 Überweisung: {eur(bew + rl)}</>}</td>
+              </tr>);
+          })}</tbody>
+          <tfoot><tr><td colSpan={3}>Summe</td>
+            <td className="num">{eur(rows.reduce((a, r) => a + zahlIn(edit[r.einheit_id]?.bew ?? ''), 0))}</td>
+            <td className="num">{eur(rows.reduce((a, r) => a + zahlIn(edit[r.einheit_id]?.rl ?? ''), 0))}</td>
+            <td className="num">{eur(rows.reduce((a, r) => a + zahlIn(edit[r.einheit_id]?.bew ?? '') + zahlIn(edit[r.einheit_id]?.rl ?? ''), 0))}</td><td colSpan={2} /></tr></tfoot>
+        </table></div>
+        <div className="row end" style={{ marginTop: 12 }}>
+          <span className="muted small">Gilt ab {datum(ab)}</span>
+          <button className="primary" onClick={speichern}>Änderungen speichern</button>
+        </div>
+        <p className="muted small">Die Tabelle zeigt die Beträge, die am gewählten Datum gelten. Neue Beträge werden ab diesem Datum als neuer Hausgeldsatz gespeichert (frühere Sätze bleiben erhalten). Offene, noch nicht bezahlte Hausgeld-Posten ab diesem Monat werden automatisch neu gestellt.</p>
+      </section>
+      <EntityTable
+        title="Eigentümer je Einheit"
+        icon={<Users size={22} />}
+        newLabel="Eigentümer zuordnen"
+        table="eigentum"
+        version={version}
+        fields={[
+          { key: 'wid', label: 'W-ID', computed: true, format: (v: any) => <b className="nowrap">{v}</b> },
+          { key: 'einheit_id', label: 'Einheit', type: 'select', required: true, optionsSql: einheitOptions(objektId) },
+          { key: 'person_id', label: 'Eigentümer', type: 'select', required: true, optionsSql: personOptions('Eigentümer') },
+          { key: 'anteil', label: 'Anteil %', type: 'number' },
+          { key: 'von', label: 'Eigentümer seit', type: 'date' },
+          { key: 'bis', label: 'bis (Verkauf)', type: 'date' },
+          { key: 'zahlweise', label: 'Zahlweise Rücklage', type: 'select', options: [{ value: '', label: 'wie Liegenschaft' }, { value: 'zusammen', label: 'in einer Summe' }, { value: 'getrennt', label: 'getrennt' }],
+            format: (v: any) => (v === 'getrennt' ? 'getrennt' : v === 'zusammen' ? 'in einer Summe' : <span className="muted">wie Liegenschaft</span>) },
+          { key: 'kontakt', label: 'Kontakt', computed: true },
+        ]}
+        listSql={`SELECT ei.*, ${widSql('e', 'o')} AS wid, e.nummer AS einheit_id_label, ${personLabel('p')} AS person_id_label,
+            TRIM(COALESCE(p.telefon, '') || ' ' || COALESCE(p.email, '')) AS kontakt
+          FROM eigentum ei JOIN einheiten e ON e.id = ei.einheit_id JOIN objekte o ON o.id = e.objekt_id JOIN personen p ON p.id = ei.person_id
+          WHERE e.objekt_id = $1 ORDER BY e.lfd_nr, e.nummer, ei.von DESC`}
+        listParams={[objektId]}
+        onChange={load}
+        emptyText="Noch keine Eigentümer zugeordnet. Eigentümer legst du zuerst unter „Personen“ an."
+      />
+    </>
   );
 }
 

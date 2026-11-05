@@ -2,6 +2,7 @@
 // und jährliche Eigentümerabrechnung für die Mietverwaltung.
 import { useEffect, useState } from 'react';
 import { db, type Row } from '../db';
+import { wid } from '../db/labels';
 import { AbrechnungsUebersicht } from '../components/AbrechnungsUebersicht';
 import { SchluesselWahl } from '../components/SchluesselWahl';
 import { useObjektKontext } from '../logic/objektKontext';
@@ -81,7 +82,7 @@ export function WegAbrechnungPage() {
     setPos(p);
     const hg = await db.select(`SELECT s.person_id, s.einheit_id, SUM(s.betrag) AS soll,
         SUM(COALESCE((SELECT SUM(b.betrag) FROM buchungen b WHERE b.sollstellung_id = s.id), 0)) AS ist
-      FROM sollstellungen s WHERE s.art = 'Hausgeld' AND substr(s.monat, 1, 4) = $1 GROUP BY s.person_id, s.einheit_id`, [String(jahr)]);
+      FROM sollstellungen s WHERE s.art IN ('Hausgeld', 'Rücklage') AND substr(s.monat, 1, 4) = $1 GROUP BY s.person_id, s.einheit_id`, [String(jahr)]);
     const saetze = await db.select('SELECT * FROM hausgeld ORDER BY gueltig_ab');
     // Vermietete Einheiten: Nebenkostenabrechnung der Mieter (umlagefähige Kosten gegen deren Vorauszahlungen)
     const nk = (await nkBerechnen(Number(objekt), jahr)).erg.filter((x) => x.nutzer.art === 'Mieter');
@@ -142,7 +143,7 @@ export function WegAbrechnungPage() {
       const p = (await db.select('SELECT * FROM personen WHERE id = $1', [r.nutzer.person_id]))[0] ?? {};
       const b = new Brief(abs);
       b.kopf([p.firma, [p.anrede === 'Firma' ? '' : p.anrede, p.titel, p.vorname, p.nachname].filter(Boolean).join(' '), p.strasse, [p.plz, p.ort].filter(Boolean).join(' ')], new Date().toISOString().slice(0, 10));
-      b.betreff(`Einzelabrechnung ${jahr}: ${/^weg\b/i.test(o.name) ? '' : 'WEG '}${o.name}, Einheit ${r.einheit.nummer}`);
+      b.betreff(`Einzelabrechnung ${jahr}: ${/^weg\b/i.test(o.name) ? '' : 'WEG '}${o.name}, Einheit ${r.einheit.nummer}${wid(o.objekt_nr, r.einheit.lfd_nr) ? ` (W-ID ${wid(o.objekt_nr, r.einheit.lfd_nr)})` : ''}`);
       b.absatz(`Miteigentumsanteil: ${num(r.einheit.mea, 0)} / ${num(o.gesamt_mea, 0)} · Fläche ${num(r.einheit.flaeche)} m² · Eigentum im Jahr: ${dDatum(r.nutzer.von)} bis ${dDatum(r.nutzer.bis)}`);
       for (const [titel, filter] of [['Umlagefähige Kosten (für Ihre Betriebskostenabrechnung an Mieter)', true], ['Nicht umlagefähige Kosten', false]] as const) {
         const z = r.zeilen.filter((x) => x.pos.umlagefaehig === filter && Math.abs(x.betrag) > 0.004);

@@ -318,3 +318,4 @@ a.btn-link { display: inline-block; background: var(--accent); color: #fff; bord
 .schl-wahl { display: inline-flex; align-items: center; gap: 4px; }
 .modal.schl-fenster { width: 720px; }
 .modal.schl-fenster table.list { margin: 12px 0; }
+.nowrap { white-space: nowrap; }

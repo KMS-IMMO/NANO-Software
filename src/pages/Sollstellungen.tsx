@@ -10,7 +10,7 @@ import { OP_SQL, postenStatus, sollStellen, zahlungBuchen, mahnenAbTage } from '
 
 const heute = () => new Date().toISOString().slice(0, 10);
 const zahl = (s: string) => Number(String(s).replace(/\./g, '').replace(',', '.')) || 0;
-const ARTEN = ['Kaltmiete', 'NK', 'HK', 'USt', 'Hausgeld', 'Sonderumlage', 'Nachzahlung', 'Sonstiges'];
+const ARTEN = ['Kaltmiete', 'NK', 'HK', 'USt', 'Hausgeld', 'Rücklage', 'Sonderumlage', 'Nachzahlung', 'Sonstiges'];
 const monatName = (m: string) => /^\d{4}-\d{2}$/.test(m) ? new Date(Number(m.slice(0, 4)), Number(m.slice(5, 7)) - 1).toLocaleDateString('de-DE', { month: 'long', year: 'numeric' }) : m;
 export const STATUS_KLASSE: Record<string, string> = { bezahlt: 'aktiv', erwartet: 'erwartet', 'fällig': 'faellig', mahnen: 'mahnen', gemahnt: 'gemahnt' };
 
