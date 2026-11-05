@@ -37,7 +37,7 @@ export function NebenkostenPage() {
     setVerbr(Object.fromEntries(v.map((x) => [`${x.einheit_id}-${x.buchungskonto_id}`, String(x.menge).replace('.', ',')])));
     await rechnen();
   }
-  useEffect(() => { laden(); }, [objekt, jahr]);
+  useEffect(() => { if (jahr >= 1900 && jahr <= 2200) laden(); }, [objekt, jahr]);
 
   async function rechnen() {
     if (objekt === '') return;

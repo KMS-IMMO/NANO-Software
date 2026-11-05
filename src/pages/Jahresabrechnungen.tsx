@@ -111,7 +111,7 @@ export function WegAbrechnungPage() {
       FROM sollstellungen s JOIN einheiten e ON e.id = s.einheit_id WHERE e.objekt_id = $1 AND s.faellig <= $2`, [objekt, ende]))[0].x;
     setVerm({ ruecklage: rl.bestand, zufJahr, entnahmeJahr: rl.entnahme, zinsJahr: rl.zinsen, banken, rueckstaende: Number(rueckstaende) });
   }
-  useEffect(() => { rechnen(); }, [objekt, jahr]);
+  useEffect(() => { if (jahr >= 1900 && jahr <= 2200) rechnen(); }, [objekt, jahr]);
 
   async function pdfs() {
     if (!o) return;
