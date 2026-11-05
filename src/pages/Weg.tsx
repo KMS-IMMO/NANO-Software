@@ -30,6 +30,7 @@ export function BeschluesseTab({ objektId }: { objektId?: number }) {
         fields={[
           ...(objektId ? [] : [{ key: 'objekt_id', label: 'Liegenschaft', type: 'select' as const, optionsSql: objektOptions, required: true }]),
           { key: 'datum', label: 'Datum', type: 'date', required: true },
+          { key: 'uhrzeit', label: 'Uhrzeit', type: 'time', format: (v) => v || '' },
           { key: 'art', label: 'Art', type: 'select', options: ['Ordentliche Versammlung', 'Außerordentliche Versammlung', 'Umlaufbeschluss'], required: true },
           { key: 'ort', label: 'Ort' },
           { key: 'status', label: 'Status', type: 'select', options: ['Geplant', 'Eingeladen', 'Durchgeführt'], format: (v) => pill(v, { Geplant: 'künftig', Eingeladen: 'teil', Durchgeführt: 'bezahlt' }) },
@@ -40,7 +41,7 @@ export function BeschluesseTab({ objektId }: { objektId?: number }) {
           FROM versammlungen b JOIN objekte o ON o.id = b.objekt_id ${wo} ORDER BY b.datum DESC`}
         listParams={params}
         fixed={objektId ? { objekt_id: objektId } : undefined}
-        emptyText="Noch keine Versammlung angelegt."
+        emptyText="Noch keine Versammlung angelegt. Geplante Versammlungen erscheinen automatisch im Kalender."
       />
       <EntityTable
         title={objektId ? 'Beschlüsse' : 'Beschlusssammlung'}

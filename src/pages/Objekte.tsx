@@ -17,7 +17,7 @@ import { NebenkostenPage } from './Nebenkosten';
 import { EigentuemerAbrechnungPage, WegAbrechnungPage } from './Jahresabrechnungen';
 import { DokumentePage } from './Dokumente';
 import { db, type Row } from '../db';
-import { AKTIV, EINHEIT_TYPEN, SCHLUESSEL, personLabel, personOptions, widSql } from '../db/labels';
+import { AKTIV, EINHEIT_TYPEN, SCHLUESSEL, WARMWASSER, personLabel, personOptions, widSql } from '../db/labels';
 
 const adresse = (o: Row) => [o.strasse, [o.plz, o.ort].filter(Boolean).join(' ')].filter(Boolean).join(', ');
 const statusPill = (v: any) => <span className={'pill ' + String(v ?? 'Aktiv').toLowerCase()}>{v ?? 'Aktiv'}</span>;
@@ -33,8 +33,10 @@ const objektFields: Field[] = [
   { key: 'ort', label: 'Ort', hideInTable: true },
   { key: 'baujahr', label: 'Baujahr', type: 'number', format: (v) => v ?? '', hideInTable: true },
   { key: 'gesamt_mea', label: 'MEA gesamt', type: 'number', format: (v) => num(v, 0), hideInTable: true },
+  { key: 'gesamt_flaeche', label: 'Gesamtfläche (m²)', type: 'number', hideInTable: true },
   { key: 'heizungsart', label: 'Heizungsart', type: 'select', hideInTable: true,
     options: ['Gas-Zentralheizung', 'Öl-Zentralheizung', 'Fernwärme', 'Wärmepumpe', 'Pellets', 'Gasetagenheizung', 'Nachtspeicher', 'Sonstige'] },
+  { key: 'warmwasser', label: 'Warmwasserversorgung', type: 'select', hideInTable: true, options: WARMWASSER },
   { key: 'eigentuemer_id', label: 'Eigentümer (nur Mietverwaltung)', type: 'select', optionsSql: personOptions('Eigentümer'), hideInTable: true, wide: true },
   { key: 'notiz', label: 'Notiz', type: 'textarea', hideInTable: true },
 ];

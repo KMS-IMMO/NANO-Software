@@ -591,4 +591,19 @@ ALTER TABLE buchungen ADD COLUMN anteil_35a REAL;
 ALTER TABLE abrechnungen ADD COLUMN abgeschlossen_am TEXT;
 ALTER TABLE abrechnungen ADD COLUMN ergebnis TEXT;
 `,
+  // Migration 18: Gesamtfläche und Warmwasser der Liegenschaft, Terminarten mit Farben, interner Chat
+  `
+ALTER TABLE objekte ADD COLUMN gesamt_flaeche REAL;
+ALTER TABLE objekte ADD COLUMN warmwasser TEXT;
+ALTER TABLE termine ADD COLUMN art TEXT;
+ALTER TABLE tickets ADD COLUMN terminart TEXT;
+ALTER TABLE tickets ADD COLUMN uhrzeit TEXT;
+ALTER TABLE versammlungen ADD COLUMN uhrzeit TEXT;
+CREATE TABLE chat (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  autor TEXT NOT NULL,
+  text TEXT NOT NULL,
+  zeit TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+);
+`,
 ];

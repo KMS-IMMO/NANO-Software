@@ -37,6 +37,44 @@ export function RechnungErfassen({ objektFest, onSaved }: { objektFest?: number;
   const [einheiten, setEinheiten] = useState<Row[]>([]);
   const [firmen, setFirmen] = useState<Row[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
+  const [lesen, setLesen] = useState('');
+
+  /** Beleg übernehmen und, wenn es eine PDF mit Text ist, die Angaben auslesen. Bereits ausgefüllte Felder bleiben, wie sie sind. */
+  async function belegWaehlen(f: File) {
+    setDatei(f); setLesen('');
+    const pdf = f.type === 'application/pdf' || /\.pdf$/i.test(f.name);
+    if (!pdf) { setLesen('Bilder und Scans enthalten keinen lesbaren Text. Bitte die Angaben selbst eintragen.'); return; }
+    setLesen('Rechnung wird ausgelesen …');
+    try {
+      const { pdfText, erkennen } = await import('../logic/rechnungLesen');
+      const text = await pdfText(new Uint8Array(await f.arrayBuffer()));
+      if (text.replace(/\s/g, '').length < 20) { setLesen('Die PDF enthält keinen Text (vermutlich ein Scan). Bitte die Angaben selbst eintragen.'); return; }
+      const e = erkennen(text, firmen.map((x) => ({ id: x.id, name: String(x.name) })));
+      const ok: string[] = [];
+      if (e.rechnungsnr && !nr) { setNr(e.rechnungsnr); ok.push('Rechnungsnummer'); }
+      if (e.datum && datum === heute()) { setDatum(e.datum); ok.push('Datum'); }
+      if (e.betrag && !betrag) { setBetrag(String(Math.abs(e.betrag)).replace('.', ',')); if (e.betrag < 0) setArt('Gutschrift'); ok.push('Betrag'); }
+      if (e.mwst !== undefined) { setMitMwst(e.mwst > 0); if (e.mwst > 0) setSatz(String(e.mwst)); ok.push('MwSt'); }
+      if (e.faellig && !faellig) { setFaellig(e.faellig); ok.push('Fälligkeit'); }
+      if (e.lohn && !lohn) { setLohn(String(e.lohn).replace('.', ',')); ok.push('§ 35a-Anteil'); }
+      if (e.lieferant && !lieferant) { setLieferant(e.lieferant); setFirmaId(e.firmaId ?? null); ok.push(e.firmaId ? 'Lieferant (Kontakt gefunden)' : 'Lieferant'); }
+      // Buchungskonto: wie bei der letzten Rechnung dieses Lieferanten
+      if (e.firmaId && !konto) {
+        const k = (await db.select('SELECT buchungskonto_id FROM rechnungen WHERE firma_id = $1 ORDER BY datum DESC, id DESC LIMIT 1', [e.firmaId]))[0]?.buchungskonto_id;
+        if (k) { setKonto(String(k)); ok.push('Buchungskonto (wie zuletzt)'); }
+      }
+      // Immobilie: Straße der Liegenschaft steht auf der Rechnung
+      if (objekt === '' && !objektFest) {
+        const t = text.toLowerCase();
+        const treffer = objekte.filter((x) => x.strasse && t.includes(String(x.strasse).toLowerCase()));
+        if (treffer.length === 1) { setObjekt(treffer[0].id); ok.push('Immobilie'); }
+      }
+      setLesen(ok.length ? `Aus der Rechnung übernommen: ${ok.join(', ')}. Bitte kurz prüfen.` : 'In der PDF wurden keine passenden Angaben gefunden. Bitte selbst eintragen.');
+    } catch (err) {
+      setLesen('Die PDF konnte nicht gelesen werden. Bitte die Angaben selbst eintragen.');
+      console.warn(err);
+    }
+  }
 
   useEffect(() => {
     db.select(`SELECT id AS value, nummer || ' ' || name AS label, hdl, hwl FROM buchungskonten WHERE art IN ('Aufwand') ORDER BY nummer`).then(setKonten);
@@ -70,7 +108,7 @@ export function RechnungErfassen({ objektFest, onSaved }: { objektFest?: number;
 
   function zuruecksetzen() {
     setKonto(''); setNr(''); setBetrag(''); setModus('alle'); setAnteile({}); setLieferant(''); setFirmaId(null);
-    setFaellig(''); setBezahlt(''); setLohn(''); setNotiz(''); setDatei(null); setArt('Ausgabe'); setDatum(heute());
+    setFaellig(''); setBezahlt(''); setLohn(''); setNotiz(''); setDatei(null); setLesen(''); setArt('Ausgabe'); setDatum(heute());
   }
 
   async function sichern() {
@@ -133,6 +171,10 @@ export function RechnungErfassen({ objektFest, onSaved }: { objektFest?: number;
             {mitMwst && <div className="addon klein"><span>MwSt-Satz</span><input inputMode="decimal" value={satz} onChange={(e) => setSatz(e.target.value)} /><span>%</span></div>}
             {brutto > 0 && <span className="muted small">netto {eur(netto)} · MwSt {eur(r2(brutto - netto))}</span>}
           </div>
+          {(() => { const k = konten.find((x) => String(x.value) === String(konto)); return k && (k.hdl || k.hwl) ? (
+            <label className="hint-35a"><span>davon § 35a-Anteil (Arbeitskosten) € · {k.hdl ? 'haushaltsnahe Dienstleistung' : 'Handwerkerleistung'}</span>
+              <input inputMode="decimal" placeholder="leer = ganzer Betrag" value={lohn} onChange={(e) => setLohn(e.target.value)} />
+              <small className="muted">Erscheint in der Abrechnung als § 35a-Anteil der Eigentümer bzw. Mieter.</small></label>) : null; })()}
           <hr />
           <label><span>Immobilie *</span>{objektFest
             ? <div className="addon"><span>H-ID {o?.objekt_nr ?? ''}</span><input readOnly value={o ? [o.name, [o.plz, o.ort].filter(Boolean).join(' ')].filter(Boolean).join(', ') : ''} /></div>
@@ -166,10 +208,6 @@ export function RechnungErfassen({ objektFest, onSaved }: { objektFest?: number;
             ? <select autoFocus onChange={(e) => { const f = firmen.find((x) => x.id === Number(e.target.value)); if (f) { setFirmaId(f.id); setLieferant(f.name); } setKontaktWahl(false); }} defaultValue="">
                 <option value="" disabled>Kontakt auswählen …</option>{firmen.map((f) => <option key={f.id} value={f.id}>{f.name}{f.gewerk ? ` (${f.gewerk})` : ''}</option>)}</select>
             : <button className="pill-btn" onClick={() => setKontaktWahl(true)} disabled={!firmen.length}><UserPlus size={16} />Kontakt auswählen</button>}
-          {(() => { const k = konten.find((x) => String(x.value) === String(konto)); return k && (k.hdl || k.hwl) ? (
-            <label className="hint-35a"><span>davon § 35a-Anteil (Arbeitskosten) € · {k.hdl ? 'haushaltsnahe Dienstleistung' : 'Handwerkerleistung'}</span>
-              <input inputMode="decimal" placeholder="leer = ganzer Betrag" value={lohn} onChange={(e) => setLohn(e.target.value)} />
-              <small className="muted">Erscheint in der Abrechnung als § 35a-Anteil der Eigentümer bzw. Mieter.</small></label>) : null; })()}
           <details className="rerf-mehr"><summary>Weitere Angaben (Fälligkeit, bezahlt, Notiz)</summary>
             <div className="form f3">
               <label><span>Fällig am</span><input type="date" value={faellig} onChange={(e) => setFaellig(e.target.value)} /></label>
@@ -180,14 +218,15 @@ export function RechnungErfassen({ objektFest, onSaved }: { objektFest?: number;
         </div>
         <div className={'drop rerf-drop' + (over ? ' over' : '')}
           onDragOver={(e) => { e.preventDefault(); setOver(true); }} onDragLeave={() => setOver(false)}
-          onDrop={(e) => { e.preventDefault(); setOver(false); const f = e.dataTransfer.files[0]; if (f) setDatei(f); }}
+          onDrop={(e) => { e.preventDefault(); setOver(false); const f = e.dataTransfer.files[0]; if (f) belegWaehlen(f); }}
           onClick={() => fileRef.current?.click()}>
           <FileUp size={40} strokeWidth={1.4} />
           {datei
             ? <><p><Paperclip size={14} /> <b>{datei.name}</b></p><p className="muted small">{Math.round(datei.size / 1024)} KB · wird beim Speichern in der Ablage der Immobilie unter „Rechnungen/{datum.slice(0, 4)}“ abgelegt</p>
-                <button className="link" onClick={(e) => { e.stopPropagation(); setDatei(null); }}>Entfernen</button></>
-            : <><p><b>Rechnung hierher ziehen</b></p><p className="muted small">oder klicken zum Auswählen (PDF oder Bild)</p></>}
-          <input ref={fileRef} type="file" accept=".pdf,image/*" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) setDatei(f); e.target.value = ''; }} />
+                {lesen && <p className={'small ' + (lesen.startsWith('Aus der') ? 'ok-text' : 'muted')} style={{ maxWidth: 280 }}>{lesen}</p>}
+                <button className="link" onClick={(e) => { e.stopPropagation(); setDatei(null); setLesen(''); }}>Entfernen</button></>
+            : <><p><b>Rechnung hierher ziehen</b></p><p className="muted small">oder klicken zum Auswählen (PDF oder Bild). Bei PDFs werden die Angaben automatisch ausgelesen.</p></>}
+          <input ref={fileRef} type="file" accept=".pdf,image/*" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) belegWaehlen(f); e.target.value = ''; }} />
         </div>
       </div>
       {fehler && <p className="error">{fehler}</p>}
