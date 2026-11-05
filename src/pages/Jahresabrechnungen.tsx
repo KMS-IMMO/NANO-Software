@@ -5,7 +5,8 @@ import { ChevronDown, ChevronRight } from 'lucide-react';
 import { db, type Row } from '../db';
 import { wid } from '../db/labels';
 import { AbrechnungsUebersicht } from '../components/AbrechnungsUebersicht';
-import { SchluesselWahl } from '../components/SchluesselWahl';
+import { SchluesselWahl, schluesselText } from '../components/SchluesselWahl';
+import { AbschlussKarte } from '../components/AbschlussKarte';
 import { useObjektKontext } from '../logic/objektKontext';
 import { eur, num, datum } from '../components/EntityTable';
 import { eigeneSchluessel, kostenErmitteln, nutzerErmitteln, verteilen, type Ergebnis, type Position } from '../logic/verteilung';
@@ -61,6 +62,8 @@ export function WegAbrechnungPage() {
   const [info, setInfo] = useState('');
   const [einheiten, setEinheiten] = useState<Row[]>([]);
   const [stand, setStand] = useState(0);
+  const [zu, setZu] = useState<Row | null>(null);
+  const [werteFehlen, setWerteFehlen] = useState('');
   const anteile = (kontoId: number) => {
     const m: Record<number, number> = {};
     for (const r of erg) for (const z of r.zeilen) if (z.pos.konto_id === kontoId) m[r.nutzer.einheit_id] = (m[r.nutzer.einheit_id] ?? 0) + z.betrag;
@@ -81,6 +84,11 @@ export function WegAbrechnungPage() {
       .filter((x) => !RUECKLAGE.includes(x.nummer))
       .map((x) => ({ ...x, schluessel: x.nummer === HEIZ_KONTO && h.length ? 'Messdienst' as const : eigene.has(x.konto_id) ? x.schluessel : 'MEA' as const }));
     setPos(p);
+    // Für den Abschluss: Konten mit Verbrauch/manueller Verteilung, für die Werte fehlen oder nicht aufgehen
+    setWerteFehlen(p.filter((x) => x.schluessel === 'Verbrauch' || x.schluessel === 'Summe').filter((x) => {
+      const w = v.filter((y) => y.buchungskonto_id === x.konto_id);
+      return !w.length || (x.schluessel === 'Summe' && Math.abs(w.reduce((a, y) => a + Number(y.menge), 0) - x.betrag) > 0.005);
+    }).map((x) => `${x.nummer} ${x.name}`).join(', '));
     const hg = await db.select(`SELECT s.person_id, s.einheit_id, SUM(s.betrag) AS soll,
         SUM(COALESCE((SELECT SUM(b.betrag) FROM buchungen b WHERE b.sollstellung_id = s.id), 0)) AS ist
       FROM sollstellungen s WHERE s.art IN ('Hausgeld', 'Rücklage') AND substr(s.monat, 1, 4) = $1 GROUP BY s.person_id, s.einheit_id`, [String(jahr)]);
@@ -142,12 +150,15 @@ export function WegAbrechnungPage() {
   }
   useEffect(() => { if (jahr >= 1900 && jahr <= 2200) rechnen(); }, [objekt, jahr]);
 
-  async function pdfs() {
-    if (!o) return;
+  /** Alle Schreiben erzeugen: einzeln ablegen oder (Vorschau) zusammen in einem PDF zurückgeben */
+  async function erzeugen(vorschau: { entwurf: boolean } | null): Promise<Uint8Array | null> {
+    if (!o) return null;
     const abs = await absender();
     const ordner = [o.name, 'WEG-Jahresabrechnung', String(jahr)];
+    const gesamt = vorschau ? new Brief(abs) : null;
+    const brief = () => (gesamt ? gesamt.neuerBrief() : new Brief(abs));
     // Gesamtabrechnung und Vermögensbericht
-    const g = new Brief(abs);
+    const g = brief();
     g.kopf([`Wohnungseigentümergemeinschaft ${o.name.replace(/^WEG\s+/i, '')}`, o.strasse, [o.plz, o.ort].filter(Boolean).join(' ')], new Date().toISOString().slice(0, 10));
     g.betreff(`Gesamtabrechnung ${jahr} (Wirtschaftsjahr 01.01.–31.12.${jahr})`);
     g.tabelle(['Konto', 'Kostenart', 'Schlüssel', 'Betrag'], pos.map((p) => [p.nummer, p.name, p.schluessel, geld(p.betrag)]),
@@ -168,11 +179,11 @@ export function WegAbrechnungPage() {
     if (opk.length) g.tabelle(['Einheit', 'Eigentümer', 'Soll bis 31.12.', 'gezahlt', 'Forderung / Guthaben'],
       opk.map((z) => [z.einheit, z.name, geld(z.soll), geld(z.ist), z.saldo > 0 ? geld(z.saldo) : `Guthaben ${geld(-z.saldo)}`]), undefined, 2);
     g.gruss();
-    await speichern(g.bytes(), `Gesamtabrechnung und Vermögensbericht ${jahr}.pdf`, { bezug: 'Objekt', bezugId: o.id, ordner });
+    if (!gesamt) await speichern(g.bytes(), `Gesamtabrechnung und Vermögensbericht ${jahr}.pdf`, { bezug: 'Objekt', bezugId: o.id, ordner });
     // Einzelabrechnungen
     for (const r of erg) {
       const p = (await db.select('SELECT * FROM personen WHERE id = $1', [r.nutzer.person_id]))[0] ?? {};
-      const b = new Brief(abs);
+      const b = brief();
       b.kopf([p.firma, [p.anrede === 'Firma' ? '' : p.anrede, p.titel, p.vorname, p.nachname].filter(Boolean).join(' '), p.strasse, [p.plz, p.ort].filter(Boolean).join(' ')], new Date().toISOString().slice(0, 10));
       b.betreff(`Einzelabrechnung ${jahr}: ${/^weg\b/i.test(o.name) ? '' : 'WEG '}${o.name}, Einheit ${r.einheit.nummer}${wid(o.objekt_nr, r.einheit.lfd_nr) ? ` (W-ID ${wid(o.objekt_nr, r.einheit.lfd_nr)})` : ''}`);
       b.absatz(`Miteigentumsanteil: ${num(r.einheit.mea, 0)} / ${num(o.gesamt_mea, 0)} · Fläche ${num(r.einheit.flaeche)} m² · Eigentum im Jahr: ${dDatum(r.nutzer.von)} bis ${dDatum(r.nutzer.bis)}`);
@@ -203,9 +214,11 @@ export function WegAbrechnungPage() {
       if (r.hdl || r.hwl) b.tabelle(['§ 35a EStG (Ihr Anteil)', 'Betrag'], [['Haushaltsnahe Dienstleistungen', geld(r.hdl)], ['Handwerkerleistungen', geld(r.hwl)]]);
       b.absatz('Die Abrechnung wird der Eigentümerversammlung zur Beschlussfassung über die Nachschüsse bzw. Anpassung der Vorschüsse vorgelegt (§ 28 Abs. 2 WEG).');
       b.gruss();
-      await speichern(b.bytes(), `Einzelabrechnung ${jahr} ${r.einheit.nummer} ${r.nutzer.name}.pdf`, { bezug: 'Objekt', bezugId: o.id, ordner });
+      if (!gesamt) await speichern(b.bytes(), `Einzelabrechnung ${jahr} ${r.einheit.nummer} ${r.nutzer.name}.pdf`, { bezug: 'Objekt', bezugId: o.id, ordner });
     }
+    if (gesamt) return (vorschau?.entwurf ? gesamt.entwurf() : gesamt).bytes();
     setInfo(`Gesamtabrechnung, Vermögensbericht und ${erg.length} Einzelabrechnungen abgelegt unter ${ordner.join('/')}.`);
+    return null;
   }
 
   async function buchen() {
@@ -221,10 +234,7 @@ export function WegAbrechnungPage() {
   return (
     <>
       <Kopf titel="WEG-Jahresabrechnung" text="Gesamtabrechnung, Einzelabrechnungen je Eigentümer und Vermögensbericht nach § 28 WEG"
-        {...{ objekte, objekt, setObjekt, jahr, setJahr }}>
-        <button onClick={pdfs} disabled={!erg.length}>Alle PDFs erstellen</button>
-        <button className="primary" onClick={buchen} disabled={!erg.length}>Abrechnungsspitzen buchen</button>
-      </Kopf>
+        {...{ objekte, objekt, setObjekt, jahr, setJahr }} />
       {!objekte.length && <p className="muted">Noch keine WEG angelegt.</p>}
       {info && <p className="info">{info}</p>}
       <div className="kpis">
@@ -233,11 +243,20 @@ export function WegAbrechnungPage() {
         <div className="kpi"><span>Erhaltungsrücklage 31.12.</span><b>{eur(verm.ruecklage ?? 0)}</b><small>Zuführung {eur(verm.zufJahr ?? 0)}</small></div>
         <div className="kpi"><span>Summe Abrechnungsspitzen</span><b>{eur(erg.reduce((a, r) => a + r.spitze, 0))}</b></div>
       </div>
+      {objekt !== '' && o && <AbschlussKarte objekt={Number(objekt)} jahr={jahr} art="WEG" stand={stand} ordner={[o.name, 'WEG-Jahresabrechnung', String(jahr)]}
+        extra={[
+          { ok: erg.length > 0, sperrt: true, text: 'Eigentümer und Einheiten für das Jahr vorhanden' },
+          { ok: !werteFehlen, sperrt: true, text: 'Werte für Verbrauch und manuelle Verteilung eingetragen', hinweis: werteFehlen ? `Fehlt bei: ${werteFehlen}` : undefined },
+        ]}
+        vorschau={async (entwurf) => (await erzeugen({ entwurf }))!} ablegen={async () => { await erzeugen(null); }}
+        buchen={buchen} buchenText="Abrechnungsspitzen als offene Posten buchen"
+        ergebnis={() => ({ ausgaben: r2(pos.reduce((a, p) => a + p.betrag, 0)), spitzen: r2(erg.reduce((a, r) => a + r.spitze, 0)), einheiten: erg.length })}
+        onStatus={(a, t) => { setZu(a); if (t) setInfo(t); }} />}
       {objekt !== '' && <AbrechnungsUebersicht objekt={Number(objekt)} jahr={jahr} pos={pos} stand={stand} titel={`Gesamtabrechnung ${jahr}: Übersicht der Buchungskonten`}
-        onChanged={(t) => { setInfo(t); setStand(stand + 1); rechnen(); }}
-        schluessel={(p) => <SchluesselWahl objekt={Number(objekt)} jahr={jahr} p={p} anteile={anteile} onChanged={(t) => { setInfo(t); setStand(stand + 1); rechnen(); }} />} />}
-      {objekt !== '' && <WerteJeEinheit key={`${objekt}-${jahr}-${stand}`} objekt={Number(objekt)} jahr={jahr} einheiten={einheiten}
-        konten={pos.filter((p) => p.schluessel === 'Summe' || p.schluessel === 'Verbrauch')} onSaved={() => { setInfo('Eingaben gespeichert und neu berechnet.'); rechnen(); }} />}
+        onChanged={zu ? undefined : (t) => { setInfo(t); setStand(stand + 1); rechnen(); }}
+        schluessel={(p) => zu ? <>{schluesselText(p.schluessel)}</> : <SchluesselWahl objekt={Number(objekt)} jahr={jahr} p={p} anteile={anteile} onChanged={(t) => { setInfo(t); setStand(stand + 1); rechnen(); }} />} />}
+      {objekt !== '' && <fieldset className="gesperrt" disabled={!!zu}><WerteJeEinheit key={`${objekt}-${jahr}-${stand}`} objekt={Number(objekt)} jahr={jahr} einheiten={einheiten}
+        konten={pos.filter((p) => p.schluessel === 'Summe' || p.schluessel === 'Verbrauch')} onSaved={() => { setInfo('Eingaben gespeichert und neu berechnet.'); setStand(stand + 1); rechnen(); }} /></fieldset>}
       <section className="card">
         <div className="card-head"><h2>Einzelabrechnungen</h2></div>
         <table className="list">

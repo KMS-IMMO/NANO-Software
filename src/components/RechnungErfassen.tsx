@@ -1,6 +1,7 @@
 // Rechnung oder Gutschrift erfassen: alle Angaben in einem Bereich, Beleg per Drag & Drop hochladen.
 import { useEffect, useRef, useState } from 'react';
 import { Building2, FileUp, Paperclip, Plus, UserPlus, X } from 'lucide-react';
+import { gesperrt, sperrText } from '../logic/abschluss';
 import { db, insert, type Row } from '../db';
 import { eur } from './EntityTable';
 import { speichern } from '../lib/dateien';
@@ -75,6 +76,8 @@ export function RechnungErfassen({ objektFest, onSaved }: { objektFest?: number;
   async function sichern() {
     setFehler('');
     if (!konto || !datum || !brutto || objekt === '') { setFehler('Bitte Buchungskonto, Datum, Betrag und Immobilie ausfüllen.'); return; }
+    const sp = (await gesperrt(Number(objekt), datum)) ?? (bezahlt ? await gesperrt(Number(objekt), bezahlt) : null);
+    if (sp) { setFehler(sperrText(sp)); return; }
     if (lohn && Math.abs(zahl(lohn)) > Math.abs(brutto) + 0.005) { setFehler('Der § 35a-Anteil kann nicht größer sein als der Rechnungsbetrag.'); return; }
     if (modus === 'eigen' && !gewaehlt.length) { setFehler('Bitte mindestens eine Einheit auswählen oder „Alle Einheiten“ nehmen.'); return; }
     if (modus === 'eigen' && Math.abs(summeEigen - brutto) > 0.005) { setFehler(`Die Beträge der Einheiten (${eur(summeEigen)}) ergeben nicht den Rechnungsbetrag (${eur(brutto)}).`); return; }

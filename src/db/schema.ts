@@ -586,4 +586,9 @@ BEGIN UPDATE einheiten SET lfd_nr = (SELECT COALESCE(MAX(lfd_nr), 0) + 1 FROM ei
   `
 ALTER TABLE buchungen ADD COLUMN anteil_35a REAL;
 `,
+  // Migration 17: Abschluss der Hausgeld- und Nebenkostenabrechnung (danach sind Buchungen des Jahres gesperrt)
+  `
+ALTER TABLE abrechnungen ADD COLUMN abgeschlossen_am TEXT;
+ALTER TABLE abrechnungen ADD COLUMN ergebnis TEXT;
+`,
 ];

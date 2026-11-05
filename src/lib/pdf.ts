@@ -17,7 +17,25 @@ export class Brief {
   doc = new jsPDF({ unit: 'mm', format: 'a4' });
   y = 0;
   abs: Absender;
+  private seiten = 0;
   constructor(abs: Absender) { this.abs = abs; }
+
+  /** Weiteren Brief im selben Dokument beginnen (für eine Gesamtvorschau aller Abrechnungen) */
+  neuerBrief() {
+    if (this.seiten++ > 0) { this.doc.addPage(); this.y = 0; }
+    return this;
+  }
+
+  /** Schriftzug „ENTWURF“ quer über alle Seiten, solange die Abrechnung nicht abgeschlossen ist */
+  entwurf(text = 'ENTWURF') {
+    const d = this.doc, n = d.getNumberOfPages();
+    for (let i = 1; i <= n; i++) {
+      d.setPage(i); d.setFont('helvetica', 'bold'); d.setFontSize(80); d.setTextColor(225, 215, 200);
+      d.text(text, 105, 170, { align: 'center', angle: 35 });
+    }
+    d.setTextColor(0); d.setFont('helvetica', 'normal'); d.setFontSize(10.5);
+    return this;
+  }
 
   kopf(empfaenger: string[], datum: string, ort?: string) {
     const d = this.doc;

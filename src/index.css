@@ -327,3 +327,12 @@ a.btn-link { display: inline-block; background: var(--accent); color: #fff; bord
 .abr-uebersicht table.belege + .link, .abr-uebersicht .error + .link { margin: 0 0 10px; display: inline-flex; align-items: center; gap: 4px; }
 label.hint-35a { background: #f6f1e6; border-radius: 8px; padding: 8px 10px; }
 label.hint-35a small { display: block; margin-top: 2px; font-size: 11px; }
+.abschluss.zu { border: 1px solid #c9b48a; }
+.abschluss .pruefliste { list-style: none; padding: 0; margin: 6px 0 14px; display: grid; gap: 6px; }
+.abschluss .pruefliste li { display: flex; gap: 8px; align-items: flex-start; }
+.abschluss .pruefliste li.ok svg { color: #3a8a4f; }
+.abschluss .pruefliste li.fehlt svg { color: #c0392b; }
+.abschluss .pruefliste li.hinweis svg { color: #c98a1a; }
+.modal.pdf-vorschau { width: min(1100px, 96vw); height: 92vh; display: flex; flex-direction: column; padding: 16px; }
+.modal.pdf-vorschau iframe { flex: 1; width: 100%; border: 1px solid #e6e0d6; border-radius: 8px; background: #f3f0ea; }
+fieldset.gesperrt { border: none; padding: 0; margin: 0; min-width: 0; }

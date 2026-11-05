@@ -11,6 +11,7 @@ import { oeffnen, speichern } from '../lib/dateien';
 import { useObjektKontext } from '../logic/objektKontext';
 import { RechnungErfassen } from '../components/RechnungErfassen';
 import { buchungLoeschen, loeschHinweis } from '../logic/buchung';
+import { gesperrt, sperrText } from '../logic/abschluss';
 
 const heute = () => new Date().toISOString().slice(0, 10);
 const zahl = (s: string) => Number(String(s).replace(/\./g, '').replace(',', '.')) || 0;
@@ -74,6 +75,9 @@ export function JournalPage() {
     if (!edit) return;
     setFehler('');
     if (!edit.datum || !edit.objekt_id || !edit.buchungskonto_id || !edit.betrag) { setFehler('Bitte Datum, Liegenschaft, Konto und Betrag ausfüllen.'); return; }
+    // Abgeschlossenes Jahr: weder das neue noch (beim Bearbeiten) das bisherige Datum darf darin liegen
+    const sp = (await gesperrt(Number(edit.objekt_id), edit.datum)) ?? (edit.id ? await gesperrt(Number(edit.alt_objekt ?? edit.objekt_id), edit.alt_datum) : null);
+    if (sp) { setFehler(sperrText(sp)); return; }
     const vz = edit.richtung === 'Einnahme' ? 1 : -1;
     const gesamt = Math.abs(zahl(String(edit.betrag)));
     // Firma: gewählter Kontakt oder neuer Name wird als Firmenkontakt angelegt
@@ -110,12 +114,16 @@ export function JournalPage() {
   }
   async function loeschen(r: Row | null = edit) {
     if (!r?.id) return;
+    const sp = await gesperrt(Number(r.alt_objekt ?? r.objekt_id), r.alt_datum ?? r.datum);
+    if (sp) { setEdit(null); setInfo(sperrText(sp)); return; }
     const h = loeschHinweis(r);
     if (!window.confirm(`Buchung ${r.id} über ${eur(Math.abs(Number(r.alt_betrag ?? r.betrag)))} löschen?${h ? '\n\n' + h : ''}`)) return;
     await buchungLoeschen(Number(r.id)); setEdit(null); setInfo(`Buchung ${r.id} gelöscht.`); load();
   }
-  const bearbeiten = (r: Row) => { setFehler(''); setModus('buchung'); setEdit({ ...r, firma: r.firma ?? '', alt_betrag: r.betrag, anteil_35a: r.anteil_35a == null ? '' : String(r.anteil_35a).replace('.', ','), richtung: r.betrag > 0 ? 'Einnahme' : 'Ausgabe', betrag: String(Math.abs(r.betrag)).replace('.', ',') }); };
+  const bearbeiten = (r: Row) => { setFehler(''); setModus('buchung'); setEdit({ ...r, firma: r.firma ?? '', alt_betrag: r.betrag, alt_datum: r.datum, alt_objekt: r.objekt_id, anteil_35a: r.anteil_35a == null ? '' : String(r.anteil_35a).replace('.', ','), richtung: r.betrag > 0 ? 'Einnahme' : 'Ausgabe', betrag: String(Math.abs(r.betrag)).replace('.', ',') }); };
   async function rechnungLoeschen(r: Row) {
+    const sp = await gesperrt(r.objekt_id, r.bezahlt_am ?? r.datum);
+    if (sp) { setInfo(sperrText(sp)); return; }
     if (!window.confirm(`Rechnung ${r.rechnungsnr ?? ''} über ${eur(Number(r.betrag))} löschen?`)) return;
     await remove('rechnungen', r.id); setInfo(`Rechnung ${r.rechnungsnr ?? ''} gelöscht.`.replace('  ', ' ')); load();
   }
@@ -123,6 +131,8 @@ export function JournalPage() {
     if (!rEdit) return;
     const betrag = Math.abs(zahl(String(rEdit.betrag)));
     if (!rEdit.datum || !rEdit.buchungskonto_id || !betrag) { setFehler('Bitte Datum, Konto und Betrag ausfüllen.'); return; }
+    const sp = (await gesperrt(rEdit.objekt_id, rEdit.datum)) ?? (await gesperrt(rEdit.objekt_id, rEdit.alt_datum));
+    if (sp) { setFehler(sperrText(sp)); return; }
     let firma_id: number | null = rEdit.firma_id ?? null;
     const fname = String(rEdit.firma ?? '').trim();
     if (fname) { const da = (await db.select('SELECT id FROM firmen WHERE lower(name) = lower($1)', [fname]))[0]; firma_id = da ? da.id : await insert('firmen', { name: fname }); }
@@ -134,6 +144,8 @@ export function JournalPage() {
   }
   async function rechnungBezahlt(r: Row) {
     const tag = heute();
+    const sp = (await gesperrt(r.objekt_id, tag)) ?? (await gesperrt(r.objekt_id, r.datum));   // offene Rechnung zählt bisher im Rechnungsjahr
+    if (sp) { setInfo(sperrText(sp)); return; }
     await insert('buchungen', { datum: tag, betrag: -Number(r.betrag), buchungskonto_id: r.buchungskonto_id, objekt_id: r.objekt_id, einheit_id: r.einheit_id,
       rechnung_id: r.id, firma_id: r.firma_id, anteil_35a: r.anteil_lohn ?? null, text: `Rechnung ${r.rechnungsnr ?? ''} ${r.firma ?? ''}`.replace(/\s+/g, ' ').trim() });
     await update('rechnungen', r.id, { bezahlt_am: tag });
@@ -187,7 +199,7 @@ export function JournalPage() {
                   <td>{!fix && <span className="muted small">{r.objekt} · </span>}{r.einheit ?? 'alle'}</td>
                   <td className="num neg">{eur(Number(r.betrag))}</td>
                   <td className="actions nowrap"><button className="link" onClick={() => rechnungBezahlt(r)}>Als bezahlt buchen</button>
-                    <button className="icon-btn" title="Rechnung bearbeiten" onClick={() => { setFehler(''); setREdit({ ...r, betrag: String(r.betrag).replace('.', ','), anteil_lohn: r.anteil_lohn == null ? '' : String(r.anteil_lohn).replace('.', ',') }); }}><Pencil size={15} /></button>
+                    <button className="icon-btn" title="Rechnung bearbeiten" onClick={() => { setFehler(''); setREdit({ ...r, alt_datum: r.datum, betrag: String(r.betrag).replace('.', ','), anteil_lohn: r.anteil_lohn == null ? '' : String(r.anteil_lohn).replace('.', ',') }); }}><Pencil size={15} /></button>
                     <button className="icon-btn" title="Rechnung löschen" onClick={() => rechnungLoeschen(r)}><Trash2 size={15} /></button></td>
                 </tr>))}</tbody>
             </table></div>)}
