@@ -484,7 +484,7 @@ function HausgeldTab({ objektId }: { objektId: number }) {
       fields={[
         { key: 'einheit_id', label: 'Einheit', type: 'select', required: true, optionsSql: einheitOptions(objektId) },
         { key: 'gueltig_ab', label: 'Gültig ab', type: 'date', required: true },
-        { key: 'betrag', label: 'Hausgeld / Monat', type: 'number', required: true, format: eur },
+        { key: 'betrag', label: 'Hausgeld gesamt / Monat (inkl. Rücklage)', type: 'number', required: true, format: eur },
         { key: 'davon_ruecklage', label: 'davon Erhaltungsrücklage', type: 'number', format: eur },
       ]}
       listSql={`SELECT h.*, e.nummer AS einheit_id_label FROM hausgeld h JOIN einheiten e ON e.id = h.einheit_id

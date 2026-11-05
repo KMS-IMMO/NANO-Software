@@ -162,8 +162,8 @@ export function WegAbrechnungPage() {
       b.tabelle(['Ergebnis', 'Betrag'], [
         ['Ihr Kostenanteil gesamt', geld(r.summe)],
         ['Hausgeld-Vorschüsse laut Wirtschaftsplan (Soll)', geld(r.soll)],
-        ['davon Zuführung Erhaltungsrücklage', geld(r.ruecklageSoll)],
-        ['Vorschüsse für Bewirtschaftung', geld(r.vorschuss)],
+        ['abzüglich Zuführung Erhaltungsrücklage', geld(-r.ruecklageSoll)],
+        ['Vorschüsse für Bewirtschaftung (ohne Rücklage)', geld(r.vorschuss)],
       ], [[r.spitze > 0 ? 'Nachschuss (Abrechnungsspitze)' : 'Erstattung (Abrechnungsspitze)', geld(Math.abs(r.spitze))]]);
       if (r.mieter) {
         b.absatz(`Ihre Einheit ist vermietet (${r.mieter.name})`, 1);
@@ -217,12 +217,12 @@ export function WegAbrechnungPage() {
       <section className="card">
         <div className="card-head"><h2>Einzelabrechnungen</h2></div>
         <table className="list">
-          <thead><tr><th>Einheit</th><th>Eigentümer</th><th>Zeitraum</th><th className="num">Kostenanteil</th><th className="num">davon umlagefähig</th><th className="num">Vorschüsse (ohne Rücklage)</th><th className="num">Abrechnungsspitze</th><th className="num">Rückstand Hausgeld</th><th>Mieter (NK-Abrechnung)</th></tr></thead>
+          <thead><tr><th>Einheit</th><th>Eigentümer</th><th>Zeitraum</th><th className="num">Kostenanteil</th><th className="num">davon umlagefähig</th><th className="num">Hausgeld-Soll</th><th className="num">abzgl. Rücklage</th><th className="num">Vorschüsse (ohne Rücklage)</th><th className="num">Abrechnungsspitze</th><th className="num">Rückstand Hausgeld</th><th>Mieter (NK-Abrechnung)</th></tr></thead>
           <tbody>{erg.map((r) => (
             <tr key={r.nutzer.key}>
               <td>{r.einheit.nummer}</td><td>{r.nutzer.name}</td><td className="small">{datum(r.nutzer.von)} – {datum(r.nutzer.bis)}</td>
               <td className="num">{eur(r.summe)}</td><td className="num">{eur(r.zeilen.filter((z) => z.pos.umlagefaehig).reduce((a, z) => a + z.betrag, 0))}</td>
-              <td className="num">{eur(r.vorschuss)}</td>
+              <td className="num">{eur(r.soll)}</td><td className="num">{eur(-r.ruecklageSoll)}</td><td className="num">{eur(r.vorschuss)}</td>
               <td className={'num ' + (r.spitze > 0 ? 'neg' : 'pos')}><b>{r.spitze > 0 ? 'Nachschuss ' : 'Erstattung '}{eur(Math.abs(r.spitze))}</b></td>
               <td className={'num ' + (r.rueckstand > 0.005 ? 'neg' : '')}>{eur(r.rueckstand)}</td>
               <td className="small">{r.mieter ? <>{r.mieter.name}<div className="muted">VZ {eur(r.mieter.vz)} · {r.mieter.saldo > 0 ? 'Nachzahlung' : 'Guthaben'} {eur(Math.abs(r.mieter.saldo))}</div></> : <span className="muted">selbst genutzt</span>}</td>
