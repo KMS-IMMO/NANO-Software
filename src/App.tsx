@@ -183,7 +183,7 @@ function Rahmen() {
   return (
       <div className={'app' + (kompakt ? ' kompakt' : '')}>
         <aside className="side">
-          <div className="side-logo"><Logo /></div>
+          <div className="side-logo"><Logo daten /></div>
           <nav>
             {NAV.map((a) => (
               <div key={a.titel} className="nav-abschnitt">

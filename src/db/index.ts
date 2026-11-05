@@ -99,12 +99,17 @@ export const sicherheit = {
   ablageFreigeben: (pfad: string) => invoke('ablage_freigeben', { pfad }),
 };
 
+/** Wird bei jedem Schreibvorgang ausgelöst, das Logo zeigt dann kurz stärkeren Datenverkehr */
+export const DATEN_EVENT = 'nano-daten';
+
 export const db = {
   async select<T = Row>(sql: string, params: Param[] = []): Promise<T[]> {
     return (await driver()).select(sql, params) as Promise<T[]>;
   },
   async execute(sql: string, params: Param[] = []) {
-    return (await driver()).execute(sql, params);
+    const r = await (await driver()).execute(sql, params);
+    if (typeof window !== 'undefined') window.dispatchEvent(new Event(DATEN_EVENT));   // Logo zeigt Datenverkehr
+    return r;
   },
   isDemo: !isTauri,
 };
