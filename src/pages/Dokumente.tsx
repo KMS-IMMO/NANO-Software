@@ -20,7 +20,7 @@ const AUSWAHL: Record<Bezug, string> = {
 };
 
 /** Basis-Ordner in der Ablage je Bezug, z. B. ["Lindenstraße 12", "Einheiten", "WE 01"] */
-async function basisOrdner(bezug: Bezug, id: number): Promise<string[]> {
+export async function basisOrdner(bezug: Bezug, id: number): Promise<string[]> {
   const one = async (sql: string) => (await db.select(sql, [id]))[0] ?? {};
   switch (bezug) {
     case 'Objekt': return [(await one('SELECT name FROM objekte WHERE id = $1')).name];

@@ -7,6 +7,7 @@ import { EINHEIT_TYPEN, personOptions } from '../db/labels';
 import { num } from '../components/EntityTable';
 
 const zahl = (s: any) => Number(String(s ?? '').replace(/\./g, '').replace(',', '.')) || 0;
+import { WARMWASSER } from '../db/labels';
 const HEIZUNG = ['Gas-Zentralheizung', 'Öl-Zentralheizung', 'Fernwärme', 'Wärmepumpe', 'Pellets', 'Gasetagenheizung', 'Nachtspeicher', 'Sonstige'];
 type Einheit = { nummer: string; typ: string; lage: string; flaeche: string; mea: string; personenzahl: string;
   vorname: string; nachname: string; telefon: string; email: string;
@@ -64,7 +65,7 @@ export function ObjektAssistentPage() {
     try {
       const id = await insert('objekte', {
         verwaltungsart: o.verwaltungsart, name: o.name || o.strasse, strasse: o.strasse, plz: o.plz, ort: o.ort, status: o.status || 'Aktiv',
-        baujahr: o.baujahr ? zahl(o.baujahr) : null, gesamt_mea: meaSoll || (sMea || null), heizungsart: o.heizungsart || null,
+        baujahr: o.baujahr ? zahl(o.baujahr) : null, gesamt_mea: meaSoll || (sMea || null), heizungsart: o.heizungsart || null, warmwasser: o.warmwasser || null, gesamt_flaeche: o.gesamt_flaeche ? zahl(o.gesamt_flaeche) : null,
         eigentuemer_id: null, notiz: o.notiz || null,
       });
       // Eigentümer des Hauses (Mietverwaltung): vorhandene Person oder direkt neu angelegt
@@ -138,6 +139,8 @@ export function ObjektAssistentPage() {
             <div className="form f3">
               <label><span>Heizungsart</span><select value={o.heizungsart ?? ''} onChange={(e) => set('heizungsart', e.target.value)}><option value="">–</option>{HEIZUNG.map((h) => <option key={h}>{h}</option>)}</select></label>
               <label><span>Gesamt-MEA {weg ? '*' : ''}</span><input inputMode="decimal" placeholder="z. B. 1.000 oder 10.000" value={o.gesamt_mea ?? ''} onChange={(e) => set('gesamt_mea', e.target.value)} /></label>
+              <label><span>Gesamtfläche (m²)</span><input inputMode="decimal" placeholder="optional" value={o.gesamt_flaeche ?? ''} onChange={(e) => set('gesamt_flaeche', e.target.value)} /></label>
+              <label><span>Warmwasserversorgung</span><select value={o.warmwasser ?? ''} onChange={(e) => set('warmwasser', e.target.value)}><option value="">–</option>{WARMWASSER.map((h) => <option key={h}>{h}</option>)}</select></label>
               {!weg && <label><span>Eigentümer des Hauses</span><select value={o.eigentuemer_id ?? ''} onChange={(e) => set('eigentuemer_id', e.target.value)}>
                 <option value="">–</option><option value="neu">+ Neuen Eigentümer anlegen …</option>{eigentuemer.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}</select></label>}
             </div>
@@ -206,6 +209,7 @@ export function ObjektAssistentPage() {
               <tr><td>Bezeichnung</td><td><b>{o.name || o.strasse}</b></td></tr>
               <tr><td>Anschrift</td><td>{o.strasse}, {o.plz} {o.ort}</td></tr>
               <tr><td>Baujahr / Heizung</td><td>{o.baujahr || '–'} / {o.heizungsart || '–'}</td></tr>
+              <tr><td>Warmwasser / Gesamtfläche</td><td>{o.warmwasser || '–'} / {o.gesamt_flaeche ? `${o.gesamt_flaeche} m²` : '–'}</td></tr>
               {!weg && <tr><td>Eigentümer des Hauses</td><td>{o.eigentuemer_id === 'neu' ? <>{[o.neu_vorname, o.neu_nachname].filter(Boolean).join(' ')} <span className="muted">(wird neu angelegt)</span></> : eigentuemer.find((p) => String(p.value) === String(o.eigentuemer_id))?.label ?? '–'}</td></tr>}
               <tr><td>Einheiten</td><td>{einheiten.length} ({[...new Set(einheiten.map((e) => e.typ))].join(', ')})</td></tr>
               {weg && <tr><td>Hausgeld / vermietet</td><td>{num(sHg + sRl)} € im Monat (davon Erhaltungsrücklage {num(sRl)} €) · {nMieter} von {einheiten.length} Einheiten vermietet (NK-Vorauszahlungen {num(sNk)} € im Monat)</td></tr>}

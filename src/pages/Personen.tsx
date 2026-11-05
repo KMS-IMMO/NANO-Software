@@ -1,5 +1,5 @@
 import { User, Users, Hammer } from 'lucide-react';
-import { EntityTable } from '../components/EntityTable';
+import { EntityTable, eur } from '../components/EntityTable';
 import { personLabel } from '../db/labels';
 
 export function PersonenPage({ rolle, titel }: { rolle?: 'Eigentümer' | 'Mieter' | 'Verwalter' | 'Sonstige'; titel?: string }) {
@@ -29,6 +29,9 @@ export function PersonenPage({ rolle, titel }: { rolle?: 'Eigentümer' | 'Mieter
         { key: 'bic', label: 'BIC', hideInTable: true },
         { key: 'notiz', label: 'Notiz', type: 'textarea', hideInTable: true },
         { key: 'objekte', label: 'Objekte / Einheiten', computed: true },
+        ...(rolle === 'Mieter' ? [
+          { key: 'nk_vz', label: 'NK-Vorauszahlung / Monat', type: 'number' as const, computed: true, sum: true, format: (v: any) => v != null ? eur(v) : '–' },
+          { key: 'hk_vz', label: 'HK-Vorauszahlung / Monat', type: 'number' as const, computed: true, sum: true, format: (v: any) => v != null ? eur(v) : '–' }] : []),
       ]}
       listSql={`SELECT p.*, ${personLabel('p')} AS anzeigename,
           COALESCE(
@@ -37,7 +40,11 @@ export function PersonenPage({ rolle, titel }: { rolle?: 'Eigentümer' | 'Mieter
             (SELECT GROUP_CONCAT(o.name, '; ') FROM objekte o WHERE o.eigentuemer_id = p.id),
             (SELECT GROUP_CONCAT(o.name || ' ' || e.nummer, '; ') FROM mietvertraege v JOIN einheiten e ON e.id = v.einheit_id
                JOIN objekte o ON o.id = e.objekt_id WHERE v.mieter_id = p.id AND (v.ende IS NULL OR v.ende >= date('now')))
-          ) AS objekte
+          ) AS objekte${rolle === 'Mieter' ? `,
+          (SELECT SUM(COALESCE((SELECT a.nk_vorauszahlung FROM mietanpassungen a WHERE a.vertrag_id = v.id AND a.nk_vorauszahlung IS NOT NULL AND a.gueltig_ab <= date('now') ORDER BY a.gueltig_ab DESC LIMIT 1), v.nk_vorauszahlung, 0))
+            FROM mietvertraege v WHERE v.mieter_id = p.id AND v.beginn <= date('now') AND (v.ende IS NULL OR v.ende >= date('now'))) AS nk_vz,
+          (SELECT SUM(COALESCE((SELECT a.hk_vorauszahlung FROM mietanpassungen a WHERE a.vertrag_id = v.id AND a.hk_vorauszahlung IS NOT NULL AND a.gueltig_ab <= date('now') ORDER BY a.gueltig_ab DESC LIMIT 1), v.hk_vorauszahlung, 0))
+            FROM mietvertraege v WHERE v.mieter_id = p.id AND v.beginn <= date('now') AND (v.ende IS NULL OR v.ende >= date('now'))) AS hk_vz` : ''}
         FROM personen p ${rolle ? `WHERE p.rolle = '${rolle}'` : ''} ORDER BY p.rolle, COALESCE(p.nachname, p.firma)`}
     />
   );

@@ -5,6 +5,7 @@ import { AlarmClock, Calendar, ChevronLeft, ChevronRight, CircleCheck, Columns3,
 import { db, insert, remove, update, type Row } from '../db';
 import { datum } from '../components/EntityTable';
 import { FirmenPage, PersonenPage } from './Personen';
+import { TERMINARTEN, terminKlasse } from '../logic/termine';
 
 const heute = () => new Date().toISOString().slice(0, 10);
 const OBJEKTE_SQL = 'SELECT id, name FROM objekte ORDER BY name';
@@ -38,8 +39,18 @@ export function KontaktePage() {
 
 /* =================== Kalender =================== */
 
-type Eintrag = { datum: string; titel: string; art: string; ziel?: string; termin?: Row; uhrzeit?: string };
-const FARBE: Record<string, string> = { Termin: 'k-termin', Erinnerung: 'k-erinnerung', Versammlung: 'k-versammlung', Instandhaltung: 'k-vorgang', Rechnung: 'k-rechnung', Ticket: 'k-ticket' };
+function TerminartWahl({ value, onChange }: { value?: string | null; onChange: (v: string | null) => void }) {
+  return (
+    <div className="wide"><span className="small muted">Terminart</span>
+      <div className="row" style={{ flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
+        {TERMINARTEN.map((t) => <button key={t.art} type="button" className={'kal-e ' + t.cls} style={{ display: 'inline-block', padding: '4px 10px', fontSize: 12.5, outline: value === t.art ? '2px solid #1d2733' : 'none' }}
+          onClick={() => onChange(value === t.art ? null : t.art)}>{t.art}</button>)}
+      </div></div>);
+}
+
+type Eintrag = { datum: string; titel: string; art: string; ziel?: string; termin?: Row; uhrzeit?: string; cls?: string };
+const FARBE: Record<string, string> = { Termin: 'k-termin', Erinnerung: 'k-erinnerung', Instandhaltung: 'k-vorgang', Rechnung: 'k-rechnung', Ticket: 'k-ticket' };
+const farbe = (e: Eintrag) => e.cls || FARBE[e.art] || FARBE[e.art.split(' ')[0]] || 'k-termin';
 
 export function KalenderPage() {
   const objekte = useObjekte();
@@ -51,16 +62,16 @@ export function KalenderPage() {
     const q = (sql: string) => db.select(sql, [von, bis]);
     const e: Eintrag[] = [
       ...(await q(`SELECT t.*, o.name AS objekt FROM termine t LEFT JOIN objekte o ON o.id = t.objekt_id WHERE t.datum BETWEEN $1 AND $2`))
-        .map((t) => ({ datum: t.datum, titel: t.titel + (t.objekt ? ` · ${t.objekt}` : ''), art: 'Termin', termin: t, uhrzeit: t.uhrzeit })),
+        .map((t) => ({ datum: t.datum, titel: t.titel + (t.objekt ? ` · ${t.objekt}` : ''), art: t.art || 'Termin', termin: t, uhrzeit: t.uhrzeit, cls: terminKlasse(t.art) })),
       ...(await q(`SELECT * FROM erinnerungen WHERE erledigt = 0 AND faellig BETWEEN $1 AND $2`)).map((r) => ({ datum: r.faellig, titel: r.titel, art: 'Erinnerung', ziel: '/erinnerungen', uhrzeit: r.uhrzeit })),
       ...(await q(`SELECT v.*, o.name AS objekt FROM versammlungen v JOIN objekte o ON o.id = v.objekt_id WHERE v.datum BETWEEN $1 AND $2`))
-        .map((v) => ({ datum: v.datum, titel: `${v.art} ${v.objekt}`, art: 'Versammlung', ziel: `/objekte/${v.objekt_id}/beschluesse` })),
+        .map((v) => ({ datum: v.datum, titel: `${v.art} ${v.objekt}${v.status === 'Durchgeführt' ? ' ✓' : ''}`, art: 'Eigentümerversammlung', ziel: `/objekte/${v.objekt_id}/beschluesse`, uhrzeit: v.uhrzeit, cls: 'ta-versammlung' })),
       ...(await q(`SELECT v.*, o.name AS objekt FROM vorgaenge v JOIN objekte o ON o.id = v.objekt_id WHERE v.status <> 'Erledigt' AND v.faellig BETWEEN $1 AND $2`))
         .map((v) => ({ datum: v.faellig, titel: `${v.betreff} · ${v.objekt}`, art: 'Instandhaltung', ziel: `/objekte/${v.objekt_id}/instandhaltung` })),
       ...(await q(`SELECT r.*, f.name AS firma FROM rechnungen r LEFT JOIN firmen f ON f.id = r.firma_id WHERE r.bezahlt_am IS NULL AND r.faellig BETWEEN $1 AND $2`))
         .map((r) => ({ datum: r.faellig, titel: `Rechnung ${r.rechnungsnr ?? ''} ${r.firma ?? ''}`.trim(), art: 'Rechnung', ziel: `/objekte/${r.objekt_id}/buchungen` })),
       ...(await q(`SELECT t.*, b.name AS board FROM tickets t JOIN boards b ON b.id = t.board_id WHERE t.status <> 'Erledigt' AND t.faellig BETWEEN $1 AND $2`))
-        .map((t) => ({ datum: t.faellig, titel: `${t.titel} (${t.board})`, art: 'Ticket', ziel: '/tickets' })),
+        .map((t) => ({ datum: t.faellig, titel: `${t.titel} (${t.board})`, art: t.terminart ? `Ticket · ${t.terminart}` : 'Ticket', ziel: '/tickets', uhrzeit: t.uhrzeit, cls: terminKlasse(t.terminart) })),
     ];
     setEintraege(e.sort((a, b) => (a.uhrzeit ?? '').localeCompare(b.uhrzeit ?? '')));
   };
@@ -76,7 +87,7 @@ export function KalenderPage() {
 
   async function speichern() {
     if (!edit?.titel || !edit.datum) return;
-    const v = { titel: edit.titel, datum: edit.datum, uhrzeit: edit.uhrzeit || null, objekt_id: edit.objekt_id ?? null, notiz: edit.notiz || null };
+    const v = { titel: edit.titel, datum: edit.datum, uhrzeit: edit.uhrzeit || null, art: edit.art || null, objekt_id: edit.objekt_id ?? null, notiz: edit.notiz || null };
     if (edit.id) await update('termine', edit.id, v); else await insert('termine', v);
     setEdit(null); load();
   }
@@ -100,19 +111,22 @@ export function KalenderPage() {
               <div key={i} className={'kal-tag' + (gueltig ? '' : ' leer') + (d === heute() ? ' heute' : '')} onDoubleClick={() => gueltig && setEdit({ datum: d })}>
                 {gueltig && <><span className="kal-nr">{t}</span>
                   {eintraege.filter((e) => e.datum === d).map((e, k) => e.termin
-                    ? <button key={k} className={'kal-e ' + FARBE[e.art]} onClick={() => setEdit(e.termin!)} title={e.titel}>{e.uhrzeit ? e.uhrzeit + ' ' : ''}{e.titel}</button>
-                    : <Link key={k} to={e.ziel!} className={'kal-e ' + FARBE[e.art]} title={`${e.art}: ${e.titel}`}>{e.uhrzeit ? e.uhrzeit + ' ' : ''}{e.titel}</Link>)}</>}
+                    ? <button key={k} className={'kal-e ' + farbe(e)} onClick={() => setEdit(e.termin!)} title={e.titel}>{e.uhrzeit ? e.uhrzeit + ' ' : ''}{e.titel}</button>
+                    : <Link key={k} to={e.ziel!} className={'kal-e ' + farbe(e)} title={`${e.art}: ${e.titel}`}>{e.uhrzeit ? e.uhrzeit + ' ' : ''}{e.titel}</Link>)}</>}
               </div>);
           })}
         </div>
-        <div className="row small muted" style={{ marginTop: 10, gap: 14 }}>{Object.entries(FARBE).map(([a, c]) => <span key={a}><i className={'kal-punkt ' + c} />{a}</span>)}
-          <span className="grow" />Doppelklick auf einen Tag legt einen Termin an.</div>
+        <div className="kal-legende small muted" style={{ marginTop: 10 }}>
+          {TERMINARTEN.map((t) => <span key={t.art}><i className={'kal-punkt ' + t.cls} />{t.art}</span>)}
+          {Object.entries(FARBE).map(([a, c]) => <span key={a}><i className={'kal-punkt ' + c} />{a === 'Termin' ? 'Termin ohne Art' : a}</span>)}</div>
+        <p className="small muted" style={{ marginTop: 4 }}>Doppelklick auf einen Tag legt einen Termin an.</p>
       </section>
       {edit && <Modal titel={edit.id ? 'Termin bearbeiten' : 'Termin anlegen'} onClose={() => setEdit(null)}>
         <div className="form">
           <label className="wide"><span>Titel *</span><input autoFocus value={edit.titel ?? ''} onChange={(e) => setEdit({ ...edit, titel: e.target.value })} /></label>
           <label><span>Datum *</span><input type="date" value={edit.datum ?? ''} onChange={(e) => setEdit({ ...edit, datum: e.target.value })} /></label>
           <label><span>Uhrzeit</span><input type="time" value={edit.uhrzeit ?? ''} onChange={(e) => setEdit({ ...edit, uhrzeit: e.target.value })} /></label>
+          <TerminartWahl value={edit.art} onChange={(art) => setEdit({ ...edit, art })} />
           <label className="wide"><span>Liegenschaft</span><ObjektWahl value={edit.objekt_id} objekte={objekte} onChange={(v) => setEdit({ ...edit, objekt_id: v })} /></label>
           <label className="wide"><span>Notiz</span><textarea rows={3} value={edit.notiz ?? ''} onChange={(e) => setEdit({ ...edit, notiz: e.target.value })} /></label>
         </div>
@@ -208,7 +222,8 @@ export function TicketBoardsPage() {
       const v = { betreff: edit.titel.trim(), status: edit.status ?? 'Offen', prioritaet: edit.prioritaet ?? 'Mittel', faellig: edit.faellig || null, objekt_id: edit.objekt_id, notiz: edit.notiz || null };
       if (edit.id) await update('vorgaenge', edit.id, v); else await insert('vorgaenge', v);
     } else {
-      const v = { board_id: board, titel: edit.titel.trim(), status: edit.status ?? 'Offen', prioritaet: edit.prioritaet ?? 'Mittel', faellig: edit.faellig || null, objekt_id: edit.objekt_id ?? null, notiz: edit.notiz || null };
+      const v = { board_id: board, titel: edit.titel.trim(), status: edit.status ?? 'Offen', prioritaet: edit.prioritaet ?? 'Mittel', faellig: edit.faellig || null,
+        uhrzeit: edit.uhrzeit || null, terminart: edit.terminart || null, objekt_id: edit.objekt_id ?? null, notiz: edit.notiz || null };
       if (edit.id) await update('tickets', edit.id, v); else await insert('tickets', v);
     }
     setEdit(null); load(); ladeBoards();
@@ -235,9 +250,9 @@ export function TicketBoardsPage() {
               onDrop={(e) => { e.preventDefault(); setUeber(''); if (ziehe != null) verschieben(ziehe, s); setZiehe(null); }}>
               <div className="board-kopf"><b>{s}</b><span className="muted">{liste.length}</span></div>
               {liste.map((k) => (
-                <div key={k.id} className={'board-karte prio-' + String(k.prioritaet).toLowerCase()} draggable onDragStart={() => setZiehe(k.id)} onClick={() => setEdit(k)}>
+                <div key={k.id} className={'board-karte prio-' + String(k.prioritaet).toLowerCase() + (k.faellig && k.terminart ? ' ' + terminKlasse(k.terminart) : '')} draggable onDragStart={() => setZiehe(k.id)} onClick={() => setEdit(k)}>
                   <b>{k.titel}</b>
-                  <div className="small muted">{[k.objekt, k.faellig && `fällig ${datum(k.faellig)}`].filter(Boolean).join(' · ')}</div>
+                  <div className="small muted">{[k.objekt, k.faellig && `${k.terminart ? 'Termin' : 'fällig'} ${datum(k.faellig)}${k.uhrzeit ? ' ' + k.uhrzeit : ''}`, k.faellig && k.terminart].filter(Boolean).join(' · ')}</div>
                   {k.faellig && k.faellig < h && s !== 'Erledigt' && <div className="small neg">überfällig</div>}
                 </div>))}
               {liste.length === 0 && <p className="muted small" style={{ padding: 8 }}>Keine Karten</p>}
@@ -249,7 +264,9 @@ export function TicketBoardsPage() {
           <label className="wide"><span>Titel *</span><input autoFocus value={edit.titel ?? ''} onChange={(e) => setEdit({ ...edit, titel: e.target.value })} /></label>
           <label><span>Status</span><select value={edit.status} onChange={(e) => setEdit({ ...edit, status: e.target.value })}>{SPALTEN.map((x) => <option key={x}>{x}</option>)}</select></label>
           <label><span>Priorität</span><select value={edit.prioritaet} onChange={(e) => setEdit({ ...edit, prioritaet: e.target.value })}>{['Niedrig', 'Mittel', 'Hoch'].map((x) => <option key={x}>{x}</option>)}</select></label>
-          <label><span>Fällig</span><input type="date" value={edit.faellig ?? ''} onChange={(e) => setEdit({ ...edit, faellig: e.target.value })} /></label>
+          <label><span>{edit.terminart ? 'Termin am' : 'Fällig'}</span><input type="date" value={edit.faellig ?? ''} onChange={(e) => setEdit({ ...edit, faellig: e.target.value })} /></label>
+          {!instand && <label><span>Uhrzeit</span><input type="time" value={edit.uhrzeit ?? ''} onChange={(e) => setEdit({ ...edit, uhrzeit: e.target.value })} /></label>}
+          {!instand && <TerminartWahl value={edit.terminart} onChange={(terminart) => setEdit({ ...edit, terminart })} />}
           <label><span>Liegenschaft{instand ? ' *' : ''}</span><ObjektWahl value={edit.objekt_id} objekte={objekte} onChange={(v) => setEdit({ ...edit, objekt_id: v })} /></label>
           <label className="wide"><span>Beschreibung</span><textarea rows={4} value={edit.notiz ?? ''} onChange={(e) => setEdit({ ...edit, notiz: e.target.value })} /></label>
         </div>

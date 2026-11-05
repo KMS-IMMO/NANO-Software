@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { Pencil } from 'lucide-react';
 import { db, insert, remove, update, type Row } from '../db';
 
-export type FieldType = 'text' | 'number' | 'date' | 'select' | 'textarea' | 'checkbox';
+export type FieldType = 'text' | 'number' | 'date' | 'time' | 'select' | 'textarea' | 'checkbox';
 
 export interface Field {
   key: string;
@@ -219,6 +219,8 @@ function Input({ f, value, opts, onChange }: { f: Field; value: any; opts?: Opt[
       return <input inputMode="decimal" value={v} onChange={(e) => onChange(e.target.value)} />;
     case 'date':
       return <input type="date" value={v} onChange={(e) => onChange(e.target.value)} />;
+    case 'time':
+      return <input type="time" value={v} onChange={(e) => onChange(e.target.value)} />;
     default:
       return <input value={v} onChange={(e) => onChange(e.target.value)} />;
   }

@@ -1,4 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { FileText, FileUp, Paperclip, Trash2 } from 'lucide-react';
+import { oeffnen, speichern } from '../lib/dateien';
+import { basisOrdner } from './Dokumente';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { EntityTable, datum, eur, type Field } from '../components/EntityTable';
 import { db, type Row } from '../db';
@@ -29,6 +32,7 @@ const vertragFields: Field[] = [
 ];
 
 const listSql = (where = '1=1') => `SELECT v.*, o.name || ' – ' || e.nummer AS einheit_id_label, ${personLabel('p')} AS mieter_id_label,
+    (SELECT COUNT(*) FROM dokumente d WHERE d.bezug = 'Mietvertrag' AND d.bezug_id = v.id) AS doks,
     CASE WHEN v.beginn > date('now') THEN 'künftig' WHEN v.ende IS NOT NULL AND v.ende < date('now') THEN 'beendet' ELSE 'aktiv' END AS status
   FROM mietvertraege v JOIN einheiten e ON e.id = v.einheit_id JOIN objekte o ON o.id = e.objekt_id
   JOIN personen p ON p.id = v.mieter_id WHERE ${where} ORDER BY o.name, e.nummer, v.beginn DESC`;
@@ -44,6 +48,7 @@ export function VertraegePage() {
       table="mietvertraege"
       fields={[...felder,
         { key: 'warm', label: 'Miete aktuell', computed: true, type: 'number', format: (_v, r) => <AktuelleMiete v={r} /> },
+        { key: 'doks', label: 'Vertrag', computed: true, format: (v) => v ? <span title={`${v} Dokument(e) hinterlegt`}><Paperclip size={15} /></span> : <span className="muted small">fehlt</span> },
         { key: 'status', label: 'Status', computed: true, format: (v) => <span className={'pill ' + v}>{v}</span> }]}
       listSql={listSql(fix ? `o.id = ${fix.id}` : undefined)}
       onOpen={(r) => nav(fix ? `/objekte/${fix.id}/vertrag/${r.id}` : `/vertraege/${r.id}`)}
@@ -89,6 +94,7 @@ export function VertragDetailPage({ vertragId }: { vertragId?: number }) {
         <div className="kpi"><span>Gesamt / Monat</span><b>{eur(jetzt.kalt + jetzt.nk + jetzt.hk + jetzt.ust)}</b></div>
         <div className="kpi"><span>Kaution</span><b>{eur(v.kaution ?? 0)}</b></div>
       </div>
+      <VertragDokumente vertragId={id} />
       <EntityTable
         title={v.mietart === 'Staffelmiete' ? 'Mietstaffeln und Änderungen' : v.mietart === 'Indexmiete' ? 'Indexanpassungen und Änderungen' : 'Mietänderungen'}
         table="mietanpassungen"
@@ -108,5 +114,46 @@ export function VertragDetailPage({ vertragId }: { vertragId?: number }) {
         emptyText="Keine Änderungen. Leere Felder bleiben unverändert. Ab dem Datum fordert das Programm automatisch den neuen Betrag."
       />
     </>
+  );
+}
+
+/** Mietvertrag und Anlagen hochladen: liegen in der Ablage unter Einheiten/<Nr>/Mietvertrag … */
+function VertragDokumente({ vertragId }: { vertragId: number }) {
+  const [docs, setDocs] = useState<Row[]>([]);
+  const [over, setOver] = useState(false);
+  const [info, setInfo] = useState('');
+  const ref = useRef<HTMLInputElement>(null);
+  const load = () => db.select(`SELECT * FROM dokumente WHERE bezug = 'Mietvertrag' AND bezug_id = $1 ORDER BY hinzugefuegt DESC, id DESC`, [vertragId]).then(setDocs);
+  useEffect(() => { load(); }, [vertragId]);
+  async function hochladen(files: FileList | File[]) {
+    const liste = Array.from(files);
+    if (!liste.length) return;
+    const ordner = await basisOrdner('Mietvertrag', vertragId);
+    for (const f of liste) await speichern(new Uint8Array(await f.arrayBuffer()), f.name, { bezug: 'Mietvertrag', bezugId: vertragId, ordner });
+    setInfo(`${liste.length} Datei(en) hinterlegt.`); load();
+  }
+  async function loeschen(d: Row) {
+    if (!confirm(`„${d.dateiname}“ aus der Liste entfernen? Die Datei in der Ablage bleibt erhalten.`)) return;
+    await db.execute('DELETE FROM dokumente WHERE id = $1', [d.id]); load();
+  }
+  return (
+    <section className="card">
+      <div className="card-head"><h2 className="title-ico"><FileText size={20} />Mietvertrag und Anlagen</h2>
+        <button className="primary" onClick={() => ref.current?.click()}><FileUp size={16} />Hochladen</button></div>
+      <div className={'drop' + (over ? ' over' : '')} style={{ padding: 14 }}
+        onDragOver={(e) => { e.preventDefault(); setOver(true); }} onDragLeave={() => setOver(false)}
+        onDrop={(e) => { e.preventDefault(); setOver(false); hochladen(e.dataTransfer.files); }} onClick={() => ref.current?.click()}>
+        <p className="muted small" style={{ margin: 0 }}>Mietvertrag, Übergabeprotokoll oder Nachträge hierher ziehen oder klicken (PDF oder Bild)</p>
+      </div>
+      <input ref={ref} type="file" multiple accept=".pdf,image/*,.doc,.docx" hidden onChange={(e) => { if (e.target.files) hochladen(e.target.files); e.target.value = ''; }} />
+      {info && <p className="info">{info}</p>}
+      {docs.length > 0 && <table className="list" style={{ marginTop: 10 }}><tbody>
+        {docs.map((d) => <tr key={d.id}>
+          <td><button className="link" onClick={() => oeffnen(d.pfad)}><Paperclip size={14} /> {d.dateiname}</button></td>
+          <td className="muted small">{datum(d.hinzugefuegt)}</td>
+          <td style={{ width: 40 }}><button className="icon-btn" title="Aus Liste entfernen" onClick={() => loeschen(d)}><Trash2 size={15} /></button></td></tr>)}
+      </tbody></table>}
+      {!docs.length && <p className="muted small">Noch kein Vertrag hinterlegt.</p>}
+    </section>
   );
 }

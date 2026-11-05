@@ -6,6 +6,7 @@ import { datum, eur, num } from '../components/EntityTable';
 import { Donut } from '../components/Donut';
 import { personLabel } from '../db/labels';
 import { OP_SQL } from '../logic/soll';
+import { InternChat } from '../components/InternChat';
 
 const monat = () => new Date().toISOString().slice(0, 7);
 const monatName = () => new Date().toLocaleDateString('de-DE', { month: 'long', year: 'numeric' });
@@ -56,7 +57,7 @@ export function DashboardPage() {
   const soll = Number(z.soll) || 0, ist = Number(z.ist) || 0;
 
   return (
-    <>
+    <div className="dash-layout"><div className="dash-main">
       <div className="page-head">
         <h1>Dashboard</h1>
         {db.isDemo && <p className="muted">Vorschau mit Beispieldaten. In der installierten App werden deine Daten lokal gespeichert.</p>}
@@ -133,6 +134,6 @@ export function DashboardPage() {
             </tbody></table>)}
         </section>
       </div>
-    </>
+    </div><InternChat /></div>
   );
 }

@@ -20,3 +20,6 @@ export const widSql = (e = 'e', o = 'o') =>
 /** W-ID im Programm bilden */
 export const wid = (objektNr: string | number | null | undefined, lfdNr: number | null | undefined) =>
   objektNr && lfdNr ? `${objektNr}-${String(lfdNr).padStart(2, '0')}` : '';
+
+/** Arten der Warmwasserversorgung einer Liegenschaft */
+export const WARMWASSER = ['Zentral über die Heizung', 'Durchlauferhitzer (elektrisch)', 'Gas-Durchlauferhitzer / Therme', 'Boiler / Speicher je Wohnung', 'Fernwärme', 'Wärmepumpe', 'Solarthermie mit Zentralspeicher', 'Sonstige'];
