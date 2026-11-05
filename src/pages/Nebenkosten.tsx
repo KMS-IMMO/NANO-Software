@@ -200,8 +200,8 @@ function abrechnungPdf(abs: Awaited<ReturnType<typeof absender>>, o: Row, jahr: 
   const body = r.zeilen.map((z) => [z.pos.name, geld(z.pos.betrag), z.pos.schluessel === 'Messdienst' ? 'lt. Messdienst' : z.pos.schluessel,
     `${basisFmt(z.pos.schluessel, z.gesamtBasis)} ${einheitText[z.pos.schluessel] ?? ''}`, basisFmt(z.pos.schluessel, z.nutzerBasis), geld(z.betrag)]);
   b.tabelle(['Kostenart', 'Gesamtkosten', 'Schlüssel', 'Gesamt', 'Ihr Anteil', 'Ihre Kosten'], body,
-    [['Summe Ihrer Kosten', '', '', '', '', geld(r.summe)], [r.ueberEigentuemer ? 'abzüglich Ihrer Vorauszahlungen laut Mietvertrag' : 'abzüglich Ihrer Vorauszahlungen', '', '', '', '', geld(-r.vz)],
-      [r.saldo > 0 ? 'Nachzahlung' : 'Guthaben', '', '', '', '', geld(Math.abs(r.saldo))]], 1);
+    [[{ content: 'Summe Ihrer Kosten', colSpan: 5 }, geld(r.summe)], [{ content: r.ueberEigentuemer ? 'abzüglich Ihrer Vorauszahlungen laut Mietvertrag' : 'abzüglich Ihrer Vorauszahlungen', colSpan: 5 }, geld(-r.vz)],
+      [{ content: r.saldo > 0 ? 'Nachzahlung' : 'Guthaben', colSpan: 5 }, geld(Math.abs(r.saldo))]], 1);
   const an = eigentuemer ? `Ihren Vermieter (${eigentuemer})` : 'Ihren Vermieter';
   const er = eigentuemer ? `Ihr Vermieter (${eigentuemer})` : 'Ihr Vermieter';
   b.absatz(r.ueberEigentuemer

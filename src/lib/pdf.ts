@@ -48,8 +48,8 @@ export class Brief {
   }
 
   tabelle(head: string[], body: RowInput[], foot?: RowInput[], rechtsAb = 1) {
-    const align: Record<number, { halign: 'right' }> = {};
-    for (let i = rechtsAb; i < head.length; i++) align[i] = { halign: 'right' };
+    const align: Record<number, { halign: 'right'; cellWidth: 'wrap' }> = {};
+    for (let i = rechtsAb; i < head.length; i++) align[i] = { halign: 'right', cellWidth: 'wrap' };
     autoTable(this.doc, {
       startY: this.y, head: [head], body, foot, showFoot: 'lastPage', margin: { left: 20, right: 20 },
       styles: { font: 'helvetica', fontSize: 9.5, cellPadding: 1.8 },
