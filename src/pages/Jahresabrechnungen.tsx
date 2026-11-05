@@ -327,7 +327,7 @@ export function EigentuemerAbrechnungPage() {
   const summeEin = ein.reduce((a, x) => a + Number(x.betrag), 0);
   const uml = aus.filter((p) => p.umlagefaehig), nicht = aus.filter((p) => !p.umlagefaehig);
   const sU = uml.reduce((a, p) => a + p.betrag, 0), sN = nicht.reduce((a, p) => a + p.betrag, 0);
-  const hdl = aus.filter((p) => p.hdl).reduce((a, p) => a + p.betrag, 0), hwl = aus.filter((p) => p.hwl).reduce((a, p) => a + p.betrag, 0);
+  const hdl = aus.filter((p) => p.hdl).reduce((a, p) => a + (p.betrag35a ?? p.betrag), 0), hwl = aus.filter((p) => p.hwl).reduce((a, p) => a + (p.betrag35a ?? p.betrag), 0);
 
   async function pdf() {
     if (!o) return;

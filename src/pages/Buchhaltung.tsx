@@ -14,7 +14,7 @@ import { buchungLoeschen, loeschHinweis } from '../logic/buchung';
 
 const heute = () => new Date().toISOString().slice(0, 10);
 const zahl = (s: string) => Number(String(s).replace(/\./g, '').replace(',', '.')) || 0;
-const kontoOptions = `SELECT id AS value, nummer || ' ' || name AS label FROM buchungskonten ORDER BY nummer`;
+const kontoOptions = `SELECT id AS value, nummer || ' ' || name AS label, hdl, hwl FROM buchungskonten ORDER BY nummer`;
 
 function useObjekte() {
   const [objekte, setObjekte] = useState<Row[]>([]);
@@ -84,6 +84,10 @@ export function JournalPage() {
       firma_id = da ? da.id : await insert('firmen', { name: fname });
     }
     const basis = { datum: edit.datum, objekt_id: Number(edit.objekt_id), buchungskonto_id: Number(edit.buchungskonto_id), text: edit.text || null, firma_id };
+    // § 35a-Anteil nur bei Konten mit HDL/HWL und nur für Ausgaben
+    const k35 = konten.find((k) => Number(k.value) === Number(edit.buchungskonto_id));
+    const a35 = k35 && (k35.hdl || k35.hwl) && vz < 0 && String(edit.anteil_35a ?? '').trim() !== '' ? Math.abs(zahl(String(edit.anteil_35a))) : null;
+    if (a35 !== null && a35 > gesamt + 0.005) { setFehler(`Der § 35a-Anteil (${eur(a35)}) kann nicht größer sein als der Betrag (${eur(gesamt)}).`); return; }
     if (edit.id && (edit.bankumsatz_id || edit.sollstellung_id || edit.rechnung_id)) {
       const woher = edit.bankumsatz_id ? 'aus dem Bankimport' : edit.sollstellung_id ? 'zu einem offenen Posten' : 'zu einer Rechnung';
       if (Math.abs(Math.abs(Number(edit.alt_betrag)) - gesamt) > 0.005 && !window.confirm(`Diese Buchung gehört ${woher}. Wenn du den Betrag änderst, passt er nicht mehr dazu. Trotzdem speichern?`)) return;
@@ -94,10 +98,11 @@ export function JournalPage() {
       const summe = Math.round(teile.reduce((a, [, v]) => a + zahl(v), 0) * 100) / 100;
       if (!teile.length) { setFehler('Bitte mindestens eine Einheit anhaken.'); return; }
       if (Math.abs(summe - gesamt) > 0.005) { setFehler(`Die Beträge der Einheiten (${eur(summe)}) ergeben nicht den Gesamtbetrag (${eur(gesamt)}).`); return; }
-      for (const [eid, v] of teile) await insert('buchungen', { ...basis, einheit_id: Number(eid), betrag: vz * zahl(v) });
+      for (const [eid, v] of teile) await insert('buchungen', { ...basis, einheit_id: Number(eid), betrag: vz * zahl(v),
+        anteil_35a: a35 === null || !gesamt ? null : Math.round(a35 * zahl(v) / gesamt * 100) / 100 });
       setInfo(`Buchung über ${eur(gesamt)} auf ${teile.length} Einheiten verteilt.`);
     } else {
-      const v = { ...basis, einheit_id: edit.einheit_id ? Number(edit.einheit_id) : null, betrag: vz * gesamt };
+      const v = { ...basis, einheit_id: edit.einheit_id ? Number(edit.einheit_id) : null, betrag: vz * gesamt, anteil_35a: a35 };
       if (edit.id) await update('buchungen', edit.id, v); else await insert('buchungen', v);
       setInfo(edit.id ? `Buchung ${edit.id} geändert.` : `Buchung über ${eur(gesamt)} erfasst.`);
     }
@@ -109,7 +114,7 @@ export function JournalPage() {
     if (!window.confirm(`Buchung ${r.id} über ${eur(Math.abs(Number(r.alt_betrag ?? r.betrag)))} löschen?${h ? '\n\n' + h : ''}`)) return;
     await buchungLoeschen(Number(r.id)); setEdit(null); setInfo(`Buchung ${r.id} gelöscht.`); load();
   }
-  const bearbeiten = (r: Row) => { setFehler(''); setModus('buchung'); setEdit({ ...r, firma: r.firma ?? '', alt_betrag: r.betrag, richtung: r.betrag > 0 ? 'Einnahme' : 'Ausgabe', betrag: String(Math.abs(r.betrag)).replace('.', ',') }); };
+  const bearbeiten = (r: Row) => { setFehler(''); setModus('buchung'); setEdit({ ...r, firma: r.firma ?? '', alt_betrag: r.betrag, anteil_35a: r.anteil_35a == null ? '' : String(r.anteil_35a).replace('.', ','), richtung: r.betrag > 0 ? 'Einnahme' : 'Ausgabe', betrag: String(Math.abs(r.betrag)).replace('.', ',') }); };
   async function rechnungLoeschen(r: Row) {
     if (!window.confirm(`Rechnung ${r.rechnungsnr ?? ''} über ${eur(Number(r.betrag))} löschen?`)) return;
     await remove('rechnungen', r.id); setInfo(`Rechnung ${r.rechnungsnr ?? ''} gelöscht.`.replace('  ', ' ')); load();
@@ -122,13 +127,15 @@ export function JournalPage() {
     const fname = String(rEdit.firma ?? '').trim();
     if (fname) { const da = (await db.select('SELECT id FROM firmen WHERE lower(name) = lower($1)', [fname]))[0]; firma_id = da ? da.id : await insert('firmen', { name: fname }); }
     else firma_id = null;
-    await update('rechnungen', rEdit.id, { datum: rEdit.datum, faellig: rEdit.faellig || null, rechnungsnr: rEdit.rechnungsnr || null, buchungskonto_id: Number(rEdit.buchungskonto_id), betrag, firma_id });
+    const lohn = String(rEdit.anteil_lohn ?? '').trim() === '' ? null : Math.abs(zahl(String(rEdit.anteil_lohn)));
+    if (lohn !== null && lohn > betrag + 0.005) { setFehler('Der § 35a-Anteil kann nicht größer sein als der Betrag.'); return; }
+    await update('rechnungen', rEdit.id, { datum: rEdit.datum, faellig: rEdit.faellig || null, rechnungsnr: rEdit.rechnungsnr || null, buchungskonto_id: Number(rEdit.buchungskonto_id), betrag, firma_id, anteil_lohn: lohn });
     setREdit(null); setFehler(''); setInfo(`Rechnung ${rEdit.rechnungsnr ?? ''} geändert.`.replace('  ', ' ')); load();
   }
   async function rechnungBezahlt(r: Row) {
     const tag = heute();
     await insert('buchungen', { datum: tag, betrag: -Number(r.betrag), buchungskonto_id: r.buchungskonto_id, objekt_id: r.objekt_id, einheit_id: r.einheit_id,
-      rechnung_id: r.id, firma_id: r.firma_id, text: `Rechnung ${r.rechnungsnr ?? ''} ${r.firma ?? ''}`.replace(/\s+/g, ' ').trim() });
+      rechnung_id: r.id, firma_id: r.firma_id, anteil_35a: r.anteil_lohn ?? null, text: `Rechnung ${r.rechnungsnr ?? ''} ${r.firma ?? ''}`.replace(/\s+/g, ' ').trim() });
     await update('rechnungen', r.id, { bezahlt_am: tag });
     setInfo(`Rechnung ${r.rechnungsnr ?? ''} als bezahlt gebucht.`); load();
   }
@@ -180,7 +187,7 @@ export function JournalPage() {
                   <td>{!fix && <span className="muted small">{r.objekt} · </span>}{r.einheit ?? 'alle'}</td>
                   <td className="num neg">{eur(Number(r.betrag))}</td>
                   <td className="actions nowrap"><button className="link" onClick={() => rechnungBezahlt(r)}>Als bezahlt buchen</button>
-                    <button className="icon-btn" title="Rechnung bearbeiten" onClick={() => { setFehler(''); setREdit({ ...r, betrag: String(r.betrag).replace('.', ',') }); }}><Pencil size={15} /></button>
+                    <button className="icon-btn" title="Rechnung bearbeiten" onClick={() => { setFehler(''); setREdit({ ...r, betrag: String(r.betrag).replace('.', ','), anteil_lohn: r.anteil_lohn == null ? '' : String(r.anteil_lohn).replace('.', ',') }); }}><Pencil size={15} /></button>
                     <button className="icon-btn" title="Rechnung löschen" onClick={() => rechnungLoeschen(r)}><Trash2 size={15} /></button></td>
                 </tr>))}</tbody>
             </table></div>)}
@@ -242,6 +249,8 @@ export function JournalPage() {
               <label><span>Buchungskonto *</span><select value={rEdit.buchungskonto_id ?? ''} onChange={(e) => setREdit({ ...rEdit, buchungskonto_id: e.target.value })}>
                 {konten.map((k) => <option key={k.value} value={k.value}>{k.label}</option>)}</select></label>
               <label><span>Betrag € *</span><input inputMode="decimal" value={rEdit.betrag ?? ''} onChange={(e) => setREdit({ ...rEdit, betrag: e.target.value })} /></label>
+              {(() => { const k = konten.find((x) => Number(x.value) === Number(rEdit.buchungskonto_id)); return k && (k.hdl || k.hwl) ? (
+                <label><span>davon § 35a-Anteil (Arbeitskosten) €</span><input inputMode="decimal" placeholder="leer = ganzer Betrag" value={rEdit.anteil_lohn ?? ''} onChange={(e) => setREdit({ ...rEdit, anteil_lohn: e.target.value })} /></label>) : null; })()}
             </div>
             {fehler && <p className="error">{fehler}</p>}
             <div className="row end"><button className="danger" onClick={() => { const r = rEdit; setREdit(null); rechnungLoeschen(r); }}>Löschen</button><span className="grow" />
@@ -302,6 +311,10 @@ function BuchungForm({ edit, setEdit, objekte, konten, fest }: { edit: Row; setE
       <label className="wide"><span>Konto *</span><select value={edit.buchungskonto_id ?? ''} onChange={(e) => set('buchungskonto_id', e.target.value)}>
         <option value="">– bitte wählen –</option>{konten.map((k) => <option key={k.value} value={k.value}>{k.label}</option>)}</select></label>
       <label><span>Betrag € *</span><input inputMode="decimal" value={edit.betrag ?? ''} onChange={(e) => setEdit({ ...edit, betrag: e.target.value, ...(edit.einheit_id === 'eigen' && gewaehlt.length ? { anteile: {} } : {}) })} /></label>
+      {(() => { const k = konten.find((x) => Number(x.value) === Number(edit.buchungskonto_id)); return k && (k.hdl || k.hwl) && edit.richtung !== 'Einnahme' ? (
+        <label className="wide hint-35a"><span>davon § 35a-Anteil (Arbeitskosten) € · {k.hdl ? 'haushaltsnahe Dienstleistung' : 'Handwerkerleistung'}</span>
+          <input inputMode="decimal" placeholder="leer = ganzer Betrag" value={edit.anteil_35a ?? ''} onChange={(e) => set('anteil_35a', e.target.value)} />
+          <small className="muted">Dieser Betrag erscheint in der Abrechnung als § 35a-Anteil. Ohne Eintrag zählt der ganze Betrag.</small></label>) : null; })()}
       <label><span>Unternehmen</span><input list="buchung-firmen" value={edit.firma ?? ''} placeholder="z. B. Stadtwerke, Handwerker" onChange={(e) => set('firma', e.target.value)} /></label>
       <datalist id="buchung-firmen">{firmen.map((f) => <option key={f.id} value={f.name} />)}</datalist>
       <label className="wide"><span>Buchungstext</span><input value={edit.text ?? ''} onChange={(e) => set('text', e.target.value)} /></label>

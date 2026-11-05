@@ -33,6 +33,7 @@ export interface Position {
   konto_id: number; nummer: string; name: string; gruppe: string;
   umlagefaehig: boolean; hdl: boolean; hwl: boolean;
   betrag: number;         // Kosten gesamt im Jahr (positiv = Kosten)
+  betrag35a?: number;     // davon begünstigt nach § 35a (nur bei Konten mit HDL/HWL); ohne Angabe gilt der ganze Betrag
   schluessel: Schluessel;
   direkt?: Record<number, number>; // Kosten, die direkt einer Einheit zugeordnet sind
 }
@@ -100,8 +101,10 @@ export function verteilen(jahr: number, einheiten: Row[], nutzer: Nutzer[], posi
     const b = Math.round(betrag * 100) / 100;
     r.zeilen.push({ pos: p, gesamtBasis: gb, nutzerBasis: nb, betrag: b });
     r.summe = Math.round((r.summe + b) * 100) / 100;
-    if (p.hdl) r.hdl += b;
-    if (p.hwl) r.hwl += b;
+    // § 35a: nur der begünstigte Teil (Arbeitskosten) der Position, anteilig wie die Kosten verteilt
+    const f = p.betrag ? (p.betrag35a ?? p.betrag) / p.betrag : 0;
+    if (p.hdl) r.hdl = Math.round((r.hdl + b * f) * 100) / 100;
+    if (p.hwl) r.hwl = Math.round((r.hwl + b * f) * 100) / 100;
   }
 }
 
@@ -160,9 +163,12 @@ export async function kostenErmitteln(objektId: number, jahr: number, nurUmlagef
     LEFT JOIN objekt_schluessel s ON s.buchungskonto_id = k.id AND s.objekt_id = $1
     LEFT JOIN objekt_schluessel_jahr sj ON sj.buchungskonto_id = k.id AND sj.objekt_id = $1 AND sj.jahr = $2
     WHERE k.art IN ('Aufwand', 'Ertrag') ${nurUmlagefaehig ? 'AND k.umlagefaehig = 1' : ''} ORDER BY k.nummer`, [objektId, jahr]);
-  const buch = await db.select(`SELECT buchungskonto_id, einheit_id, -SUM(betrag) AS kosten FROM buchungen
-    WHERE objekt_id = $1 AND datum BETWEEN $2 AND $3 AND buchungskonto_id IS NOT NULL GROUP BY buchungskonto_id, einheit_id`, [objektId, von, bis]);
-  const rech = await db.select(`SELECT buchungskonto_id, einheit_id, SUM(betrag) AS kosten FROM rechnungen r
+  // § 35a: eingetragener Anteil an der Buchung, sonst Arbeitskosten der zugehörigen Rechnung, sonst der ganze Betrag
+  const buch = await db.select(`SELECT b.buchungskonto_id, b.einheit_id, -SUM(b.betrag) AS kosten,
+      SUM(COALESCE(b.anteil_35a, CASE WHEN r.anteil_lohn IS NOT NULL AND r.betrag <> 0 THEN r.anteil_lohn * (-b.betrag) / r.betrag END, -b.betrag)) AS k35a
+    FROM buchungen b LEFT JOIN rechnungen r ON r.id = b.rechnung_id
+    WHERE b.objekt_id = $1 AND b.datum BETWEEN $2 AND $3 AND b.buchungskonto_id IS NOT NULL GROUP BY b.buchungskonto_id, b.einheit_id`, [objektId, von, bis]);
+  const rech = await db.select(`SELECT buchungskonto_id, einheit_id, SUM(betrag) AS kosten, SUM(COALESCE(anteil_lohn, betrag)) AS k35a FROM rechnungen r
     WHERE objekt_id = $1 AND COALESCE(bezahlt_am, datum) BETWEEN $2 AND $3
       AND NOT EXISTS (SELECT 1 FROM buchungen b WHERE b.rechnung_id = r.id) GROUP BY buchungskonto_id, einheit_id`, [objektId, von, bis]);
   const out: Position[] = [];
@@ -172,8 +178,9 @@ export async function kostenErmitteln(objektId: number, jahr: number, nurUmlagef
     if (Math.abs(betrag) < 0.005) continue;
     const direkt: Record<number, number> = {};
     for (const z of zeilen) if (z.einheit_id) direkt[z.einheit_id] = (direkt[z.einheit_id] ?? 0) + Number(z.kosten);
+    const betrag35a = Math.round(zeilen.reduce((a, x) => a + Number(x.k35a ?? x.kosten), 0) * 100) / 100;
     out.push({ konto_id: k.id, nummer: k.nummer, name: k.name, gruppe: k.gruppe ?? '', umlagefaehig: !!k.umlagefaehig, hdl: !!k.hdl, hwl: !!k.hwl,
-      betrag, schluessel: (k.objekt_schluessel ?? k.schluessel ?? 'Fläche') as Schluessel, direkt });
+      betrag, betrag35a, schluessel: (k.objekt_schluessel ?? k.schluessel ?? 'Fläche') as Schluessel, direkt });
   }
   return out;
 }

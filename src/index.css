@@ -325,3 +325,5 @@ a.btn-link { display: inline-block; background: var(--accent); color: #fff; bord
 .abr-uebersicht .abr-neu .error { flex-basis: 100%; margin: 0; }
 .abr-uebersicht table.belege tr.beleg-edit td { background: #fff8e8; }
 .abr-uebersicht table.belege + .link, .abr-uebersicht .error + .link { margin: 0 0 10px; display: inline-flex; align-items: center; gap: 4px; }
+label.hint-35a { background: #f6f1e6; border-radius: 8px; padding: 8px 10px; }
+label.hint-35a small { display: block; margin-top: 2px; font-size: 11px; }

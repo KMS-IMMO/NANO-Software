@@ -181,7 +181,7 @@ export function AbrechnungsUebersicht({ objekt, jahr, pos, schluessel, stand = 0
             return (
               <Fragment key={k}>
                 <tr className={offen.has(k) ? 'auf' : ''}>
-                  <td><Pfeil k={k} n={liste.length} /></td><td>{p.nummer}</td><td>{p.name}</td><td>{p.umlagefaehig ? 'ja' : 'nein'}</td>
+                  <td><Pfeil k={k} n={liste.length} /></td><td>{p.nummer}</td><td>{p.name}{(p.hdl || p.hwl) && <div className="muted small">§ 35a {p.hdl ? 'HDL' : 'HWL'}: {eur(p.betrag35a ?? p.betrag)}</div>}</td><td>{p.umlagefaehig ? 'ja' : 'nein'}</td>
                   <td>{schluessel(p)}{eigeneJahr.has(p.konto_id) && <span className="pill st-aktiv klein" title={`Eigener Schlüssel nur für ${jahr}`}>nur {jahr}</span>}</td>
                   <td className="num">{liste.length}</td><td className="num"><b>{eur(p.betrag)}</b></td>
                 </tr>
