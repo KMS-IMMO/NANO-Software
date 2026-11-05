@@ -3,7 +3,8 @@ import { useEffect, useState } from 'react';
 import { db, type Row } from '../db';
 import { wid } from '../db/labels';
 import { AbrechnungsUebersicht } from '../components/AbrechnungsUebersicht';
-import { SchluesselWahl } from '../components/SchluesselWahl';
+import { SchluesselWahl, schluesselText } from '../components/SchluesselWahl';
+import { AbschlussKarte } from '../components/AbschlussKarte';
 import { useObjektKontext } from '../logic/objektKontext';
 import { eur, num, datum } from '../components/EntityTable';
 import { tageImJahr, type Position, type Schluessel } from '../logic/verteilung';
@@ -25,7 +26,9 @@ export function NebenkostenPage() {
   const [heiz, setHeiz] = useState<Record<number, { heizkosten: string; warmwasser: string }>>({});
   const [verbr, setVerbr] = useState<Record<string, string>>({});
   const [info, setInfo] = useState('');
-  const [busy, setBusy] = useState(false);
+  const [, setBusy] = useState(false);
+  const [zu, setZu] = useState<Row | null>(null);
+  const [stand, setStand] = useState(0);
 
   useEffect(() => {
     db.select(`SELECT * FROM objekte ORDER BY verwaltungsart, name`).then((o) => { setObjekte(o); if (o.length && !fix) setObjekt(o[0].id); });
@@ -60,8 +63,16 @@ export function NebenkostenPage() {
       else await db.execute(`INSERT INTO verbrauch (einheit_id, jahr, buchungskonto_id, menge) VALUES ($1, $2, $3, $4)
         ON CONFLICT (einheit_id, jahr, buchungskonto_id) DO UPDATE SET menge = excluded.menge`, [eid, jahr, kid, zahl(m)]);
     }
-    setInfo('Eingaben gespeichert und neu berechnet.');
+    setInfo('Eingaben gespeichert und neu berechnet.'); setStand((x) => x + 1);
     await rechnen();
+  }
+
+  /** Alle Mieter-Abrechnungen in einem PDF (Vorschau) */
+  async function vorschauPdf(entwurf: boolean): Promise<Uint8Array> {
+    const o = objekte.find((x) => x.id === objekt)!;
+    const b = new Brief(await absender());
+    for (const r of erg.filter((x) => x.nutzer.art === 'Mieter')) abrechnungPdf(b.neuerBrief(), o, jahr, r, await vermieter(r.einheit.id, jahr));
+    return (entwurf ? b.entwurf() : b).bytes();
   }
 
   async function pdfs() {
@@ -71,7 +82,7 @@ export function NebenkostenPage() {
       const abs = await absender();
       let n = 0, letzter = '';
       for (const r of erg.filter((x) => x.nutzer.art === 'Mieter')) {
-        letzter = await speichern(abrechnungPdf(abs, o, jahr, r, await vermieter(r.einheit.id, jahr)), `NK-Abrechnung ${jahr} ${r.einheit.nummer} ${r.nutzer.name}.pdf`,
+        letzter = await speichern(abrechnungPdf(new Brief(abs), o, jahr, r, await vermieter(r.einheit.id, jahr)).bytes(), `NK-Abrechnung ${jahr} ${r.einheit.nummer} ${r.nutzer.name}.pdf`,
           { bezug: 'Objekt', bezugId: o.id, ordner: [o.name, 'Nebenkostenabrechnungen', String(jahr)] });
         n++;
       }
@@ -102,6 +113,10 @@ export function NebenkostenPage() {
   const mieter = erg.filter((r) => r.nutzer.art === 'Mieter');
   const leer = erg.filter((r) => r.nutzer.art === 'Leerstand');
   const weg = objekte.find((x) => x.id === objekt)?.verwaltungsart === 'WEG';
+  const oAkt = objekte.find((x) => x.id === objekt);
+  const werteFehlen = [...pos.filter((p) => p.schluessel === 'Verbrauch' && !einheiten.some((e) => zahl(verbr[`${e.id}-${p.konto_id}`] ?? '') > 0)),
+    ...summenAbweichung.map((x) => x.p)].map((p) => `${p.nummer} ${p.name}`);
+  const heizFehlt = pos.some((p) => p.nummer === HEIZ_KONTO) && !Object.values(heiz).some((x) => zahl(x.heizkosten) || zahl(x.warmwasser));
 
   return (
     <>
@@ -112,11 +127,17 @@ export function NebenkostenPage() {
         </select>}
         <label className="inline">Jahr <input type="number" style={{ width: 90 }} value={jahr} onChange={(e) => setJahr(Number(e.target.value))} /></label>
         <span className="muted small">01.01.{jahr} bis 31.12.{jahr} · {tageImJahr(jahr)} Tage</span>
-        <span className="grow" />
-        <button onClick={pdfs} disabled={busy || !mieter.length}>PDFs je Mieter erstellen</button>
-        <button className="primary" onClick={buchen} disabled={!mieter.length}>Ergebnis als offene Posten buchen</button>
       </section>
       {info && <p className="info">{info}</p>}
+      {objekt !== '' && oAkt && <AbschlussKarte objekt={Number(objekt)} jahr={jahr} art="Nebenkosten" stand={stand} ordner={[oAkt.name, 'Nebenkostenabrechnungen', String(jahr)]}
+        extra={[
+          { ok: mieter.length > 0, sperrt: true, text: 'Mieter mit Abrechnung im Jahr vorhanden' },
+          { ok: !werteFehlen.length, sperrt: true, text: 'Werte für Verbrauch und manuelle Verteilung eingetragen', hinweis: werteFehlen.length ? `Fehlt bei: ${werteFehlen.join(', ')}` : undefined },
+          { ok: !heizFehlt, sperrt: false, text: 'Heizkosten laut Messdienst eingetragen', hinweis: heizFehlt ? `Konto ${HEIZ_KONTO} wird sonst nach Schlüssel verteilt.` : undefined },
+        ]}
+        vorschau={vorschauPdf} ablegen={pdfs} buchen={buchen} buchenText="Ergebnis als offene Posten buchen"
+        ergebnis={() => ({ kosten: Math.round(kosten * 100) / 100, saldo: Math.round(mieter.reduce((a, r) => a + r.saldo, 0) * 100) / 100, mieter: mieter.length })}
+        onStatus={(a, t) => { setZu(a); if (t) setInfo(t); }} />}
 
       <div className="kpis">
         <div className="kpi"><span>Umlagefähige Kosten</span><b>{eur(kosten)}</b></div>
@@ -125,6 +146,7 @@ export function NebenkostenPage() {
         <div className="kpi"><span>{weg ? 'Anteil selbst genutzt / nicht vermietet' : 'Anteil Leerstand (Eigentümer)'}</span><b>{eur(leer.reduce((a, r) => a + r.summe, 0))}</b></div>
       </div>
 
+      <fieldset className="gesperrt" disabled={!!zu}>
       <section className="card">
         <div className="card-head"><h2>Eingaben je Einheit für {jahr}</h2><button onClick={eingabenSpeichern}>Speichern und neu berechnen</button></div>
         <table className="list">
@@ -147,9 +169,11 @@ export function NebenkostenPage() {
         <p className="muted small">Sobald Messdienst-Werte eingetragen sind, wird Konto {HEIZ_KONTO} danach verteilt. Spalten für Verbrauch bzw. feste Beträge erscheinen für Konten mit Schlüssel „Verbrauch“ oder „Summe“.</p>
         {summenAbweichung.map(({ p, s }) => <p key={p.konto_id} className="warn">Schlüssel „Summe“ bei {p.name}: eingetragen {eur(s)}, Kosten laut Buchhaltung {eur(p.betrag)}. Bitte prüfen.</p>)}
       </section>
+      </fieldset>
 
-      {objekt !== '' && <AbrechnungsUebersicht objekt={Number(objekt)} jahr={jahr} pos={pos} titel={`Abrechnungsübersicht ${jahr}: umlagefähige Kosten`} nurUmlagefaehig onChanged={(t) => { setInfo(t); laden(); }}
-        schluessel={(p) => <SchluesselWahl objekt={Number(objekt)} jahr={jahr} p={p} onChanged={(t) => { setInfo(t); laden(); }} anteile={(k) => {
+      {objekt !== '' && <AbrechnungsUebersicht objekt={Number(objekt)} jahr={jahr} pos={pos} titel={`Abrechnungsübersicht ${jahr}: umlagefähige Kosten`} nurUmlagefaehig
+        onChanged={zu ? undefined : (t) => { setInfo(t); setStand((x) => x + 1); laden(); }}
+        schluessel={(p) => zu ? <>{schluesselText(p.schluessel)}</> : <SchluesselWahl objekt={Number(objekt)} jahr={jahr} p={p} onChanged={(t) => { setInfo(t); laden(); }} anteile={(k) => {
           const m: Record<number, number> = {};
           for (const r of erg) for (const z of r.zeilen) if (z.pos.konto_id === k) m[r.nutzer.einheit_id] = (m[r.nutzer.einheit_id] ?? 0) + z.betrag;
           return m; }} />} />}
@@ -186,8 +210,7 @@ async function vermieter(einheitId: number, jahr: number): Promise<string> {
   return p ? [p.firma, [p.vorname, p.nachname].filter(Boolean).join(' ')].filter(Boolean).join(', ') : '';
 }
 
-function abrechnungPdf(abs: Awaited<ReturnType<typeof absender>>, o: Row, jahr: number, r: NkErgebnis, eigentuemer: string): Uint8Array {
-  const b = new Brief(abs);
+function abrechnungPdf(b: Brief, o: Row, jahr: number, r: NkErgebnis, eigentuemer: string): Brief {
   b.kopf([r.nutzer.name, o.strasse, [o.plz, o.ort].filter(Boolean).join(' ')], new Date().toISOString().slice(0, 10));
   b.betreff(`Betriebs- und Heizkostenabrechnung ${jahr}`);
   b.absatz(`Objekt: ${o.name}, ${[o.strasse, [o.plz, o.ort].filter(Boolean).join(' ')].filter(Boolean).join(', ')} · Einheit ${r.einheit.nummer}${wid(o.objekt_nr, r.einheit.lfd_nr) ? ` (W-ID ${wid(o.objekt_nr, r.einheit.lfd_nr)})` : ''}` +
@@ -212,5 +235,5 @@ function abrechnungPdf(abs: Awaited<ReturnType<typeof absender>>, o: Row, jahr: 
   }
   b.absatz('Belege können nach Terminvereinbarung bei uns eingesehen werden. Einwendungen gegen diese Abrechnung sind innerhalb von zwölf Monaten nach Zugang mitzuteilen.');
   b.gruss();
-  return b.bytes();
+  return b;
 }
