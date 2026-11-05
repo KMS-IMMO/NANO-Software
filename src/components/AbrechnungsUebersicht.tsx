@@ -7,6 +7,7 @@ import { Check, ChevronDown, ChevronRight, Pencil, Plus, Trash2, X } from 'lucid
 import { db, type Row } from '../db';
 import { eur } from './EntityTable';
 import type { Position } from '../logic/verteilung';
+import { buchungLoeschen, loeschHinweis } from '../logic/buchung';
 
 const datum = (d: string) => (d ? new Date(d + 'T00:00:00').toLocaleDateString('de-DE') : '');
 
@@ -14,7 +15,7 @@ const datum = (d: string) => (d ? new Date(d + 'T00:00:00').toLocaleDateString('
 async function belegeLaden(objekt: number, jahr: number): Promise<{ aus: Row[]; ein: Row[] }> {
   const von = `${jahr}-01-01`, bis = `${jahr}-12-31`;
   const buch = await db.select(`SELECT b.id, b.datum, b.betrag, b.text, b.buchungskonto_id, k.art,
-      COALESCE(f.name, rf.name) AS firma, r.rechnungsnr, e.nummer AS einheit, b.bankumsatz_id, b.sollstellung_id
+      COALESCE(f.name, rf.name) AS firma, r.rechnungsnr, e.nummer AS einheit, b.bankumsatz_id, b.sollstellung_id, b.rechnung_id
     FROM buchungen b JOIN buchungskonten k ON k.id = b.buchungskonto_id
     LEFT JOIN rechnungen r ON r.id = b.rechnung_id LEFT JOIN firmen f ON f.id = b.firma_id LEFT JOIN firmen rf ON rf.id = r.firma_id
     LEFT JOIN einheiten e ON e.id = b.einheit_id
@@ -46,7 +47,7 @@ async function belegSpeichern(b: Row, e: Entwurf, ausgabe: boolean) {
 }
 async function belegLoeschen(b: Row) {
   if (keyVon(b)[0] === 'r') await db.execute('DELETE FROM rechnungen WHERE id = $1', [b.id]);
-  else await db.execute('DELETE FROM buchungen WHERE id = $1', [b.id]);
+  else await buchungLoeschen(Number(b.id), { mitRechnung: true });   // Kosten verschwinden ganz aus der Abrechnung
 }
 
 function Belege({ liste, ausgabe, kontoId, objekt, jahr, onChanged }: { liste: Row[]; ausgabe: boolean; kontoId: number; objekt: number; jahr: number; onChanged?: (t: string) => void }) {
@@ -69,7 +70,7 @@ function Belege({ liste, ausgabe, kontoId, objekt, jahr, onChanged }: { liste: R
   }
   async function loeschen(b: Row) {
     const was = keyVon(b)[0] === 'r' ? 'Rechnung' : 'Buchung';
-    const zusatz = b.bankumsatz_id ? ' Der Bankumsatz wird wieder als „nicht zugeordnet“ angezeigt.' : '';
+    const h = keyVon(b)[0] === 'b' ? loeschHinweis(b, true) : '', zusatz = h ? ' ' + h : '';
     if (!window.confirm(`${was} über ${eur(b.betrag)} vom ${datum(b.datum)} löschen?${zusatz}`)) return;
     await belegLoeschen(b);
     onChanged?.(`${was} über ${eur(b.betrag)} gelöscht.`);
