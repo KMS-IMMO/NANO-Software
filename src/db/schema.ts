@@ -569,4 +569,8 @@ CREATE TABLE objekt_schluessel_jahr (
   UNIQUE (objekt_id, jahr, buchungskonto_id)
 );
 `,
+  // Migration 14: Maßeinheit beim Verbrauchsschlüssel (m², m³, kWh …)
+  `
+ALTER TABLE objekt_schluessel_jahr ADD COLUMN masseinheit TEXT;
+`,
 ];
