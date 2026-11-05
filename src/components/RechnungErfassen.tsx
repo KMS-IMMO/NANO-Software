@@ -2,7 +2,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Building2, FileUp, Paperclip, Plus, UserPlus, X } from 'lucide-react';
 import { db, insert, type Row } from '../db';
-import { kontoOptions } from '../db/labels';
 import { eur } from './EntityTable';
 import { speichern } from '../lib/dateien';
 
@@ -39,7 +38,7 @@ export function RechnungErfassen({ objektFest, onSaved }: { objektFest?: number;
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    db.select(kontoOptions("art IN ('Aufwand')")).then(setKonten);
+    db.select(`SELECT id AS value, nummer || ' ' || name AS label, hdl, hwl FROM buchungskonten WHERE art IN ('Aufwand') ORDER BY nummer`).then(setKonten);
     db.select('SELECT id, objekt_nr, name, strasse, plz, ort FROM objekte ORDER BY name').then(setObjekte);
     db.select('SELECT id, name, gewerk FROM firmen ORDER BY name').then(setFirmen);
   }, []);
@@ -76,6 +75,7 @@ export function RechnungErfassen({ objektFest, onSaved }: { objektFest?: number;
   async function sichern() {
     setFehler('');
     if (!konto || !datum || !brutto || objekt === '') { setFehler('Bitte Buchungskonto, Datum, Betrag und Immobilie ausfüllen.'); return; }
+    if (lohn && Math.abs(zahl(lohn)) > Math.abs(brutto) + 0.005) { setFehler('Der § 35a-Anteil kann nicht größer sein als der Rechnungsbetrag.'); return; }
     if (modus === 'eigen' && !gewaehlt.length) { setFehler('Bitte mindestens eine Einheit auswählen oder „Alle Einheiten“ nehmen.'); return; }
     if (modus === 'eigen' && Math.abs(summeEigen - brutto) > 0.005) { setFehler(`Die Beträge der Einheiten (${eur(summeEigen)}) ergeben nicht den Rechnungsbetrag (${eur(brutto)}).`); return; }
     setBusy(true);
@@ -163,11 +163,14 @@ export function RechnungErfassen({ objektFest, onSaved }: { objektFest?: number;
             ? <select autoFocus onChange={(e) => { const f = firmen.find((x) => x.id === Number(e.target.value)); if (f) { setFirmaId(f.id); setLieferant(f.name); } setKontaktWahl(false); }} defaultValue="">
                 <option value="" disabled>Kontakt auswählen …</option>{firmen.map((f) => <option key={f.id} value={f.id}>{f.name}{f.gewerk ? ` (${f.gewerk})` : ''}</option>)}</select>
             : <button className="pill-btn" onClick={() => setKontaktWahl(true)} disabled={!firmen.length}><UserPlus size={16} />Kontakt auswählen</button>}
-          <details className="rerf-mehr"><summary>Weitere Angaben (Fälligkeit, bezahlt, § 35a, Notiz)</summary>
+          {(() => { const k = konten.find((x) => String(x.value) === String(konto)); return k && (k.hdl || k.hwl) ? (
+            <label className="hint-35a"><span>davon § 35a-Anteil (Arbeitskosten) € · {k.hdl ? 'haushaltsnahe Dienstleistung' : 'Handwerkerleistung'}</span>
+              <input inputMode="decimal" placeholder="leer = ganzer Betrag" value={lohn} onChange={(e) => setLohn(e.target.value)} />
+              <small className="muted">Erscheint in der Abrechnung als § 35a-Anteil der Eigentümer bzw. Mieter.</small></label>) : null; })()}
+          <details className="rerf-mehr"><summary>Weitere Angaben (Fälligkeit, bezahlt, Notiz)</summary>
             <div className="form f3">
               <label><span>Fällig am</span><input type="date" value={faellig} onChange={(e) => setFaellig(e.target.value)} /></label>
               <label><span>Bezahlt am</span><input type="date" value={bezahlt} onChange={(e) => setBezahlt(e.target.value)} /></label>
-              <label><span>davon Arbeitskosten (§ 35a)</span><input inputMode="decimal" value={lohn} onChange={(e) => setLohn(e.target.value)} /></label>
               <label className="span3"><span>Notiz</span><input value={notiz} onChange={(e) => setNotiz(e.target.value)} /></label>
             </div>
           </details>

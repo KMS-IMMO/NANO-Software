@@ -582,4 +582,8 @@ UPDATE einheiten SET lfd_nr = (SELECT COUNT(*) FROM einheiten e2 WHERE e2.objekt
 CREATE TRIGGER einheit_lfd_nr_auto AFTER INSERT ON einheiten WHEN NEW.lfd_nr IS NULL
 BEGIN UPDATE einheiten SET lfd_nr = (SELECT COALESCE(MAX(lfd_nr), 0) + 1 FROM einheiten WHERE objekt_id = NEW.objekt_id) WHERE id = NEW.id; END;
 `,
+  // Migration 16: Anteil nach § 35a EStG (Arbeitskosten) direkt an der Buchung
+  `
+ALTER TABLE buchungen ADD COLUMN anteil_35a REAL;
+`,
 ];
