@@ -68,7 +68,7 @@ export function RechnungenPage() {
       listSql={`SELECT r.*, o.name AS objekt_id_label, k.nummer || ' ' || k.name AS buchungskonto_id_label, f.name AS firma_id_label,
           COALESCE(eh.nummer, 'alle') AS einheit_id_label, d.pfad AS beleg
         FROM rechnungen r LEFT JOIN einheiten eh ON eh.id = r.einheit_id LEFT JOIN dokumente d ON d.id = r.dokument_id LEFT JOIN objekte o ON o.id = r.objekt_id LEFT JOIN buchungskonten k ON k.id = r.buchungskonto_id
-        LEFT JOIN firmen f ON f.id = r.firma_id ${fix ? `WHERE r.objekt_id = ${fix.id}` : ''} ORDER BY r.datum DESC`}
+        LEFT JOIN firmen f ON f.id = r.firma_id ${fix ? `WHERE r.objekt_id = ${fix.id}` : ''} ORDER BY r.datum, r.id`}
       emptyText="Noch keine Rechnungen erfasst."
     />
     </>

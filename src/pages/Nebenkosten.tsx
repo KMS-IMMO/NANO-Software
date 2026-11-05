@@ -148,7 +148,7 @@ export function NebenkostenPage() {
         {summenAbweichung.map(({ p, s }) => <p key={p.konto_id} className="warn">Schlüssel „Summe“ bei {p.name}: eingetragen {eur(s)}, Kosten laut Buchhaltung {eur(p.betrag)}. Bitte prüfen.</p>)}
       </section>
 
-      {objekt !== '' && <AbrechnungsUebersicht objekt={Number(objekt)} jahr={jahr} pos={pos} titel={`Abrechnungsübersicht ${jahr}: umlagefähige Kosten`}
+      {objekt !== '' && <AbrechnungsUebersicht objekt={Number(objekt)} jahr={jahr} pos={pos} titel={`Abrechnungsübersicht ${jahr}: umlagefähige Kosten`} nurUmlagefaehig onChanged={(t) => { setInfo(t); laden(); }}
         schluessel={(p) => <SchluesselWahl objekt={Number(objekt)} jahr={jahr} p={p} onChanged={(t) => { setInfo(t); laden(); }} anteile={(k) => {
           const m: Record<number, number> = {};
           for (const r of erg) for (const z of r.zeilen) if (z.pos.konto_id === k) m[r.nutzer.einheit_id] = (m[r.nutzer.einheit_id] ?? 0) + z.betrag;
