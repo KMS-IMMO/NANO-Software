@@ -558,4 +558,15 @@ CREATE TABLE mahnungen (
   pfad TEXT
 );
 `,
+  // Migration 13: Verteilerschlüssel je Liegenschaft und Abrechnungsjahr (geht vor dem Standard der Liegenschaft)
+  `
+CREATE TABLE objekt_schluessel_jahr (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  objekt_id INTEGER NOT NULL REFERENCES objekte(id) ON DELETE CASCADE,
+  jahr INTEGER NOT NULL,
+  buchungskonto_id INTEGER NOT NULL REFERENCES buchungskonten(id),
+  schluessel TEXT NOT NULL,
+  UNIQUE (objekt_id, jahr, buchungskonto_id)
+);
+`,
 ];

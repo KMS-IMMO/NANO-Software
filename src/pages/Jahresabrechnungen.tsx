@@ -2,10 +2,11 @@
 // und jährliche Eigentümerabrechnung für die Mietverwaltung.
 import { useEffect, useState } from 'react';
 import { db, type Row } from '../db';
+import { AbrechnungsUebersicht } from '../components/AbrechnungsUebersicht';
 import { SchluesselWahl } from '../components/SchluesselWahl';
 import { useObjektKontext } from '../logic/objektKontext';
 import { eur, num, datum } from '../components/EntityTable';
-import { kostenErmitteln, nutzerErmitteln, verteilen, type Ergebnis, type Position } from '../logic/verteilung';
+import { eigeneSchluessel, kostenErmitteln, nutzerErmitteln, verteilen, type Ergebnis, type Position } from '../logic/verteilung';
 import { Brief, absender, dDatum, geld } from '../lib/pdf';
 import { oeffnen, speichern } from '../lib/dateien';
 import { WerteJeEinheit } from '../components/WerteJeEinheit';
@@ -68,7 +69,7 @@ export function WegAbrechnungPage() {
     if (objekt === '') return;
     const { einheiten, nutzer } = await nutzerErmitteln(Number(objekt), jahr, 'Eigentümer');
     setEinheiten(einheiten);
-    const eigene = await db.select('SELECT buchungskonto_id FROM objekt_schluessel WHERE objekt_id = $1', [objekt]);
+    const eigene = await eigeneSchluessel(Number(objekt), jahr);
     const h = await db.select(`SELECT h.* FROM heizkosten_ergebnisse h JOIN einheiten e ON e.id = h.einheit_id WHERE e.objekt_id = $1 AND h.jahr = $2`, [objekt, jahr]);
     const messdienst = Object.fromEntries(h.map((x) => [x.einheit_id, Number(x.heizkosten) + Number(x.warmwasser)]));
     const v = await db.select(`SELECT v.* FROM verbrauch v JOIN einheiten e ON e.id = v.einheit_id WHERE e.objekt_id = $1 AND v.jahr = $2`, [objekt, jahr]);
@@ -76,7 +77,7 @@ export function WegAbrechnungPage() {
     // In der WEG gilt MEA, solange für das Objekt kein eigener Schlüssel eingestellt ist
     const p = (await kostenErmitteln(Number(objekt), jahr, false))
       .filter((x) => !RUECKLAGE.includes(x.nummer))
-      .map((x) => ({ ...x, schluessel: x.nummer === HEIZ_KONTO && h.length ? 'Messdienst' as const : eigene.some((e) => e.buchungskonto_id === x.konto_id) ? x.schluessel : 'MEA' as const }));
+      .map((x) => ({ ...x, schluessel: x.nummer === HEIZ_KONTO && h.length ? 'Messdienst' as const : eigene.has(x.konto_id) ? x.schluessel : 'MEA' as const }));
     setPos(p);
     const hg = await db.select(`SELECT s.person_id, s.einheit_id, SUM(s.betrag) AS soll,
         SUM(COALESCE((SELECT SUM(b.betrag) FROM buchungen b WHERE b.sollstellung_id = s.id), 0)) AS ist
@@ -200,15 +201,8 @@ export function WegAbrechnungPage() {
         <div className="kpi"><span>Erhaltungsrücklage 31.12.</span><b>{eur(verm.ruecklage ?? 0)}</b><small>Zuführung {eur(verm.zufJahr ?? 0)}</small></div>
         <div className="kpi"><span>Summe Abrechnungsspitzen</span><b>{eur(erg.reduce((a, r) => a + r.spitze, 0))}</b></div>
       </div>
-      <section className="card">
-        <div className="card-head"><h2>Gesamtabrechnung: Ausgaben</h2></div>
-        {pos.length === 0 ? <p className="muted">Keine Ausgaben im Jahr {jahr}.</p> : (
-          <table className="list"><thead><tr><th>Konto</th><th>Kostenart</th><th>umlagefähig</th><th>Verteilung</th><th className="num">Betrag</th></tr></thead>
-            <tbody>{pos.map((p) => <tr key={p.konto_id}><td>{p.nummer}</td><td>{p.name}</td><td>{p.umlagefaehig ? 'ja' : 'nein'}</td>
-              <td><SchluesselWahl objekt={Number(objekt)} jahr={jahr} p={p} anteile={anteile} onChanged={(t) => { setInfo(t); setStand(stand + 1); rechnen(); }} /></td>
-              <td className="num">{eur(p.betrag)}</td></tr>)}</tbody></table>)}
-        {pos.length > 0 && <p className="muted small">Die Verteilung kannst du je Kostenposition ändern. Bei „Manuell“ trägst du den Betrag je Einheit selbst ein. Der Schlüssel gilt für diese Liegenschaft, die manuellen Beträge nur für {jahr}.</p>}
-      </section>
+      {objekt !== '' && <AbrechnungsUebersicht objekt={Number(objekt)} jahr={jahr} pos={pos} stand={stand} titel={`Gesamtabrechnung ${jahr}: Übersicht der Buchungskonten`}
+        schluessel={(p) => <SchluesselWahl objekt={Number(objekt)} jahr={jahr} p={p} anteile={anteile} onChanged={(t) => { setInfo(t); setStand(stand + 1); rechnen(); }} />} />}
       {objekt !== '' && <WerteJeEinheit key={`${objekt}-${jahr}-${stand}`} objekt={Number(objekt)} jahr={jahr} einheiten={einheiten}
         konten={pos.filter((p) => p.schluessel === 'Summe' || p.schluessel === 'Verbrauch')} onSaved={() => { setInfo('Eingaben gespeichert und neu berechnet.'); rechnen(); }} />}
       <section className="card">
