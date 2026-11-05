@@ -152,7 +152,7 @@ export function ObjektDetailPage() {
           <button className="oside-loeschen" onClick={() => setLoeschen(true)}><Trash2 size={15} />Liegenschaft löschen</button>
         </aside>
         {loeschen && <ObjektLoeschen objekt={{ id, name: o.name }} onClose={() => setLoeschen(false)} onDone={() => nav('/objekte')} />}
-        <div className="obody" key={id}>
+        <div className="obody" key={`${id}-${slug ?? ""}`}>
           <div className="crumbs"><Link to="/">Dashboard</Link> › <Link to="/objekte">Liegenschaften</Link> › {slug ? <><Link to={`/objekte/${id}`}>{o.name}</Link> › <span>{aktuell?.label ?? ''}</span></> : <span>{o.name}</span>}</div>
           <Bereich slug={slug} rest={rest} o={o} sum={sum} weg={weg} reload={reload} />
         </div>

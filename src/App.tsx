@@ -162,6 +162,13 @@ export default function App() {
   );
 }
 
+/** Wechselt die Seite, gleitet der Inhalt weich herein (in einer Liegenschaft nur der rechte Bereich) */
+function Seite({ children }: { children: ReactNode }) {
+  const p = useLocation().pathname;
+  const schluessel = p.match(/^\/objekte\/\d+/)?.[0] ?? p;
+  return <div className="seite" key={schluessel}>{children}</div>;
+}
+
 function Rahmen() {
   // In einer geöffneten Liegenschaft wird die Hauptleiste schmal, daneben erscheint die Spalte der Liegenschaft
   const kompakt = /^\/objekte\/\d+/.test(useLocation().pathname);
@@ -193,6 +200,7 @@ function Rahmen() {
         <div className="content">
           <Topbar />
           <main className="main">
+            <Seite>
             <Routes>
               <Route path="/" element={<DashboardPage />} />
               <Route path="/objekte" element={<ObjektePage />} />
@@ -229,6 +237,7 @@ function Rahmen() {
               <Route path="/todo" element={<TodoPage />} />
               <Route path="/notizen" element={<NotizenPage />} />
             </Routes>
+            </Seite>
           </main>
         </div>
       </div>
