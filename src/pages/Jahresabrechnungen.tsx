@@ -1,6 +1,7 @@
 // WEG-Jahresabrechnung (Gesamtabrechnung, Einzelabrechnungen, Vermögensbericht)
 // und jährliche Eigentümerabrechnung für die Mietverwaltung.
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
+import { ChevronDown, ChevronRight } from 'lucide-react';
 import { db, type Row } from '../db';
 import { wid } from '../db/labels';
 import { AbrechnungsUebersicht } from '../components/AbrechnungsUebersicht';
@@ -116,9 +117,28 @@ export function WegAbrechnungPage() {
     const zufJahr = res.reduce((a, r) => a + r.ruecklageSoll, 0);
     const banken = await db.select(`SELECT b.*, b.anfangssaldo + COALESCE((SELECT SUM(u.betrag) FROM bankumsaetze u WHERE u.bankkonto_id = b.id
       AND u.datum <= $2 AND (b.saldo_datum IS NULL OR u.datum > b.saldo_datum)), 0) AS saldo FROM bankkonten b WHERE b.objekt_id = $1`, [objekt, ende]);
-    const rueckstaende = (await db.select(`SELECT COALESCE(SUM(s.betrag - COALESCE((SELECT SUM(b.betrag) FROM buchungen b WHERE b.sollstellung_id = s.id), 0)), 0) AS x
-      FROM sollstellungen s JOIN einheiten e ON e.id = s.einheit_id WHERE e.objekt_id = $1 AND s.faellig <= $2`, [objekt, ende]))[0].x;
-    setVerm({ ruecklage: rl.bestand, zufJahr, entnahmeJahr: rl.entnahme, zinsJahr: rl.zinsen, banken, rueckstaende: Number(rueckstaende) });
+    // Offene Posten zum Stichtag: Soll bis 31.12. fällig, Zahlungen bis 31.12. gebucht. Je Eigentümer und Einheit saldiert,
+    // damit Forderungen (zu wenig gezahlt) und Guthaben (zu viel gezahlt) getrennt ausgewiesen werden.
+    const posten = await db.select(`SELECT s.id, s.person_id, s.einheit_id, s.monat, s.art, s.betrag, s.faellig, e.nummer AS einheit,
+        COALESCE((SELECT SUM(b.betrag) FROM buchungen b WHERE b.sollstellung_id = s.id AND b.datum <= $2), 0) AS bezahlt,
+        TRIM(COALESCE(p.firma, '') || CASE WHEN p.firma IS NOT NULL AND p.nachname IS NOT NULL THEN ', ' ELSE '' END ||
+          COALESCE(p.nachname, '') || CASE WHEN p.vorname IS NOT NULL THEN ', ' || p.vorname ELSE '' END) AS name
+      FROM sollstellungen s JOIN einheiten e ON e.id = s.einheit_id LEFT JOIN personen p ON p.id = s.person_id
+      WHERE e.objekt_id = $1 AND s.faellig <= $2 AND s.vertrag_id IS NULL ORDER BY e.nummer, s.faellig, s.id`, [objekt, ende]);
+    const konten: Row[] = [];
+    for (const x of posten) {
+      const k = `${x.person_id}|${x.einheit_id}`;
+      let z = konten.find((y) => y.key === k);
+      if (!z) { z = { key: k, name: x.name || 'ohne Eigentümer', einheit: x.einheit, soll: 0, ist: 0, posten: [] }; konten.push(z); }
+      z.soll += Number(x.betrag); z.ist += Number(x.bezahlt); z.posten.push(x);
+    }
+    for (const z of konten) { z.soll = r2(z.soll); z.ist = r2(z.ist); z.saldo = r2(z.soll - z.ist); }
+    const offen = konten.filter((z) => Math.abs(z.saldo) > 0.005);
+    const hgImJahr = posten.filter((x) => (x.art === 'Hausgeld' || x.art === 'Rücklage') && String(x.monat).startsWith(String(jahr))).length;
+    setVerm({ ruecklage: rl.bestand, zufJahr, entnahmeJahr: rl.entnahme, zinsJahr: rl.zinsen, banken,
+      forderungen: r2(offen.filter((z) => z.saldo > 0).reduce((a, z) => a + z.saldo, 0)),
+      guthaben: r2(offen.filter((z) => z.saldo < 0).reduce((a, z) => a - z.saldo, 0)),
+      opKonten: offen, hgImJahr });
   }
   useEffect(() => { if (jahr >= 1900 && jahr <= 2200) rechnen(); }, [objekt, jahr]);
 
@@ -141,8 +161,12 @@ export function WegAbrechnungPage() {
       ['davon Entnahmen im Jahr', geld(-(verm.entnahmeJahr ?? 0))],
       ['davon Zinserträge im Jahr', geld(verm.zinsJahr ?? 0)],
       ...(verm.banken ?? []).map((b: Row) => [`Kontostand ${b.name} (${b.iban ?? ''})`, geld(Number(b.saldo))]),
-      ['Offene Forderungen gegen Eigentümer', geld(verm.rueckstaende ?? 0)],
+      ['Offene Forderungen gegen Eigentümer', geld(verm.forderungen ?? 0)],
+      ['Guthaben von Eigentümern (Überzahlungen)', geld(verm.guthaben ?? 0)],
     ]);
+    const opk: Row[] = verm.opKonten ?? [];
+    if (opk.length) g.tabelle(['Einheit', 'Eigentümer', 'Soll bis 31.12.', 'gezahlt', 'Forderung / Guthaben'],
+      opk.map((z) => [z.einheit, z.name, geld(z.soll), geld(z.ist), z.saldo > 0 ? geld(z.saldo) : `Guthaben ${geld(-z.saldo)}`]), undefined, 2);
     g.gruss();
     await speichern(g.bytes(), `Gesamtabrechnung und Vermögensbericht ${jahr}.pdf`, { bezug: 'Objekt', bezugId: o.id, ordner });
     // Einzelabrechnungen
@@ -230,15 +254,51 @@ export function WegAbrechnungPage() {
           </tbody>
         </table>
       </section>
-      <section className="card">
+      <section className="card abr-uebersicht">
         <div className="card-head"><h2>Vermögensbericht zum 31.12.{jahr}</h2></div>
         <table className="list"><tbody>
           <tr><td>Erhaltungsrücklage</td><td className="num"><b>{eur(verm.ruecklage ?? 0)}</b></td></tr>
           <tr><td className="muted">Zuführung {jahr} (Soll) / Entnahmen / Zinsen</td><td className="num muted">{eur(verm.zufJahr ?? 0)} / {eur(verm.entnahmeJahr ?? 0)} / {eur(verm.zinsJahr ?? 0)}</td></tr>
           {(verm.banken ?? []).map((b: Row) => <tr key={b.id}><td>Kontostand {b.name}</td><td className="num">{eur(Number(b.saldo))}</td></tr>)}
-          <tr><td>Offene Forderungen gegen Eigentümer</td><td className="num">{eur(verm.rueckstaende ?? 0)}</td></tr>
+          <tr><td>Offene Forderungen gegen Eigentümer</td><td className="num">{eur(verm.forderungen ?? 0)}</td></tr>
+          <tr><td>Guthaben von Eigentümern (Überzahlungen)</td><td className="num">{eur(verm.guthaben ?? 0)}</td></tr>
         </tbody></table>
+        {verm.hgImJahr === 0 && <p className="warn small">Für {jahr} sind keine Hausgeld-Sollstellungen angelegt. Zahlungen der Eigentümer erscheinen dann als Guthaben.
+          Unter „Sollstellungen“ kannst du sie aus den Stammdaten erzeugen.</p>}
+        <OpAufstellung konten={verm.opKonten ?? []} jahr={jahr} />
       </section>
+    </>
+  );
+}
+
+/** Aufklappbare Aufstellung der offenen Beträge je Eigentümer und Einheit mit den einzelnen Posten */
+function OpAufstellung({ konten, jahr }: { konten: Row[]; jahr: number }) {
+  const [auf, setAuf] = useState<Set<string>>(new Set());
+  if (!konten.length) return <p className="muted small">Zum 31.12.{jahr} sind alle Forderungen ausgeglichen.</p>;
+  const um = (k: string) => { const n = new Set(auf); n.has(k) ? n.delete(k) : n.add(k); setAuf(n); };
+  return (
+    <>
+      <h3 className="sec">Woher kommen die Beträge?</h3>
+      <table className="list op-aufstellung">
+        <thead><tr><th style={{ width: 36 }} /><th>Einheit</th><th>Eigentümer</th><th className="num">Soll bis 31.12.</th><th className="num">gezahlt bis 31.12.</th><th className="num">Forderung</th><th className="num">Guthaben</th></tr></thead>
+        <tbody>{konten.map((z) => (
+          <Fragment key={z.key}>
+            <tr className={auf.has(z.key) ? 'auf' : ''}>
+              <td><button className="icon-btn aufklapp" title="Posten anzeigen" onClick={() => um(z.key)}>{auf.has(z.key) ? <ChevronDown size={17} /> : <ChevronRight size={17} />}</button></td>
+              <td>{z.einheit}</td><td>{z.name}</td><td className="num">{eur(z.soll)}</td><td className="num">{eur(z.ist)}</td>
+              <td className="num neg">{z.saldo > 0 ? eur(z.saldo) : '–'}</td><td className="num pos">{z.saldo < 0 ? eur(-z.saldo) : '–'}</td>
+            </tr>
+            {auf.has(z.key) && <tr className="belege-zeile"><td /><td colSpan={6}>
+              <table className="list belege"><thead><tr><th>Monat</th><th>Art</th><th>fällig</th><th className="num">Soll</th><th className="num">gezahlt</th><th className="num">offen</th></tr></thead>
+                <tbody>{z.posten.filter((x: Row) => Math.abs(Number(x.betrag) - Number(x.bezahlt)) > 0.005).map((x: Row) => (
+                  <tr key={x.id}><td>{x.monat}</td><td>{x.art}</td><td>{datum(x.faellig)}</td><td className="num">{eur(Number(x.betrag))}</td><td className="num">{eur(Number(x.bezahlt))}</td>
+                    <td className={'num ' + (Number(x.betrag) - Number(x.bezahlt) > 0 ? 'neg' : 'pos')}>{eur(Number(x.betrag) - Number(x.bezahlt))}</td></tr>))}</tbody></table>
+              <p className="muted small">Ausgeglichene Posten sind ausgeblendet. Ein negativer Betrag heißt: mehr gezahlt als gefordert.</p>
+            </td></tr>}
+          </Fragment>))}
+        </tbody>
+        <tfoot><tr><td /><td colSpan={4}>Summe</td><td className="num">{eur(konten.filter((z) => z.saldo > 0).reduce((a, z) => a + z.saldo, 0))}</td><td className="num">{eur(konten.filter((z) => z.saldo < 0).reduce((a, z) => a - z.saldo, 0))}</td></tr></tfoot>
+      </table>
     </>
   );
 }
