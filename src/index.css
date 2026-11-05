@@ -319,3 +319,9 @@ a.btn-link { display: inline-block; background: var(--accent); color: #fff; bord
 .modal.schl-fenster { width: 720px; }
 .modal.schl-fenster table.list { margin: 12px 0; }
 .nowrap { white-space: nowrap; }
+.abr-uebersicht .abr-neu { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; padding: 12px; margin: 6px 0 12px; border: 1px solid var(--line, #e6e0d6); border-radius: 10px; background: #fcfaf6; }
+.abr-uebersicht .abr-neu label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
+.abr-uebersicht .abr-neu label.grow { flex: 1 1 220px; }
+.abr-uebersicht .abr-neu .error { flex-basis: 100%; margin: 0; }
+.abr-uebersicht table.belege tr.beleg-edit td { background: #fff8e8; }
+.abr-uebersicht table.belege + .link, .abr-uebersicht .error + .link { margin: 0 0 10px; display: inline-flex; align-items: center; gap: 4px; }

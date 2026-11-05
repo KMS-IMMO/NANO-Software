@@ -84,6 +84,9 @@ export function WegAbrechnungPage() {
         SUM(COALESCE((SELECT SUM(b.betrag) FROM buchungen b WHERE b.sollstellung_id = s.id), 0)) AS ist
       FROM sollstellungen s WHERE s.art IN ('Hausgeld', 'Rücklage') AND substr(s.monat, 1, 4) = $1 GROUP BY s.person_id, s.einheit_id`, [String(jahr)]);
     const saetze = await db.select('SELECT * FROM hausgeld ORDER BY gueltig_ab');
+    // Tatsächlich gestellte Hausgeld-/Rücklage-Posten je Monat: Rücklage wird nur dort abgezogen, wo auch Hausgeld gefordert wurde
+    const gestellt = await db.select(`SELECT person_id, einheit_id, monat, art, SUM(betrag) AS betrag FROM sollstellungen
+      WHERE art IN ('Hausgeld', 'Rücklage') AND vertrag_id IS NULL AND substr(monat, 1, 4) = $1 GROUP BY person_id, einheit_id, monat, art`, [String(jahr)]);
     // Vermietete Einheiten: Nebenkostenabrechnung der Mieter (umlagefähige Kosten gegen deren Vorauszahlungen)
     const nk = (await nkBerechnen(Number(objekt), jahr)).erg.filter((x) => x.nutzer.art === 'Mieter');
     const res = verteilen(jahr, einheiten, nutzer, p, { verbrauch, messdienst }).map((r): Einzel => {
@@ -91,10 +94,14 @@ export function WegAbrechnungPage() {
       // Rücklagenanteil im Hausgeld (Soll) für die Monate des Eigentümers
       let rs = 0;
       for (let m = 1; m <= 12; m++) {
-        const tag1 = `${jahr}-${String(m).padStart(2, '0')}-01`;
+        const monat = `${jahr}-${String(m).padStart(2, '0')}`, tag1 = `${monat}-01`;
         if (tag1 < r.nutzer.von.slice(0, 8) + '01' || tag1 > r.nutzer.bis) continue;
+        const g = gestellt.filter((y) => y.monat === monat && y.einheit_id === r.nutzer.einheit_id && y.person_id === r.nutzer.person_id);
+        const eigen = g.find((y) => y.art === 'Rücklage');
+        if (eigen) { rs += Number(eigen.betrag) || 0; continue; }   // getrennt gestellt
+        if (!g.some((y) => y.art === 'Hausgeld')) continue;           // kein Hausgeld gefordert, also auch keine Rücklage abziehen
         const s = [...saetze].reverse().find((h) => h.einheit_id === r.nutzer.einheit_id && h.gueltig_ab <= tag1);
-        rs += Number(s?.davon_ruecklage) || 0;
+        rs += Math.min(Number(s?.davon_ruecklage) || 0, Number(g.find((y) => y.art === 'Hausgeld')?.betrag) || 0);
       }
       const vorschuss = r2(Number(x.soll) - rs);
       const m = nk.filter((y) => y.nutzer.einheit_id === r.nutzer.einheit_id);
@@ -203,6 +210,7 @@ export function WegAbrechnungPage() {
         <div className="kpi"><span>Summe Abrechnungsspitzen</span><b>{eur(erg.reduce((a, r) => a + r.spitze, 0))}</b></div>
       </div>
       {objekt !== '' && <AbrechnungsUebersicht objekt={Number(objekt)} jahr={jahr} pos={pos} stand={stand} titel={`Gesamtabrechnung ${jahr}: Übersicht der Buchungskonten`}
+        onChanged={(t) => { setInfo(t); setStand(stand + 1); rechnen(); }}
         schluessel={(p) => <SchluesselWahl objekt={Number(objekt)} jahr={jahr} p={p} anteile={anteile} onChanged={(t) => { setInfo(t); setStand(stand + 1); rechnen(); }} />} />}
       {objekt !== '' && <WerteJeEinheit key={`${objekt}-${jahr}-${stand}`} objekt={Number(objekt)} jahr={jahr} einheiten={einheiten}
         konten={pos.filter((p) => p.schluessel === 'Summe' || p.schluessel === 'Verbrauch')} onSaved={() => { setInfo('Eingaben gespeichert und neu berechnet.'); rechnen(); }} />}

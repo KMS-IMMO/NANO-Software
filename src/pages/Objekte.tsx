@@ -229,8 +229,8 @@ function Kennzahlen({ objektId, weg }: { objektId: number; weg: boolean }) {
       const bank = (await db.select(`SELECT COALESCE(SUM(b.anfangssaldo + COALESCE((SELECT SUM(u.betrag) FROM bankumsaetze u WHERE u.bankkonto_id = b.id
         AND (b.saldo_datum IS NULL OR u.datum > b.saldo_datum)), 0)), 0) AS saldo, COUNT(*) AS n FROM bankkonten b WHERE b.objekt_id = $1`, [objektId]))[0] ?? {};
       setK({ ...b, offen: op.offen, offen_n: op.n, saldo: bank.saldo, konten: bank.n });
-      setLetzte(await db.select(`SELECT b.*, k.nummer, k.name AS konto, e.nummer AS einheit FROM buchungen b LEFT JOIN buchungskonten k ON k.id = b.buchungskonto_id
-        LEFT JOIN einheiten e ON e.id = b.einheit_id WHERE b.objekt_id = $1 ORDER BY b.datum DESC, b.id DESC LIMIT 6`, [objektId]));
+      setLetzte((await db.select(`SELECT b.*, k.nummer, k.name AS konto, e.nummer AS einheit FROM buchungen b LEFT JOIN buchungskonten k ON k.id = b.buchungskonto_id
+        LEFT JOIN einheiten e ON e.id = b.einheit_id WHERE b.objekt_id = $1 ORDER BY b.datum DESC, b.id DESC LIMIT 6`, [objektId])).reverse());
     })();
   }, [objektId]);
   return (

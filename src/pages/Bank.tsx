@@ -41,7 +41,7 @@ export function BankPage() {
   const load = async () => {
     if (konto === '') return;
     const r = await db.select(`SELECT u.*, (SELECT GROUP_CONCAT(b.text, ' | ') FROM buchungen b WHERE b.bankumsatz_id = u.id) AS gebucht
-      FROM bankumsaetze u WHERE u.bankkonto_id = $1 ORDER BY u.datum DESC, u.id DESC`, [konto]);
+      FROM bankumsaetze u WHERE u.bankkonto_id = $1 ORDER BY u.datum, u.id`, [konto]);
     setRows(r);
     const v: Record<number, Vorschlag | null> = {};
     for (const u of r.filter((x) => x.status === 'offen').slice(0, 100)) v[u.id] = await vorschlag(u);

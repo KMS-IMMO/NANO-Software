@@ -60,7 +60,7 @@ export function JournalPage() {
     if (kontoWahl.length) wr.push(`r.buchungskonto_id IN (${kontoWahl.map(Number).join(',')})`);
     setOffeneRechnungen(await db.select(`SELECT r.*, f.name AS firma, k.nummer, k.name AS konto, o.name AS objekt, e.nummer AS einheit
       FROM rechnungen r LEFT JOIN firmen f ON f.id = r.firma_id LEFT JOIN buchungskonten k ON k.id = r.buchungskonto_id LEFT JOIN objekte o ON o.id = r.objekt_id LEFT JOIN einheiten e ON e.id = r.einheit_id
-      WHERE ${wr.join(' AND ')} AND NOT EXISTS (SELECT 1 FROM buchungen b WHERE b.rechnung_id = r.id) ORDER BY COALESCE(r.faellig, r.datum)`));
+      WHERE ${wr.join(' AND ')} AND NOT EXISTS (SELECT 1 FROM buchungen b WHERE b.rechnung_id = r.id) ORDER BY r.datum, r.id`));
   };
   useEffect(() => { load(); }, [objekt, jahr, monat, kontoWahl.join(',')]);
 
