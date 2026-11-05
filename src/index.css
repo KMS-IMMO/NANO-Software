@@ -315,3 +315,6 @@ a.btn-link { display: inline-block; background: var(--accent); color: #fff; bord
 .abr-uebersicht table.belege { margin: 4px 0 10px; font-size: 13px; }
 .abr-uebersicht table.belege th { font-size: 11px; }
 .pill.klein { font-size: 11px; padding: 1px 7px; margin-left: 8px; vertical-align: middle; }
+.schl-wahl { display: inline-flex; align-items: center; gap: 4px; }
+.modal.schl-fenster { width: 720px; }
+.modal.schl-fenster table.list { margin: 12px 0; }

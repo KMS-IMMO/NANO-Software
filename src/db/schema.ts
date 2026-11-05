@@ -566,6 +566,7 @@ CREATE TABLE objekt_schluessel_jahr (
   jahr INTEGER NOT NULL,
   buchungskonto_id INTEGER NOT NULL REFERENCES buchungskonten(id),
   schluessel TEXT NOT NULL,
+  masseinheit TEXT,          -- bei Verbrauch: m², m³, kWh …
   UNIQUE (objekt_id, jahr, buchungskonto_id)
 );
 `,
