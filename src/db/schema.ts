@@ -573,4 +573,13 @@ CREATE TABLE objekt_schluessel_jahr (
   `
 ALTER TABLE objekt_schluessel_jahr ADD COLUMN masseinheit TEXT;
 `,
+  // Migration 15: Zahlweise der Erhaltungsrücklage (mit dem Hausgeld in einer Summe oder getrennt) und Wohnungs-ID (W-ID)
+  `
+ALTER TABLE objekte ADD COLUMN ruecklage_zahlweise TEXT NOT NULL DEFAULT 'zusammen';  -- zusammen | getrennt
+ALTER TABLE eigentum ADD COLUMN zahlweise TEXT;                                      -- leer = wie Liegenschaft
+ALTER TABLE einheiten ADD COLUMN lfd_nr INTEGER;                                     -- laufende Nummer in der Liegenschaft
+UPDATE einheiten SET lfd_nr = (SELECT COUNT(*) FROM einheiten e2 WHERE e2.objekt_id = einheiten.objekt_id AND e2.id <= einheiten.id) WHERE lfd_nr IS NULL;
+CREATE TRIGGER einheit_lfd_nr_auto AFTER INSERT ON einheiten WHEN NEW.lfd_nr IS NULL
+BEGIN UPDATE einheiten SET lfd_nr = (SELECT COALESCE(MAX(lfd_nr), 0) + 1 FROM einheiten WHERE objekt_id = NEW.objekt_id) WHERE id = NEW.id; END;
+`,
 ];

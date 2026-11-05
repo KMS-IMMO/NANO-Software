@@ -45,14 +45,14 @@ async function soll(row: Row): Promise<number> {
 
 /** Legt alle fehlenden Soll-Stellungen bis einschließlich `bisMonat` an (optional erst ab `von` und nur für eine Liegenschaft).
  *  Gibt die Anzahl neuer Posten zurück. Vorhandene Posten bleiben unverändert. */
-export async function sollStellen(bisMonat: string, opt: { von?: string; objektId?: number } = {}): Promise<number> {
+export async function sollStellen(bisMonat: string, opt: { von?: string; objektId?: number; nurHausgeld?: boolean } = {}): Promise<number> {
   let n = 0;
   const imZeitraum = (m: string) => !opt.von || m >= opt.von;
   const nurObjekt = opt.objektId ? ` AND einheit_id IN (SELECT id FROM einheiten WHERE objekt_id = ${Number(opt.objektId)})` : '';
 
   // Mieten
   // Zahlt der Mieter an den Eigentümer (vermietete WEG-Einheit), entstehen bei uns keine Soll-Stellungen
-  const vertraege = await db.select(`SELECT * FROM mietvertraege WHERE COALESCE(zahlung_an, 'Verwaltung') <> 'Eigentümer'${nurObjekt}`);
+  const vertraege = opt.nurHausgeld ? [] : await db.select(`SELECT * FROM mietvertraege WHERE COALESCE(zahlung_an, 'Verwaltung') <> 'Eigentümer'${nurObjekt}`);
   const alleAnp = await db.select('SELECT * FROM mietanpassungen');
   for (const v of vertraege) {
     const anp = alleAnp.filter((a) => a.vertrag_id === v.id);
@@ -69,7 +69,7 @@ export async function sollStellen(bisMonat: string, opt: { von?: string; objektI
   }
 
   // Hausgeld (WEG): Schuldner ist der jeweilige Eigentümer im Monat
-  const hg = await db.select(`SELECT h.*, e.objekt_id FROM hausgeld h JOIN einheiten e ON e.id = h.einheit_id
+  const hg = await db.select(`SELECT h.*, e.objekt_id, o.ruecklage_zahlweise FROM hausgeld h JOIN einheiten e ON e.id = h.einheit_id
     JOIN objekte o ON o.id = e.objekt_id WHERE o.verwaltungsart = 'WEG'${opt.objektId ? ` AND o.id = ${Number(opt.objektId)}` : ''} ORDER BY h.gueltig_ab`);
   const eig = await db.select('SELECT * FROM eigentum ORDER BY anteil DESC');
   const einheiten = [...new Set(hg.map((h) => h.einheit_id))];
@@ -81,15 +81,37 @@ export async function sollStellen(bisMonat: string, opt: { von?: string; objektI
       if (!satz || !satz.betrag) continue;
       const owner = eig.find((e) => e.einheit_id === eid && (!e.von || e.von <= `${monat}-31`) && (!e.bis || e.bis >= stichtag));
       if (!owner) continue;
-      n += await soll({ einheit_id: eid, person_id: owner.person_id, monat, art: 'Hausgeld', betrag: satz.betrag, faellig: faelligAm(monat, 3) });
+      const base = { einheit_id: eid, person_id: owner.person_id, monat, faellig: faelligAm(monat, 3) };
+      const rl = Math.round((Number(satz.davon_ruecklage) || 0) * 100) / 100;
+      const getrennt = (owner.zahlweise || satz.ruecklage_zahlweise) === 'getrennt' && rl > 0 && rl < satz.betrag;
+      if (!getrennt) { n += await soll({ ...base, art: 'Hausgeld', betrag: satz.betrag }); continue; }
+      // Getrennte Überweisung: Hausgeld ohne Rücklage und Rücklage als eigener Posten.
+      // Gibt es für den Monat schon einen Hausgeld-Posten (früher gemeinsam erzeugt), bleibt es dabei, damit nichts doppelt gefordert wird.
+      const schon = await db.select(`SELECT 1 FROM sollstellungen WHERE einheit_id = $1 AND COALESCE(person_id, 0) = $2 AND monat = $3 AND art = 'Hausgeld' AND vertrag_id IS NULL`,
+        [eid, owner.person_id ?? 0, monat]);
+      if (schon.length) continue;
+      n += await soll({ ...base, art: 'Hausgeld', betrag: Math.round((satz.betrag - rl) * 100) / 100 });
+      n += await soll({ ...base, art: 'Rücklage', betrag: rl });
     }
   }
   return n;
 }
 
+/** Hausgeld-Posten einer Liegenschaft ab `abMonat` neu stellen, z. B. nach geändertem Hausgeld, Rücklage oder Zahlweise.
+ *  Nur unbezahlte Posten werden ersetzt; bereits (teilweise) bezahlte bleiben unverändert. Gibt die Zahl neuer Posten zurück. */
+export async function hausgeldNeuStellen(objektId: number, abMonat: string): Promise<number> {
+  const bis = (await db.select(`SELECT MAX(s.monat) AS m FROM sollstellungen s JOIN einheiten e ON e.id = s.einheit_id
+    WHERE e.objekt_id = $1 AND s.art IN ('Hausgeld', 'Rücklage') AND s.monat >= $2`, [objektId, abMonat]))[0]?.m;
+  if (!bis) return 0;
+  await db.execute(`DELETE FROM sollstellungen WHERE art IN ('Hausgeld', 'Rücklage') AND monat >= $2 AND vertrag_id IS NULL
+    AND einheit_id IN (SELECT id FROM einheiten WHERE objekt_id = $1)
+    AND NOT EXISTS (SELECT 1 FROM buchungen b WHERE b.sollstellung_id = sollstellungen.id)`, [objektId, abMonat]);
+  return sollStellen(bis, { von: abMonat, objektId, nurHausgeld: true });
+}
+
 /** Buchungskonto (Einnahme) je Art des offenen Postens */
 export const KONTO_FUER_ART: Record<string, string> = {
-  Kaltmiete: '1000', NK: '1001', HK: '1002', USt: '1003', Hausgeld: '1010', Mahngebühr: '1011', 'NK-Abrechnung': '1001', 'WEG-Abrechnung': '1010',
+  Kaltmiete: '1000', NK: '1001', HK: '1002', USt: '1003', Hausgeld: '1010', Rücklage: '1010', Mahngebühr: '1011', 'NK-Abrechnung': '1001', 'WEG-Abrechnung': '1010',
 };
 
 /** Offene Posten mit bezahltem Betrag, Objekt, Einheit und Schuldner */

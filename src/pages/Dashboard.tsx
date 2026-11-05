@@ -39,7 +39,7 @@ export function DashboardPage() {
           UNION ALL SELECT 'Fällig: ' || x.betreff, o.name, x.faellig FROM vorgaenge x JOIN objekte o ON o.id = x.objekt_id WHERE x.status <> 'Erledigt' AND x.faellig IS NOT NULL
           ORDER BY 3 LIMIT 6`));
       setZ((await db.select(`SELECT COALESCE(SUM(betrag), 0) soll, COALESCE(SUM(MIN(bezahlt, betrag)), 0) ist
-          FROM (${OP_SQL}) WHERE monat = $1 AND art IN ('Kaltmiete', 'NK', 'HK', 'USt', 'Hausgeld')`, [monat()]))[0]);
+          FROM (${OP_SQL}) WHERE monat = $1 AND art IN ('Kaltmiete', 'NK', 'HK', 'USt', 'Hausgeld', 'Rücklage')`, [monat()]))[0]);
       setObjekte(await db.select(`SELECT o.*, (SELECT COUNT(*) FROM einheiten e WHERE e.objekt_id = o.id) einheiten
           FROM objekte o ORDER BY o.objekt_nr, o.name`));
       setLeer(await db.select(`SELECT e.*, o.name objekt FROM einheiten e JOIN objekte o ON o.id = e.objekt_id

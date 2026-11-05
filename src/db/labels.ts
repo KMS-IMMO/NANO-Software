@@ -13,3 +13,10 @@ export const AKTIV = (a = 'v') => `${a}.beginn <= date('now') AND (${a}.ende IS 
 
 export const SCHLUESSEL = ['Fläche', 'Personen', 'Einheiten', 'MEA', 'Summe', 'Verbrauch', 'Direkt'];
 export const EINHEIT_TYPEN = ['Wohnung', 'Gewerbe', 'Stellplatz', 'Garage', 'Keller', 'Sonstiges'];
+
+/** SQL-Ausdruck für die Wohnungs-ID (W-ID): Liegenschaftsnummer und laufende Nummer der Einheit, z. B. 1002-01 */
+export const widSql = (e = 'e', o = 'o') =>
+  `(${o}.objekt_nr || '-' || substr('00' || COALESCE(${e}.lfd_nr, 0), -2, 2))`;
+/** W-ID im Programm bilden */
+export const wid = (objektNr: string | number | null | undefined, lfdNr: number | null | undefined) =>
+  objektNr && lfdNr ? `${objektNr}-${String(lfdNr).padStart(2, '0')}` : '';
