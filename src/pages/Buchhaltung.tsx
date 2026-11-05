@@ -1,7 +1,7 @@
 // Buchhaltung: Buchungsjournal mit manueller Buchung, Buchungsregeln, Kontenübersicht (GuV) und Berichte.
 import { useEffect, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { BarChart3, BookOpen, Download, FileSpreadsheet, FileText, Gavel, PiggyBank, Plus, Receipt, Sparkles, Users, User } from 'lucide-react';
+import { BarChart3, BookOpen, Download, FileSpreadsheet, FileText, Gavel, Pencil, PiggyBank, Plus, Receipt, Sparkles, Trash2, Users, User } from 'lucide-react';
 import { EntityTable, datum, eur, num } from '../components/EntityTable';
 import { db, insert, remove, update, type Row } from '../db';
 import { personLabel } from '../db/labels';
@@ -10,6 +10,7 @@ import { csv, dDatum, geld, listePdf } from '../lib/pdf';
 import { oeffnen, speichern } from '../lib/dateien';
 import { useObjektKontext } from '../logic/objektKontext';
 import { RechnungErfassen } from '../components/RechnungErfassen';
+import { buchungLoeschen, loeschHinweis } from '../logic/buchung';
 
 const heute = () => new Date().toISOString().slice(0, 10);
 const zahl = (s: string) => Number(String(s).replace(/\./g, '').replace(',', '.')) || 0;
@@ -44,6 +45,7 @@ export function JournalPage() {
   const [modus, setModus] = useState<'rechnung' | 'buchung'>('rechnung');
   const [fehler, setFehler] = useState('');
   const [info, setInfo] = useState('');
+  const [rEdit, setREdit] = useState<Row | null>(null);
 
   useEffect(() => { db.select(kontoOptions).then(setKonten); }, []);
   const load = async () => {
@@ -82,7 +84,12 @@ export function JournalPage() {
       firma_id = da ? da.id : await insert('firmen', { name: fname });
     }
     const basis = { datum: edit.datum, objekt_id: Number(edit.objekt_id), buchungskonto_id: Number(edit.buchungskonto_id), text: edit.text || null, firma_id };
+    if (edit.id && (edit.bankumsatz_id || edit.sollstellung_id || edit.rechnung_id)) {
+      const woher = edit.bankumsatz_id ? 'aus dem Bankimport' : edit.sollstellung_id ? 'zu einem offenen Posten' : 'zu einer Rechnung';
+      if (Math.abs(Math.abs(Number(edit.alt_betrag)) - gesamt) > 0.005 && !window.confirm(`Diese Buchung gehört ${woher}. Wenn du den Betrag änderst, passt er nicht mehr dazu. Trotzdem speichern?`)) return;
+    }
     if (edit.einheit_id === 'eigen') {
+      if (edit.id) await buchungLoeschen(Number(edit.id));
       const teile = Object.entries((edit.anteile ?? {}) as Record<string, string>).filter(([, v]) => v !== '');
       const summe = Math.round(teile.reduce((a, [, v]) => a + zahl(v), 0) * 100) / 100;
       if (!teile.length) { setFehler('Bitte mindestens eine Einheit anhaken.'); return; }
@@ -92,12 +99,31 @@ export function JournalPage() {
     } else {
       const v = { ...basis, einheit_id: edit.einheit_id ? Number(edit.einheit_id) : null, betrag: vz * gesamt };
       if (edit.id) await update('buchungen', edit.id, v); else await insert('buchungen', v);
+      setInfo(edit.id ? `Buchung ${edit.id} geändert.` : `Buchung über ${eur(gesamt)} erfasst.`);
     }
     setEdit(null); load();
   }
-  async function loeschen() {
-    if (!edit?.id || !window.confirm('Buchung löschen?')) return;
-    await remove('buchungen', edit.id); setEdit(null); load();
+  async function loeschen(r: Row | null = edit) {
+    if (!r?.id) return;
+    const h = loeschHinweis(r);
+    if (!window.confirm(`Buchung ${r.id} über ${eur(Math.abs(Number(r.alt_betrag ?? r.betrag)))} löschen?${h ? '\n\n' + h : ''}`)) return;
+    await buchungLoeschen(Number(r.id)); setEdit(null); setInfo(`Buchung ${r.id} gelöscht.`); load();
+  }
+  const bearbeiten = (r: Row) => { setFehler(''); setModus('buchung'); setEdit({ ...r, firma: r.firma ?? '', alt_betrag: r.betrag, richtung: r.betrag > 0 ? 'Einnahme' : 'Ausgabe', betrag: String(Math.abs(r.betrag)).replace('.', ',') }); };
+  async function rechnungLoeschen(r: Row) {
+    if (!window.confirm(`Rechnung ${r.rechnungsnr ?? ''} über ${eur(Number(r.betrag))} löschen?`)) return;
+    await remove('rechnungen', r.id); setInfo(`Rechnung ${r.rechnungsnr ?? ''} gelöscht.`.replace('  ', ' ')); load();
+  }
+  async function rechnungSpeichern() {
+    if (!rEdit) return;
+    const betrag = Math.abs(zahl(String(rEdit.betrag)));
+    if (!rEdit.datum || !rEdit.buchungskonto_id || !betrag) { setFehler('Bitte Datum, Konto und Betrag ausfüllen.'); return; }
+    let firma_id: number | null = rEdit.firma_id ?? null;
+    const fname = String(rEdit.firma ?? '').trim();
+    if (fname) { const da = (await db.select('SELECT id FROM firmen WHERE lower(name) = lower($1)', [fname]))[0]; firma_id = da ? da.id : await insert('firmen', { name: fname }); }
+    else firma_id = null;
+    await update('rechnungen', rEdit.id, { datum: rEdit.datum, faellig: rEdit.faellig || null, rechnungsnr: rEdit.rechnungsnr || null, buchungskonto_id: Number(rEdit.buchungskonto_id), betrag, firma_id });
+    setREdit(null); setFehler(''); setInfo(`Rechnung ${rEdit.rechnungsnr ?? ''} geändert.`.replace('  ', ' ')); load();
   }
   async function rechnungBezahlt(r: Row) {
     const tag = heute();
@@ -153,7 +179,9 @@ export function JournalPage() {
                   <td>{r.firma ?? '–'}</td><td>{r.rechnungsnr ?? '–'}</td><td>{r.nummer} {r.konto}</td>
                   <td>{!fix && <span className="muted small">{r.objekt} · </span>}{r.einheit ?? 'alle'}</td>
                   <td className="num neg">{eur(Number(r.betrag))}</td>
-                  <td className="actions"><button className="link" onClick={() => rechnungBezahlt(r)}>Als bezahlt buchen</button></td>
+                  <td className="actions nowrap"><button className="link" onClick={() => rechnungBezahlt(r)}>Als bezahlt buchen</button>
+                    <button className="icon-btn" title="Rechnung bearbeiten" onClick={() => { setFehler(''); setREdit({ ...r, betrag: String(r.betrag).replace('.', ',') }); }}><Pencil size={15} /></button>
+                    <button className="icon-btn" title="Rechnung löschen" onClick={() => rechnungLoeschen(r)}><Trash2 size={15} /></button></td>
                 </tr>))}</tbody>
             </table></div>)}
           <p className="muted small">Bezahlt per Bank? Dann ordnest du den Bankumsatz unter „Bank &amp; Zuordnung“ der Rechnung zu, dann wird sie automatisch gebucht.</p>
@@ -171,13 +199,14 @@ export function JournalPage() {
                 <td>{r.firma ?? <span className="muted">–</span>}</td>
                 <td className="small">{r.text}{r.rechnungsnr && !String(r.text ?? "").includes(r.rechnungsnr) ? <span className="muted"> · Rechnung {r.rechnungsnr}</span> : ''}{r.bankumsatz_id ? <span className="muted"> · Bank</span> : ''}</td>
                 <td className="num neg">{r.betrag < 0 ? eur(-r.betrag) : '–'}</td><td className="num">{r.betrag > 0 ? eur(r.betrag) : '–'}</td>
-                <td className="actions">{!r.bankumsatz_id && !r.sollstellung_id && !r.rechnung_id &&
-                  <button className="link" onClick={() => { setFehler(''); setModus('buchung'); setEdit({ ...r, firma: r.firma ?? '', richtung: r.betrag > 0 ? 'Einnahme' : 'Ausgabe', betrag: String(Math.abs(r.betrag)).replace('.', ',') }); }}>Bearbeiten</button>}</td>
+                <td className="actions nowrap"><button className="icon-btn" title="Buchung bearbeiten" onClick={() => bearbeiten(r)}><Pencil size={15} /></button>
+                  <button className="icon-btn" title="Buchung löschen" onClick={() => loeschen(r)}><Trash2 size={15} /></button></td>
               </tr>))}
             </tbody>
             <tfoot><tr><td colSpan={6}>Summe</td><td className="num neg">{eur(soll)}</td><td className="num">{eur(haben)}</td><td /></tr></tfoot>
           </table></div>)}
-        <p className="muted small">Bankbuchungen änderst du unter „Bank &amp; Zuordnung“ (Zuordnung lösen). Hier erfasst du Rechnungen und Buchungen ohne Bankumsatz, z. B. Barzahlungen oder Umbuchungen.</p>
+        <p className="muted small">Mit dem Stift änderst du eine Buchung, mit dem Papierkorb löschst du sie. Neue Rechnungen und Buchungen legst du über „Buchung erfassen“ an.
+          Gelöschte Bankbuchungen erscheinen wieder als offener Umsatz unter „Bank &amp; Zuordnung“.</p>
       </section>)}
       {edit && (
         <div className="modal-bg" onClick={() => setEdit(null)}>
@@ -190,13 +219,33 @@ export function JournalPage() {
               ? <RechnungErfassen objektFest={fix?.id} onSaved={(t) => { setInfo(t); setEdit(null); load(); }} />
               : <>
                 <BuchungForm edit={edit} setEdit={setEdit} objekte={objekte} konten={konten} fest={!!fix} />
+                {edit.id && (edit.bankumsatz_id || edit.sollstellung_id || edit.rechnung_id) && <p className="warn small">
+                  Diese Buchung gehört {edit.bankumsatz_id ? 'zu einem Bankumsatz' : edit.sollstellung_id ? 'zu einem offenen Posten' : 'zu einer Rechnung'}. Konto, Text und Einheit kannst du frei ändern. Bei einem anderen Betrag fragt das Programm nach.</p>}
                 {fehler && <p className="error">{fehler}</p>}
                 <div className="row end">
-                  {edit.id && <button className="danger" onClick={loeschen}>Löschen</button>}
+                  {edit.id && <button className="danger" onClick={() => loeschen()}>Löschen</button>}
                   <span className="grow" />
                   <button onClick={() => setEdit(null)}>Abbrechen</button>
                   <button className="primary" onClick={speichernBuchung}>Buchung speichern</button>
                 </div></>}
+          </div>
+        </div>)}
+      {rEdit && (
+        <div className="modal-bg" onClick={() => setREdit(null)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h3>Rechnung bearbeiten</h3>
+            <div className="form">
+              <label><span>Rechnungsdatum *</span><input type="date" value={rEdit.datum ?? ''} onChange={(e) => setREdit({ ...rEdit, datum: e.target.value })} /></label>
+              <label><span>Fällig am</span><input type="date" value={rEdit.faellig ?? ''} onChange={(e) => setREdit({ ...rEdit, faellig: e.target.value })} /></label>
+              <label><span>Unternehmen</span><input value={rEdit.firma ?? ''} onChange={(e) => setREdit({ ...rEdit, firma: e.target.value })} /></label>
+              <label><span>Rechnungs-Nr.</span><input value={rEdit.rechnungsnr ?? ''} onChange={(e) => setREdit({ ...rEdit, rechnungsnr: e.target.value })} /></label>
+              <label><span>Buchungskonto *</span><select value={rEdit.buchungskonto_id ?? ''} onChange={(e) => setREdit({ ...rEdit, buchungskonto_id: e.target.value })}>
+                {konten.map((k) => <option key={k.value} value={k.value}>{k.label}</option>)}</select></label>
+              <label><span>Betrag € *</span><input inputMode="decimal" value={rEdit.betrag ?? ''} onChange={(e) => setREdit({ ...rEdit, betrag: e.target.value })} /></label>
+            </div>
+            {fehler && <p className="error">{fehler}</p>}
+            <div className="row end"><button className="danger" onClick={() => { const r = rEdit; setREdit(null); rechnungLoeschen(r); }}>Löschen</button><span className="grow" />
+              <button onClick={() => setREdit(null)}>Abbrechen</button><button className="primary" onClick={rechnungSpeichern}>Speichern</button></div>
           </div>
         </div>)}
     </>
