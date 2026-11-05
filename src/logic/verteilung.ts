@@ -142,6 +142,13 @@ export async function nutzerErmitteln(objektId: number, jahr: number, modus: 'Mi
   return { einheiten, nutzer };
 }
 
+/** Buchungskonten, für die in der Liegenschaft ein eigener Schlüssel gilt (für das Jahr oder als Standard) */
+export async function eigeneSchluessel(objektId: number, jahr: number): Promise<Set<number>> {
+  const r = await db.select(`SELECT buchungskonto_id FROM objekt_schluessel WHERE objekt_id = $1
+    UNION SELECT buchungskonto_id FROM objekt_schluessel_jahr WHERE objekt_id = $1 AND jahr = $2`, [objektId, jahr]);
+  return new Set(r.map((x) => Number(x.buchungskonto_id)));
+}
+
 /**
  * Kosten je Buchungskonto im Jahr (Abflussprinzip):
  * gebuchte Bankausgänge plus erfasste Rechnungen, die (noch) keiner Bankbuchung zugeordnet sind.
@@ -149,9 +156,10 @@ export async function nutzerErmitteln(objektId: number, jahr: number, modus: 'Mi
  */
 export async function kostenErmitteln(objektId: number, jahr: number, nurUmlagefaehig: boolean): Promise<Position[]> {
   const von = `${jahr}-01-01`, bis = `${jahr}-12-31`;
-  const konten = await db.select(`SELECT k.*, s.schluessel AS objekt_schluessel FROM buchungskonten k
+  const konten = await db.select(`SELECT k.*, COALESCE(sj.schluessel, s.schluessel) AS objekt_schluessel FROM buchungskonten k
     LEFT JOIN objekt_schluessel s ON s.buchungskonto_id = k.id AND s.objekt_id = $1
-    WHERE k.art IN ('Aufwand', 'Ertrag') ${nurUmlagefaehig ? 'AND k.umlagefaehig = 1' : ''} ORDER BY k.nummer`, [objektId]);
+    LEFT JOIN objekt_schluessel_jahr sj ON sj.buchungskonto_id = k.id AND sj.objekt_id = $1 AND sj.jahr = $2
+    WHERE k.art IN ('Aufwand', 'Ertrag') ${nurUmlagefaehig ? 'AND k.umlagefaehig = 1' : ''} ORDER BY k.nummer`, [objektId, jahr]);
   const buch = await db.select(`SELECT buchungskonto_id, einheit_id, -SUM(betrag) AS kosten FROM buchungen
     WHERE objekt_id = $1 AND datum BETWEEN $2 AND $3 AND buchungskonto_id IS NOT NULL GROUP BY buchungskonto_id, einheit_id`, [objektId, von, bis]);
   const rech = await db.select(`SELECT buchungskonto_id, einheit_id, SUM(betrag) AS kosten FROM rechnungen r

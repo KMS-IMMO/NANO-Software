@@ -1,6 +1,7 @@
 // Nebenkostenabrechnung je Objekt und Kalenderjahr (Mietverwaltung und vermietete WEG-Einheiten).
 import { useEffect, useState } from 'react';
 import { db, type Row } from '../db';
+import { AbrechnungsUebersicht } from '../components/AbrechnungsUebersicht';
 import { SchluesselWahl } from '../components/SchluesselWahl';
 import { useObjektKontext } from '../logic/objektKontext';
 import { eur, num, datum } from '../components/EntityTable';
@@ -146,18 +147,11 @@ export function NebenkostenPage() {
         {summenAbweichung.map(({ p, s }) => <p key={p.konto_id} className="warn">Schlüssel „Summe“ bei {p.name}: eingetragen {eur(s)}, Kosten laut Buchhaltung {eur(p.betrag)}. Bitte prüfen.</p>)}
       </section>
 
-      <section className="card">
-        <div className="card-head"><h2>Kosten {jahr}</h2></div>
-        {pos.length === 0 ? <p className="muted">Keine umlagefähigen Kosten im Jahr {jahr}. Kosten kommen aus dem Bankimport und aus erfassten Rechnungen.</p> : (
-          <table className="list">
-            <thead><tr><th>Konto</th><th>Kostenart</th><th>Verteilung</th><th>§35a</th><th className="num">Betrag</th></tr></thead>
-            <tbody>{pos.map((p) => <tr key={p.konto_id}><td>{p.nummer}</td><td>{p.name}</td>
-              <td><SchluesselWahl objekt={Number(objekt)} jahr={jahr} p={p} onChanged={(t) => { setInfo(t); laden(); }} anteile={(k) => {
-                const m: Record<number, number> = {};
-                for (const r of erg) for (const z of r.zeilen) if (z.pos.konto_id === k) m[r.nutzer.einheit_id] = (m[r.nutzer.einheit_id] ?? 0) + z.betrag;
-                return m; }} /></td><td>{[p.hdl && 'HDL', p.hwl && 'HWL'].filter(Boolean).join(', ')}</td><td className="num">{eur(p.betrag)}</td></tr>)}</tbody>
-          </table>)}
-      </section>
+      {objekt !== '' && <AbrechnungsUebersicht objekt={Number(objekt)} jahr={jahr} pos={pos} titel={`Abrechnungsübersicht ${jahr}: umlagefähige Kosten`}
+        schluessel={(p) => <SchluesselWahl objekt={Number(objekt)} jahr={jahr} p={p} onChanged={(t) => { setInfo(t); laden(); }} anteile={(k) => {
+          const m: Record<number, number> = {};
+          for (const r of erg) for (const z of r.zeilen) if (z.pos.konto_id === k) m[r.nutzer.einheit_id] = (m[r.nutzer.einheit_id] ?? 0) + z.betrag;
+          return m; }} />} />}
 
       <section className="card">
         <div className="card-head"><h2>Ergebnis je Mieter</h2></div>

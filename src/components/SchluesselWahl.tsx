@@ -25,11 +25,12 @@ export function SchluesselWahl({ objekt, jahr, p, anteile, onChanged }: {
           ON CONFLICT (einheit_id, jahr, buchungskonto_id) DO UPDATE SET menge = excluded.menge`, [eid, jahr, p.konto_id, b]);
       }
     }
-    await db.execute(`INSERT INTO objekt_schluessel (objekt_id, buchungskonto_id, schluessel) VALUES ($1, $2, $3)
-      ON CONFLICT (objekt_id, buchungskonto_id) DO UPDATE SET schluessel = excluded.schluessel`, [objekt, p.konto_id, neu]);
+    // Gilt nur für dieses Abrechnungsjahr; andere Jahre behalten ihren eigenen Schlüssel
+    await db.execute(`INSERT INTO objekt_schluessel_jahr (objekt_id, jahr, buchungskonto_id, schluessel) VALUES ($1, $2, $3, $4)
+      ON CONFLICT (objekt_id, jahr, buchungskonto_id) DO UPDATE SET schluessel = excluded.schluessel`, [objekt, jahr, p.konto_id, neu]);
     onChanged(neu === 'Summe'
-      ? `${p.name}: Verteilung jetzt manuell. Die bisherigen Anteile stehen unten unter „Beträge je Einheit“ und lassen sich dort ändern.`
-      : `${p.name}: Verteilung jetzt nach ${schluesselText(neu)}.`);
+      ? `${p.name}: Verteilung für ${jahr} jetzt manuell. Die bisherigen Anteile stehen unter „Beträge je Einheit“ und lassen sich dort ändern.`
+      : `${p.name}: Verteilung für ${jahr} jetzt nach ${schluesselText(neu)}.`);
   }
   return (
     <select className="cell" value={p.schluessel} onChange={(e) => wechseln(e.target.value)} title="Verteilung dieser Kostenposition ändern">
