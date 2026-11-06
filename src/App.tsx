@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { HashRouter, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import {
   AlarmClock, Banknote, CalendarClock, Bell, Building2, Calendar, ChevronRight, CircleCheck, Columns3, Contact, CreditCard, FolderOpen, LayoutDashboard, Landmark, Lock,
@@ -10,6 +10,7 @@ import { OP_SQL } from './logic/soll';
 import { Sperre, SPERREN } from './components/Sperre';
 import { Logo } from './components/Logo';
 import { KiAssistent } from './components/KiAssistent';
+import { ModalHelfer } from './components/ModalHelfer';
 import { DashboardPage } from './pages/Dashboard';
 import { ObjektDetailPage, ObjektePage } from './pages/Objekte';
 import { FirmenPage, PersonenPage } from './pages/Personen';
@@ -103,7 +104,16 @@ function NavGroup({ g, kompakt }: { g: Group; kompakt: boolean }) {
 function GlobalSearch() {
   const [q, setQ] = useState('');
   const [res, setRes] = useState<Row[]>([]);
+  const [pos, setPos] = useState(0);
+  const feld = useRef<HTMLInputElement>(null);
   const nav = useNavigate();
+  const mac = typeof navigator !== 'undefined' && /Mac/.test(navigator.platform);
+  // Strg+K bzw. ⌘K springt in die Suche
+  useEffect(() => {
+    const f = (e: KeyboardEvent) => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); feld.current?.focus(); feld.current?.select(); } };
+    window.addEventListener('keydown', f); return () => window.removeEventListener('keydown', f);
+  }, []);
+  const oeffnen = (r: Row) => { nav(r.ziel); setQ(''); setRes([]); feld.current?.blur(); };
   useEffect(() => {
     const t = q.trim();
     if (t.length < 2) { setRes([]); return; }
@@ -116,16 +126,23 @@ function GlobalSearch() {
         UNION ALL SELECT p.rolle, ${personLabel('p')}, COALESCE(p.email, p.telefon, ''), CASE p.rolle WHEN 'Eigentümer' THEN '/eigentuemer' ELSE '/mieter' END FROM personen p
           WHERE p.vorname LIKE $1 OR p.nachname LIKE $1 OR p.firma LIKE $1 OR p.email LIKE $1
         UNION ALL SELECT 'Firma', f.name, COALESCE(f.gewerk, ''), '/firmen' FROM firmen f WHERE f.name LIKE $1 OR f.gewerk LIKE $1
-      ) LIMIT 12`, [like]).then(setRes);
+      ) LIMIT 12`, [like]).then((r) => { setRes(r); setPos(0); });
   }, [q]);
   return (
     <div className="gsearch">
       <Search size={17} />
-      <input placeholder="Suchen …" value={q} onChange={(e) => setQ(e.target.value)} onBlur={() => setTimeout(() => setRes([]), 150)} />
+      <input ref={feld} placeholder="Suchen …" value={q} onChange={(e) => setQ(e.target.value)} onBlur={() => setTimeout(() => setRes([]), 150)}
+        onKeyDown={(e) => {
+          if (e.key === 'ArrowDown') { e.preventDefault(); setPos((p) => Math.min(p + 1, res.length - 1)); }
+          else if (e.key === 'ArrowUp') { e.preventDefault(); setPos((p) => Math.max(p - 1, 0)); }
+          else if (e.key === 'Enter' && res[pos]) oeffnen(res[pos]);
+          else if (e.key === 'Escape') { setQ(''); setRes([]); feld.current?.blur(); }
+        }} />
+      {!q && <kbd className="gsearch-kbd">{mac ? '⌘' : 'Strg'} K</kbd>}
       {res.length > 0 && (
         <div className="gsearch-res">
           {res.map((r, i) => (
-            <button key={i} onMouseDown={() => { nav(r.ziel); setQ(''); setRes([]); }}>
+            <button key={i} className={i === pos ? 'an' : ''} onMouseEnter={() => setPos(i)} onMouseDown={() => oeffnen(r)}>
               <span className="pill">{r.art}</span><b>{r.text}</b><span className="muted small">{r.sub}</span>
             </button>))}
         </div>)}
@@ -248,6 +265,7 @@ function Rahmen() {
             </Routes>
             </Seite>
             <KiAssistent />
+            <ModalHelfer />
           </main>
         </div>
       </div>

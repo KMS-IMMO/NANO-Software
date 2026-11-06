@@ -179,7 +179,7 @@ export function EntityTable({ title, table, fields, listSql, listParams = [], fi
         <div className="modal-bg" onClick={() => setEditing(null)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <h3>{editing.id ? `${title}: bearbeiten` : `${title}: neu anlegen`}</h3>
-            <div className="form">
+            <div className="form" onKeyDown={(e) => { if (e.key === 'Enter' && !(e.target instanceof HTMLTextAreaElement) && !(e.target instanceof HTMLButtonElement)) { e.preventDefault(); save(); } }}>
               {formFields.map((f) => (
                 <label key={f.key} className={f.wide || f.type === 'textarea' ? 'wide' : ''}>
                   <span>{f.label}{f.required ? ' *' : ''}</span>
