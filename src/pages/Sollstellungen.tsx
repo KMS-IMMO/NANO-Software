@@ -24,12 +24,17 @@ export function SollstellungenPage() {
   const [info, setInfo] = useState('');
   const [neu, setNeu] = useState<Row | null>(null);
   const [grenze, setGrenze] = useState(14);
+  const [wahl, setWahl] = useState<Set<number>>(new Set());
+  const [sicher, setSicher] = useState(false);
 
   useEffect(() => { db.select('SELECT id, name FROM objekte ORDER BY name').then(setObjekte); mahnenAbTage().then(setGrenze); }, []);
   const load = async () => {
     const w = [`substr(s.monat, 1, 7) BETWEEN $1 AND $2`];
     if (objekt !== '') w.push(`o.id = ${Number(objekt)}`);
-    setRows(await db.select(`SELECT * FROM (${OP_SQL} WHERE ${w.join(' AND ')}) ORDER BY monat, objekt, einheit, art`, [von, bis]));
+    const r = await db.select(`SELECT * FROM (${OP_SQL} WHERE ${w.join(' AND ')}) ORDER BY monat, objekt, einheit, art`, [von, bis]);
+    setRows(r);
+    const da = new Set(r.map((x) => Number(x.id)));
+    setWahl((alt) => new Set([...alt].filter((id) => da.has(id))));
   };
   useEffect(() => { load(); }, [von, bis, objekt]);
 
@@ -47,6 +52,18 @@ export function SollstellungenPage() {
   async function loeschen(r: Row) {
     if (r.bezahlt > 0.005) { setInfo('Auf diesen Posten ist schon eine Zahlung gebucht. Bitte zuerst die Zahlung lösen.'); return; }
     await remove('sollstellungen', r.id); load();
+  }
+
+  const umschalten = (ids: number[], an: boolean) => { setSicher(false); setWahl((alt) => { const n = new Set(alt); ids.forEach((id) => (an ? n.add(id) : n.delete(id))); return n; }); };
+  async function mehrereLoeschen() {
+    if (!sicher) { setSicher(true); return; }
+    const gewaehlt = rows.filter((r) => wahl.has(Number(r.id)));
+    const frei = gewaehlt.filter((r) => !(r.bezahlt > 0.005));
+    for (const r of frei) await remove('sollstellungen', r.id);
+    const rest = gewaehlt.length - frei.length;
+    setInfo(`${frei.length} Posten gelöscht.` + (rest ? ` ${rest} mit gebuchter Zahlung wurden nicht gelöscht. Bitte dort zuerst die Zahlung lösen.` : ''));
+    setWahl(new Set(rest ? gewaehlt.filter((r) => r.bezahlt > 0.005).map((r) => Number(r.id)) : []));
+    setSicher(false); load();
   }
 
   const monate = useMemo(() => {
@@ -70,6 +87,14 @@ export function SollstellungenPage() {
         <button onClick={() => setNeu({ monat: heute().slice(0, 7), art: 'Kaltmiete' })} disabled={objekt === ''} title={objekt === '' ? 'Bitte zuerst eine Liegenschaft wählen' : ''}><Plus size={16} />Posten hinzufügen</button>
       </section>
       {info && <p className="info">{info}</p>}
+      {wahl.size > 0 && (
+        <div className="auswahl-leiste">
+          <b>{wahl.size} ausgewählt</b>
+          <span className="muted small">· zusammen {eur(rows.filter((r) => wahl.has(Number(r.id))).reduce((a, r) => a + r.betrag, 0))}</span>
+          <span className="grow" />
+          <button onClick={() => { setWahl(new Set()); setSicher(false); }}>Auswahl aufheben</button>
+          <button className="danger" onClick={mehrereLoeschen}><Trash2 size={15} />{sicher ? `Wirklich ${wahl.size} Posten löschen?` : 'Ausgewählte löschen'}</button>
+        </div>)}
       <div className="kpis">
         <div className="kpi"><span>Soll im Zeitraum</span><b>{eur(summe)}</b><small>{rows.length} Posten</small></div>
         <div className="kpi"><span>Bezahlt</span><b className="pos">{eur(bezahlt)}</b></div>
@@ -79,15 +104,18 @@ export function SollstellungenPage() {
       {monate.length === 0 && <section className="card"><p className="muted">Keine Sollstellungen im Zeitraum. Klicke auf „Aus Stammdaten erzeugen“.</p></section>}
       {monate.map(([m, liste]) => {
         const s = liste.reduce((a, r) => a + r.betrag, 0);
+        const ids = liste.map((r) => Number(r.id));
+        const anz = ids.filter((id) => wahl.has(id)).length;
         return (
           <section key={m} className="card">
             <div className="card-head"><h2>{monatName(m)}</h2><span className="muted">monatlich zu zahlen <b>{eur(s)}</b></span></div>
             <div className="tablewrap"><table className="list">
-              <thead><tr><th>Einheit</th><th>Mieter / Eigentümer</th><th>Art</th><th>Fällig</th><th className="num">Betrag</th><th className="num">Bezahlt</th><th>Status</th><th /></tr></thead>
+              <thead><tr><th className="wahl"><input type="checkbox" title="Alle in diesem Monat auswählen" checked={anz === ids.length} ref={(el) => { if (el) el.indeterminate = anz > 0 && anz < ids.length; }} onChange={(e) => umschalten(ids, e.target.checked)} /></th><th>Einheit</th><th>Mieter / Eigentümer</th><th>Art</th><th>Fällig</th><th className="num">Betrag</th><th className="num">Bezahlt</th><th>Status</th><th /></tr></thead>
               <tbody>{liste.map((r) => {
                 const st = postenStatus(r, grenze);
                 return (
-                  <tr key={r.id}>
+                  <tr key={r.id} className={wahl.has(Number(r.id)) ? 'gewaehlt' : ''}>
+                    <td className="wahl"><input type="checkbox" checked={wahl.has(Number(r.id))} onChange={(e) => umschalten([Number(r.id)], e.target.checked)} /></td>
                     <td>{!fix && <span className="muted small">{r.objekt} · </span>}{r.einheit}</td>
                     <td>{r.schuldner || <span className="muted">–</span>}</td>
                     <td>{r.art}</td>
