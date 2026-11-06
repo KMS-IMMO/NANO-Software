@@ -8,7 +8,7 @@ import { db, mehrplatz, sicherheit, type Row } from './db';
 import { personLabel } from './db/labels';
 import { OP_SQL } from './logic/soll';
 import { Sperre, SPERREN } from './components/Sperre';
-import { Logo } from './components/Logo';
+import { KopfNetz, Logo } from './components/Logo';
 import { KiAssistent } from './components/KiAssistent';
 import { ModalHelfer } from './components/ModalHelfer';
 import { DashboardPage } from './pages/Dashboard';
@@ -164,6 +164,7 @@ function Topbar() {
   }, [loc.pathname]);
   return (
     <header className="topbar">
+      <KopfNetz />
       <GlobalSearch />
       <NavLink to="/offene-posten" className="bell" title={`${offen} überfällige Posten`}>
         <Bell size={20} />{offen > 0 && <span className="dot">{offen > 99 ? '99+' : offen}</span>}
