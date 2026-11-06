@@ -23,3 +23,12 @@ export const wid = (objektNr: string | number | null | undefined, lfdNr: number 
 
 /** Arten der Warmwasserversorgung einer Liegenschaft */
 export const WARMWASSER = ['Zentral über die Heizung', 'Durchlauferhitzer (elektrisch)', 'Gas-Durchlauferhitzer / Therme', 'Boiler / Speicher je Wohnung', 'Fernwärme', 'Wärmepumpe', 'Solarthermie mit Zentralspeicher', 'Sonstige'];
+
+/** Name des aktuellen Mieters, sonst des Eigentümers einer Einheit (für Auswahllisten: „WE 01 · Müller, Anna“) */
+export const einheitPerson = (e = 'e') => `COALESCE(
+  (SELECT ${personLabel('pm')} FROM mietvertraege vm JOIN personen pm ON pm.id = vm.mieter_id
+    WHERE vm.einheit_id = ${e}.id AND vm.beginn <= date('now', '+3 months') AND (vm.ende IS NULL OR vm.ende >= date('now')) ORDER BY vm.beginn DESC LIMIT 1),
+  (SELECT ${personLabel('pe')} FROM eigentum ee JOIN personen pe ON pe.id = ee.person_id
+    WHERE ee.einheit_id = ${e}.id AND (ee.bis IS NULL OR ee.bis >= date('now')) ORDER BY ee.anteil DESC LIMIT 1))`;
+/** „WE 01 · Müller, Anna“ */
+export const einheitLabel = (e = 'e') => `${e}.nummer || COALESCE(' · ' || ${einheitPerson(e)}, '')`;

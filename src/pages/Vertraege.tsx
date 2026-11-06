@@ -6,12 +6,12 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { EntityTable, datum, eur, type Field } from '../components/EntityTable';
 import { db, type Row } from '../db';
 import { useObjektKontext } from '../logic/objektKontext';
-import { personLabel, personOptions } from '../db/labels';
+import { einheitLabel, personLabel, personOptions } from '../db/labels';
 import { mieteImMonat } from '../logic/soll';
 
 const vertragFields: Field[] = [
   { key: 'einheit_id', label: 'Einheit', type: 'select', required: true, wide: true,
-    optionsSql: `SELECT e.id AS value, o.name || ' – ' || e.nummer || ' (' || e.typ || ')' AS label FROM einheiten e JOIN objekte o ON o.id = e.objekt_id ORDER BY label` },
+    optionsSql: `SELECT e.id AS value, o.name || ' – ' || ${einheitLabel('e')} || ' (' || e.typ || ')' AS label FROM einheiten e JOIN objekte o ON o.id = e.objekt_id ORDER BY o.name, e.nummer` },
   { key: 'mieter_id', label: 'Mieter', type: 'select', required: true, optionsSql: personOptions('Mieter') },
   { key: 'mieter2_id', label: '2. Mieter', type: 'select', optionsSql: personOptions('Mieter'), hideInTable: true },
   { key: 'beginn', label: 'Beginn', type: 'date', required: true },
@@ -41,7 +41,7 @@ export function VertraegePage() {
   const nav = useNavigate();
   const fix = useObjektKontext();
   const felder = fix ? vertragFields.map((f) => f.key === 'einheit_id'
-    ? { ...f, optionsSql: `SELECT id AS value, nummer || ' (' || typ || ')' AS label FROM einheiten WHERE objekt_id = ${fix.id} ORDER BY nummer` } : f) : vertragFields;
+    ? { ...f, optionsSql: `SELECT e.id AS value, ${einheitLabel('e')} || ' (' || e.typ || ')' AS label FROM einheiten e WHERE e.objekt_id = ${fix.id} ORDER BY e.nummer` } : f) : vertragFields;
   return (
     <EntityTable
       title={fix ? 'Mieter und Mietverträge' : 'Mietverträge'}

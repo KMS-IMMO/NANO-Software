@@ -2,15 +2,14 @@
 // für einen Zeitraum aus den Stammdaten erzeugen, einzeln bearbeiten, löschen oder von Hand anlegen.
 import { useEffect, useMemo, useState } from 'react';
 import { CalendarRange, Plus, Trash2 } from 'lucide-react';
-import { db, insert, remove, update, type Row } from '../db';
-import { personLabel } from '../db/labels';
+import { db, remove, update, type Row } from '../db';
 import { useObjektKontext } from '../logic/objektKontext';
 import { eur } from '../components/EntityTable';
+import { SollstellungNeu } from '../components/SollstellungNeu';
 import { OP_SQL, postenStatus, sollStellen, zahlungBuchen, mahnenAbTage } from '../logic/soll';
 
 const heute = () => new Date().toISOString().slice(0, 10);
 const zahl = (s: string) => Number(String(s).replace(/\./g, '').replace(',', '.')) || 0;
-const ARTEN = ['Kaltmiete', 'NK', 'HK', 'USt', 'Hausgeld', 'Rücklage', 'Sonderumlage', 'Nachzahlung', 'Sonstiges'];
 const monatName = (m: string) => /^\d{4}-\d{2}$/.test(m) ? new Date(Number(m.slice(0, 4)), Number(m.slice(5, 7)) - 1).toLocaleDateString('de-DE', { month: 'long', year: 'numeric' }) : m;
 export const STATUS_KLASSE: Record<string, string> = { bezahlt: 'aktiv', erwartet: 'erwartet', 'fällig': 'faellig', mahnen: 'mahnen', gemahnt: 'gemahnt' };
 
@@ -24,18 +23,18 @@ export function SollstellungenPage() {
   const [rows, setRows] = useState<Row[]>([]);
   const [info, setInfo] = useState('');
   const [neu, setNeu] = useState<Row | null>(null);
-  const [einheiten, setEinheiten] = useState<Row[]>([]);
   const [grenze, setGrenze] = useState(14);
+  const [wahl, setWahl] = useState<Set<number>>(new Set());
+  const [sicher, setSicher] = useState(false);
 
   useEffect(() => { db.select('SELECT id, name FROM objekte ORDER BY name').then(setObjekte); mahnenAbTage().then(setGrenze); }, []);
   const load = async () => {
     const w = [`substr(s.monat, 1, 7) BETWEEN $1 AND $2`];
     if (objekt !== '') w.push(`o.id = ${Number(objekt)}`);
-    setRows(await db.select(`SELECT * FROM (${OP_SQL} WHERE ${w.join(' AND ')}) ORDER BY monat, objekt, einheit, art`, [von, bis]));
-    if (objekt !== '') setEinheiten(await db.select(`SELECT e.id, e.nummer,
-        (SELECT v.mieter_id FROM mietvertraege v WHERE v.einheit_id = e.id AND (v.ende IS NULL OR v.ende >= date('now')) ORDER BY v.beginn DESC LIMIT 1) AS mieter,
-        (SELECT ei.person_id FROM eigentum ei WHERE ei.einheit_id = e.id AND (ei.bis IS NULL OR ei.bis >= date('now')) ORDER BY ei.anteil DESC LIMIT 1) AS eigentuemer
-      FROM einheiten e WHERE e.objekt_id = $1 ORDER BY e.nummer`, [objekt]));
+    const r = await db.select(`SELECT * FROM (${OP_SQL} WHERE ${w.join(' AND ')}) ORDER BY monat, objekt, einheit, art`, [von, bis]);
+    setRows(r);
+    const da = new Set(r.map((x) => Number(x.id)));
+    setWahl((alt) => new Set([...alt].filter((id) => da.has(id))));
   };
   useEffect(() => { load(); }, [von, bis, objekt]);
 
@@ -54,13 +53,17 @@ export function SollstellungenPage() {
     if (r.bezahlt > 0.005) { setInfo('Auf diesen Posten ist schon eine Zahlung gebucht. Bitte zuerst die Zahlung lösen.'); return; }
     await remove('sollstellungen', r.id); load();
   }
-  async function anlegen() {
-    if (!neu?.einheit_id || !neu.monat || !neu.art || !zahl(String(neu.betrag ?? ''))) { setInfo('Bitte Einheit, Monat, Art und Betrag angeben.'); return; }
-    try {
-      await insert('sollstellungen', { einheit_id: Number(neu.einheit_id), person_id: neu.person_id ? Number(neu.person_id) : null, monat: neu.monat, art: neu.art,
-        betrag: zahl(String(neu.betrag)), faellig: neu.faellig || `${neu.monat}-03` });
-      setNeu(null); setInfo('Posten angelegt.'); load();
-    } catch { setInfo('Diesen Posten gibt es für Einheit, Monat und Art schon. Bitte den vorhandenen bearbeiten.'); }
+
+  const umschalten = (ids: number[], an: boolean) => { setSicher(false); setWahl((alt) => { const n = new Set(alt); ids.forEach((id) => (an ? n.add(id) : n.delete(id))); return n; }); };
+  async function mehrereLoeschen() {
+    if (!sicher) { setSicher(true); return; }
+    const gewaehlt = rows.filter((r) => wahl.has(Number(r.id)));
+    const frei = gewaehlt.filter((r) => !(r.bezahlt > 0.005));
+    for (const r of frei) await remove('sollstellungen', r.id);
+    const rest = gewaehlt.length - frei.length;
+    setInfo(`${frei.length} Posten gelöscht.` + (rest ? ` ${rest} mit gebuchter Zahlung wurden nicht gelöscht. Bitte dort zuerst die Zahlung lösen.` : ''));
+    setWahl(new Set(rest ? gewaehlt.filter((r) => r.bezahlt > 0.005).map((r) => Number(r.id)) : []));
+    setSicher(false); load();
   }
 
   const monate = useMemo(() => {
@@ -69,8 +72,6 @@ export function SollstellungenPage() {
     return [...m.entries()];
   }, [rows]);
   const summe = rows.reduce((a, r) => a + r.betrag, 0), bezahlt = rows.reduce((a, r) => a + Math.min(r.bezahlt, r.betrag), 0);
-  const [personen, setPersonen] = useState<Row[]>([]);
-  useEffect(() => { if (neu) db.select(`SELECT p.id, ${personLabel('p')} AS name FROM personen p ORDER BY name`).then(setPersonen); }, [!!neu]);
 
   return (
     <>
@@ -86,6 +87,14 @@ export function SollstellungenPage() {
         <button onClick={() => setNeu({ monat: heute().slice(0, 7), art: 'Kaltmiete' })} disabled={objekt === ''} title={objekt === '' ? 'Bitte zuerst eine Liegenschaft wählen' : ''}><Plus size={16} />Posten hinzufügen</button>
       </section>
       {info && <p className="info">{info}</p>}
+      {wahl.size > 0 && (
+        <div className="auswahl-leiste">
+          <b>{wahl.size} ausgewählt</b>
+          <span className="muted small">· zusammen {eur(rows.filter((r) => wahl.has(Number(r.id))).reduce((a, r) => a + r.betrag, 0))}</span>
+          <span className="grow" />
+          <button onClick={() => { setWahl(new Set()); setSicher(false); }}>Auswahl aufheben</button>
+          <button className="danger" onClick={mehrereLoeschen}><Trash2 size={15} />{sicher ? `Wirklich ${wahl.size} Posten löschen?` : 'Ausgewählte löschen'}</button>
+        </div>)}
       <div className="kpis">
         <div className="kpi"><span>Soll im Zeitraum</span><b>{eur(summe)}</b><small>{rows.length} Posten</small></div>
         <div className="kpi"><span>Bezahlt</span><b className="pos">{eur(bezahlt)}</b></div>
@@ -95,15 +104,18 @@ export function SollstellungenPage() {
       {monate.length === 0 && <section className="card"><p className="muted">Keine Sollstellungen im Zeitraum. Klicke auf „Aus Stammdaten erzeugen“.</p></section>}
       {monate.map(([m, liste]) => {
         const s = liste.reduce((a, r) => a + r.betrag, 0);
+        const ids = liste.map((r) => Number(r.id));
+        const anz = ids.filter((id) => wahl.has(id)).length;
         return (
           <section key={m} className="card">
             <div className="card-head"><h2>{monatName(m)}</h2><span className="muted">monatlich zu zahlen <b>{eur(s)}</b></span></div>
             <div className="tablewrap"><table className="list">
-              <thead><tr><th>Einheit</th><th>Mieter / Eigentümer</th><th>Art</th><th>Fällig</th><th className="num">Betrag</th><th className="num">Bezahlt</th><th>Status</th><th /></tr></thead>
+              <thead><tr><th className="wahl"><input type="checkbox" title="Alle in diesem Monat auswählen" checked={anz === ids.length} ref={(el) => { if (el) el.indeterminate = anz > 0 && anz < ids.length; }} onChange={(e) => umschalten(ids, e.target.checked)} /></th><th>Einheit</th><th>Mieter / Eigentümer</th><th>Art</th><th>Fällig</th><th className="num">Betrag</th><th className="num">Bezahlt</th><th>Status</th><th /></tr></thead>
               <tbody>{liste.map((r) => {
                 const st = postenStatus(r, grenze);
                 return (
-                  <tr key={r.id}>
+                  <tr key={r.id} className={wahl.has(Number(r.id)) ? 'gewaehlt' : ''}>
+                    <td className="wahl"><input type="checkbox" checked={wahl.has(Number(r.id))} onChange={(e) => umschalten([Number(r.id)], e.target.checked)} /></td>
                     <td>{!fix && <span className="muted small">{r.objekt} · </span>}{r.einheit}</td>
                     <td>{r.schuldner || <span className="muted">–</span>}</td>
                     <td>{r.art}</td>
@@ -120,23 +132,7 @@ export function SollstellungenPage() {
             </table></div>
           </section>);
       })}
-      {neu && (
-        <div className="modal-bg" onClick={() => setNeu(null)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <h3>Sollstellung hinzufügen</h3>
-            <div className="form">
-              <label><span>Einheit *</span><select value={neu.einheit_id ?? ''} onChange={(e) => { const x = einheiten.find((u) => u.id === Number(e.target.value)); setNeu({ ...neu, einheit_id: e.target.value, person_id: x?.mieter ?? x?.eigentuemer ?? '' }); }}>
-                <option value="">– bitte wählen –</option>{einheiten.map((u) => <option key={u.id} value={u.id}>{u.nummer}</option>)}</select></label>
-              <label><span>Mieter / Eigentümer</span><select value={neu.person_id ?? ''} onChange={(e) => setNeu({ ...neu, person_id: e.target.value })}>
-                <option value="">–</option>{personen.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
-              <label><span>Monat *</span><input type="month" value={neu.monat} onChange={(e) => setNeu({ ...neu, monat: e.target.value })} /></label>
-              <label><span>Art *</span><select value={neu.art} onChange={(e) => setNeu({ ...neu, art: e.target.value })}>{ARTEN.map((a) => <option key={a}>{a}</option>)}</select></label>
-              <label><span>Betrag € *</span><input inputMode="decimal" value={neu.betrag ?? ''} onChange={(e) => setNeu({ ...neu, betrag: e.target.value })} /></label>
-              <label><span>Fällig am</span><input type="date" value={neu.faellig ?? ''} onChange={(e) => setNeu({ ...neu, faellig: e.target.value })} /></label>
-            </div>
-            <div className="row end"><span className="grow" /><button onClick={() => setNeu(null)}>Abbrechen</button><button className="primary" onClick={anlegen}>Anlegen</button></div>
-          </div>
-        </div>)}
+      {neu && objekt !== '' && <SollstellungNeu objektId={Number(objekt)} onClose={() => setNeu(null)} onSaved={(t) => { setNeu(null); setInfo(t); load(); }} />}
     </>
   );
 }
