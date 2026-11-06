@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { HashRouter, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import {
-  AlarmClock, Banknote, Bell, Building2, Calendar, ChevronRight, CircleCheck, Columns3, Contact, CreditCard, FolderOpen, LayoutDashboard, Landmark, Lock,
+  AlarmClock, Banknote, CalendarClock, Bell, Building2, Calendar, ChevronRight, CircleCheck, Columns3, Contact, CreditCard, FolderOpen, LayoutDashboard, Landmark, Lock,
   Network, Receipt, Search, Settings, SquarePen, UserCog, Users,
 } from 'lucide-react';
 import { db, sicherheit, type Row } from './db';
@@ -26,6 +26,8 @@ import { AuswertungPage, BerichtePage, JournalPage, RegelnPage } from './pages/B
 import { ObjektAssistentPage } from './pages/ObjektAssistent';
 import { SollstellungenPage } from './pages/Sollstellungen';
 import { autoAbruf, BANK_INFO } from './logic/bankAbruf';
+import { wiederkehrendErzeugen } from './logic/wiederkehrend';
+import { FristenPage } from './pages/Fristen';
 import { ErinnerungenPage, KalenderPage, KontaktePage, NotizenPage, TicketBoardsPage, TodoPage } from './pages/Produktiv';
 
 type Item = { to: string; label: string; icon?: ReactNode; sub?: string };
@@ -66,6 +68,7 @@ const NAV: Abschnitt[] = [
   { titel: 'Produktivität', eintraege: [
     { to: '/kalender', label: 'Kalender', icon: <Calendar size={I} /> },
     { to: '/erinnerungen', label: 'Erinnerungen', icon: <AlarmClock size={I} /> },
+    { to: '/fristen', label: 'Fristen', sub: 'Wartung, Prüfung, Verträge', icon: <CalendarClock size={I} /> },
     { to: '/tickets', label: 'Ticket-Boards', sub: 'Board-Verwaltung', icon: <Columns3 size={I} /> },
     { to: '/todo', label: 'Todo', sub: 'Aufgaben', icon: <CircleCheck size={I} /> },
     { to: '/notizen', label: 'Notizen', icon: <SquarePen size={I} /> },
@@ -178,7 +181,10 @@ function Rahmen() {
   useEffect(() => {
     const f = (e: Event) => { const t = String((e as CustomEvent).detail); setHinweis((h) => [...h, t]); setTimeout(() => setHinweis((h) => h.filter((x) => x !== t)), 12000); };
     window.addEventListener(BANK_INFO, f);
-    const t = setTimeout(() => { autoAbruf(); }, 1500);
+    const t = setTimeout(() => {
+      autoAbruf();
+      wiederkehrendErzeugen().then((n) => n && f(new CustomEvent(BANK_INFO, { detail: `${n} wiederkehrende Rechnung${n > 1 ? 'en' : ''} angelegt` }))).catch(() => {});
+    }, 1500);
     return () => { window.removeEventListener(BANK_INFO, f); clearTimeout(t); };
   }, []);
   return (
@@ -195,7 +201,7 @@ function Rahmen() {
               </div>))}
             <div className="nav-unten"><NavEintrag n={{ to: '/einstellungen', label: 'Einstellungen', icon: <Settings size={I} /> }} kompakt={kompakt} /></div>
           </nav>
-          {hinweis.length > 0 && <div className="toasts">{hinweis.map((t) => <NavLink key={t} to="/bank" className="toast" onClick={() => setHinweis((h) => h.filter((x) => x !== t))}><Landmark size={16} />{t}</NavLink>)}</div>}
+          {hinweis.length > 0 && <div className="toasts">{hinweis.map((t) => <NavLink key={t} to={t.includes("wiederkehrend") ? "/journal" : "/bank"} className="toast" onClick={() => setHinweis((h) => h.filter((x) => x !== t))}><Landmark size={16} />{t}</NavLink>)}</div>}
           <div className="side-foot"><Landmark size={13} /> KMS Immobilienverwaltung · Version 0.2</div>
         </aside>
         <div className="content">
@@ -234,6 +240,7 @@ function Rahmen() {
               <Route path="/kontakte" element={<KontaktePage />} />
               <Route path="/kalender" element={<KalenderPage />} />
               <Route path="/erinnerungen" element={<ErinnerungenPage />} />
+              <Route path="/fristen" element={<FristenPage />} />
               <Route path="/tickets" element={<TicketBoardsPage />} />
               <Route path="/todo" element={<TodoPage />} />
               <Route path="/notizen" element={<NotizenPage />} />

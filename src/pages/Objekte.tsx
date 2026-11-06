@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, BarChart3, CalendarRange, BookOpen, Building2, ClipboardList, Coins, DoorOpen, FileSignature, FileText, FolderOpen, Gavel, Home, Landmark, Layers, ListChecks, Mail,
+import { ArrowLeft, BarChart3, CalendarClock, CalendarRange, BookOpen, Building2, ClipboardList, Coins, DoorOpen, FileSignature, FileText, FolderOpen, Gavel, Home, Landmark, Layers, ListChecks, Mail,
   Maximize2, PiggyBank, Scale, Trash2, User, Users, Wallet, Wrench } from 'lucide-react';
 import { BeschluesseTab, RuecklagenTab, VorgaengeTab, WirtschaftsplanTab } from './Weg';
 import { EntityTable, datum, eur, num, type Field } from '../components/EntityTable';
@@ -16,6 +16,7 @@ import { MahnungenPage } from './Mahnungen';
 import { NebenkostenPage } from './Nebenkosten';
 import { EigentuemerAbrechnungPage, WegAbrechnungPage } from './Jahresabrechnungen';
 import { DokumentePage } from './Dokumente';
+import { FristenPage } from './Fristen';
 import { db, type Row } from '../db';
 import { AKTIV, EINHEIT_TYPEN, SCHLUESSEL, WARMWASSER, personLabel, personOptions, widSql } from '../db/labels';
 
@@ -96,6 +97,7 @@ const ebenen = (weg: boolean): Ebene[] => [
   { titel: 'Verwaltung', punkte: [
     weg && { slug: 'beschluesse', label: 'Beschlüsse', icon: FileSignature },
     { slug: 'instandhaltung', label: 'Instandhaltung', icon: Wrench },
+    { slug: 'fristen', label: 'Fristen', icon: CalendarClock },
     weg && { slug: 'beirat', label: 'Verwaltungsbeirat', icon: Gavel },
     { slug: 'schluessel', label: 'Umlageschlüssel', icon: Scale },
     { slug: 'dokumente', label: 'Dokumente', icon: FolderOpen }] },
@@ -187,6 +189,7 @@ function Bereich({ slug, rest, o, sum, weg, reload }: { slug: string; rest: stri
     case 'beirat': return <BeiratTab objektId={id} />;
     case 'schluessel': return <SchluesselTab objektId={id} weg={weg} />;
     case 'dokumente': return <DokumentePage />;
+    case 'fristen': return <FristenPage />;
     default: return <p className="muted">Diese Seite gibt es nicht.</p>;
   }
 }

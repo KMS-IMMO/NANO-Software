@@ -7,6 +7,7 @@ import { Paperclip } from 'lucide-react';
 import { RechnungErfassen } from '../components/RechnungErfassen';
 import { oeffnen } from '../lib/dateien';
 import { SCHLUESSEL, kontoOptions } from '../db/labels';
+import { DATEV_EINST } from '../logic/datev';
 import { KI_MODELLE, KI_STANDARD, kiEinstellungen, kiSchluesselSpeichern } from '../logic/kiAgent';
 
 const haken = (v: any) => (v ? '✓' : '');
@@ -90,6 +91,7 @@ const EINST: [string, string][] = [
   ['mahnen_ab_tage', 'Offene Posten auf „mahnen“ setzen ab (Tage nach Fälligkeit, Standard 14)'],
   ['ablage_pfad', 'Ablageordner für Dokumente (später NAS)'],
   ['fints_produkt_id', 'FinTS-Produkt-ID für den Bankabruf (kostenlos bei fints.org)'],
+  ...DATEV_EINST.map(([k, l]): [string, string] => [k, l]),
 ];
 
 export function EinstellungenPage() {

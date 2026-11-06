@@ -606,4 +606,34 @@ CREATE TABLE chat (
   zeit TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
 );
 `,
+  // Migration 19: wiederkehrende Ausgaben (werden automatisch als Rechnung angelegt) und Fristen-Wächter
+  `
+CREATE TABLE wiederkehrend (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  objekt_id INTEGER NOT NULL REFERENCES objekte(id) ON DELETE CASCADE,
+  einheit_id INTEGER REFERENCES einheiten(id) ON DELETE SET NULL,
+  firma_id INTEGER REFERENCES firmen(id) ON DELETE SET NULL,
+  buchungskonto_id INTEGER NOT NULL REFERENCES buchungskonten(id),
+  betrag REAL NOT NULL,           -- brutto
+  text TEXT,
+  intervall INTEGER NOT NULL DEFAULT 1,   -- alle n Monate (1, 3, 6, 12)
+  naechste TEXT NOT NULL,         -- Datum der nächsten Rechnung
+  ende TEXT,
+  zahlungsziel INTEGER,           -- Tage, leer = 14
+  pausiert INTEGER NOT NULL DEFAULT 0
+);
+ALTER TABLE rechnungen ADD COLUMN wiederkehrend_id INTEGER REFERENCES wiederkehrend(id) ON DELETE SET NULL;
+CREATE TABLE fristen (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  titel TEXT NOT NULL,
+  art TEXT,                       -- Rauchmelder, Aufzug, Versicherung, ...
+  objekt_id INTEGER REFERENCES objekte(id) ON DELETE CASCADE,
+  faellig TEXT NOT NULL,
+  intervall_monate INTEGER,       -- leer = einmalig
+  vorlauf_tage INTEGER,           -- leer = 30
+  zustaendig TEXT,
+  notiz TEXT,
+  erledigt_am TEXT                -- nur bei einmaligen Fristen
+);
+`,
 ];

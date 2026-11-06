@@ -10,12 +10,16 @@ const heute = () => new Date().toISOString().slice(0, 10);
 const zahl = (s: string) => Number(String(s).replace(/\./g, '').replace(',', '.')) || 0;
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
-export function RechnungErfassen({ objektFest, onSaved }: { objektFest?: number; onSaved: (text: string) => void }) {
-  const [art, setArt] = useState<'Ausgabe' | 'Gutschrift'>('Ausgabe');
+export type RechnungVorlage = { datei?: File; umsatz?: Row };
+
+/** Mit `vorlage.umsatz` wird die Rechnung aus einem Bankumsatz erfasst: Betrag fest, bezahlt am Umsatztag, der Umsatz wird gleich zugeordnet. */
+export function RechnungErfassen({ objektFest, onSaved, vorlage }: { objektFest?: number; onSaved: (text: string) => void; vorlage?: RechnungVorlage }) {
+  const umsatz = vorlage?.umsatz;
+  const [art, setArt] = useState<'Ausgabe' | 'Gutschrift'>(umsatz && Number(umsatz.betrag) > 0 ? 'Gutschrift' : 'Ausgabe');
   const [konto, setKonto] = useState('');
   const [datum, setDatum] = useState(heute());
   const [nr, setNr] = useState('');
-  const [betrag, setBetrag] = useState('');
+  const [betrag, setBetrag] = useState(umsatz ? String(Math.abs(Number(umsatz.betrag))).replace('.', ',') : '');
   const [mitMwst, setMitMwst] = useState(true);
   const [satz, setSatz] = useState('19');
   const [objekt, setObjekt] = useState<number | ''>(objektFest ?? '');
@@ -25,7 +29,7 @@ export function RechnungErfassen({ objektFest, onSaved }: { objektFest?: number;
   const [firmaId, setFirmaId] = useState<number | null>(null);
   const [kontaktWahl, setKontaktWahl] = useState(false);
   const [faellig, setFaellig] = useState('');
-  const [bezahlt, setBezahlt] = useState('');
+  const [bezahlt, setBezahlt] = useState(umsatz?.datum ?? '');
   const [lohn, setLohn] = useState('');
   const [notiz, setNotiz] = useState('');
   const [datei, setDatei] = useState<File | null>(null);
@@ -79,8 +83,19 @@ export function RechnungErfassen({ objektFest, onSaved }: { objektFest?: number;
   useEffect(() => {
     db.select(`SELECT id AS value, nummer || ' ' || name AS label, hdl, hwl FROM buchungskonten WHERE art IN ('Aufwand') ORDER BY nummer`).then(setKonten);
     db.select('SELECT id, objekt_nr, name, strasse, plz, ort FROM objekte ORDER BY name').then(setObjekte);
-    db.select('SELECT id, name, gewerk FROM firmen ORDER BY name').then(setFirmen);
+    db.select('SELECT id, name, gewerk FROM firmen ORDER BY name').then((f) => { setFirmen(f); setFirmenDa(true); });
   }, []);
+  // Vorlage aus dem Bankumsatz: Beleg auslesen, sobald die Kontakte geladen sind; sonst Empfänger als Lieferant
+  const vorlageGelesen = useRef(false);
+  const [firmenDa, setFirmenDa] = useState(false);
+  useEffect(() => {
+    if (!vorlage || vorlageGelesen.current || !firmenDa) return;
+    vorlageGelesen.current = true;
+    (async () => {
+      if (vorlage.datei) await belegWaehlen(vorlage.datei);
+      if (umsatz?.gegenpartei) setLieferant((l) => l || String(umsatz.gegenpartei));
+    })();
+  }, [firmenDa]);
   useEffect(() => {
     if (objekt === '') { setEinheiten([]); return; }
     db.select('SELECT id, nummer, typ FROM einheiten WHERE objekt_id = $1 ORDER BY nummer', [objekt]).then(setEinheiten);
@@ -116,6 +131,8 @@ export function RechnungErfassen({ objektFest, onSaved }: { objektFest?: number;
     if (!konto || !datum || !brutto || objekt === '') { setFehler('Bitte Buchungskonto, Datum, Betrag und Immobilie ausfüllen.'); return; }
     const sp = (await gesperrt(Number(objekt), datum)) ?? (bezahlt ? await gesperrt(Number(objekt), bezahlt) : null);
     if (sp) { setFehler(sperrText(sp)); return; }
+    if (umsatz && Math.abs(brutto - Math.abs(Number(umsatz.betrag))) > 0.005) { setFehler(`Der Betrag muss dem Bankumsatz entsprechen (${eur(Math.abs(Number(umsatz.betrag)))}).`); return; }
+    if (umsatz && (art === 'Gutschrift') !== (Number(umsatz.betrag) > 0)) { setFehler(Number(umsatz.betrag) > 0 ? 'Ein Zahlungseingang ist eine Gutschrift.' : 'Eine Abbuchung ist eine Ausgabe, keine Gutschrift.'); return; }
     if (lohn && Math.abs(zahl(lohn)) > Math.abs(brutto) + 0.005) { setFehler('Der § 35a-Anteil kann nicht größer sein als der Rechnungsbetrag.'); return; }
     if (modus === 'eigen' && !gewaehlt.length) { setFehler('Bitte mindestens eine Einheit auswählen oder „Alle Einheiten“ nehmen.'); return; }
     if (modus === 'eigen' && Math.abs(summeEigen - brutto) > 0.005) { setFehler(`Die Beträge der Einheiten (${eur(summeEigen)}) ergeben nicht den Rechnungsbetrag (${eur(brutto)}).`); return; }
@@ -142,8 +159,9 @@ export function RechnungErfassen({ objektFest, onSaved }: { objektFest?: number;
         const rid = await insert('rechnungen', { ...basis, einheit_id: eid, betrag: r2(vz * b), anteil_lohn: lohn ? r2((zahl(lohn) * b) / brutto) : null });
         // Schon bezahlt (z. B. bar oder ohne Bankumsatz): gleich als Ausgabe buchen, damit sie in Einnahmen & Ausgaben steht
         if (bezahlt) await insert('buchungen', { datum: bezahlt, betrag: r2(-vz * b), buchungskonto_id: Number(konto), objekt_id: Number(objekt), einheit_id: eid,
-          rechnung_id: rid, firma_id: fid, text: `Rechnung ${nr.trim()} ${name}`.replace(/\s+/g, ' ').trim() });
+          rechnung_id: rid, firma_id: fid, bankumsatz_id: umsatz?.id ?? null, text: `Rechnung ${nr.trim()} ${name}`.replace(/\s+/g, ' ').trim() });
       }
+      if (umsatz) await db.execute(`UPDATE bankumsaetze SET status = 'zugeordnet' WHERE id = $1`, [umsatz.id]);
       onSaved(`${art === 'Gutschrift' ? 'Gutschrift' : 'Rechnung'}${nr ? ' ' + nr : ''} über ${eur(brutto)} gespeichert${teile.length > 1 ? `, aufgeteilt auf ${teile.length} Einheiten` : ''}${datei ? ', Beleg abgelegt' : ''}.`);
       zuruecksetzen();
     } catch (e: any) { setFehler(String(e?.message ?? e)); }
