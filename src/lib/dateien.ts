@@ -14,7 +14,7 @@ export async function ablagePfad(): Promise<string> {
   return join(await documentDir(), 'NANO-Ablage');
 }
 
-export interface Ablage { bezug: 'Objekt' | 'Einheit' | 'Person' | 'Mietvertrag' | 'Firma'; bezugId: number; ordner: string[] }
+export interface Ablage { bezug: 'Objekt' | 'Einheit' | 'Person' | 'Mietvertrag' | 'Firma' | 'Buchung'; bezugId: number; ordner: string[] }
 
 /**
  * Speichert eine Datei in der Ablage: <Ablage>/<ordner...>/<dateiname>
