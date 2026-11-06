@@ -9,6 +9,7 @@ import { personLabel } from './db/labels';
 import { OP_SQL } from './logic/soll';
 import { Sperre, SPERREN } from './components/Sperre';
 import { Logo } from './components/Logo';
+import { KiAssistent } from './components/KiAssistent';
 import { DashboardPage } from './pages/Dashboard';
 import { ObjektDetailPage, ObjektePage } from './pages/Objekte';
 import { FirmenPage, PersonenPage } from './pages/Personen';
@@ -238,6 +239,7 @@ function Rahmen() {
               <Route path="/notizen" element={<NotizenPage />} />
             </Routes>
             </Seite>
+            <KiAssistent />
           </main>
         </div>
       </div>

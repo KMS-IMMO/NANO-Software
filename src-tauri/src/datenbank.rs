@@ -186,6 +186,18 @@ fn werte(params: &[Value]) -> Vec<rusqlite::types::Value> {
     .collect()
 }
 
+/// Nur lesende Abfragen (für den KI-Assistenten): SQLite prüft selbst, ob die Anweisung etwas ändert.
+#[tauri::command]
+pub fn db_select_lesend(state: tauri::State<'_, DbState>, sql: String) -> Result<Vec<Map<String, Value>>, String> {
+  {
+    let g = state.0.lock().unwrap();
+    let o = g.as_ref().ok_or("Die Datenbank ist gesperrt.")?;
+    let stmt = o.conn.prepare(&sql).map_err(|e| e.to_string())?;
+    if !stmt.readonly() { return Err("Nur lesende Abfragen (SELECT) sind erlaubt.".into()); }
+  }
+  db_select(state, sql, vec![])
+}
+
 #[tauri::command]
 pub fn db_select(state: tauri::State<'_, DbState>, sql: String, params: Vec<Value>) -> Result<Vec<Map<String, Value>>, String> {
   let g = state.0.lock().unwrap();

@@ -7,6 +7,7 @@ import { Paperclip } from 'lucide-react';
 import { RechnungErfassen } from '../components/RechnungErfassen';
 import { oeffnen } from '../lib/dateien';
 import { SCHLUESSEL, kontoOptions } from '../db/labels';
+import { KI_MODELLE, KI_STANDARD, kiEinstellungen, kiSchluesselSpeichern } from '../logic/kiAgent';
 
 const haken = (v: any) => (v ? '✓' : '');
 
@@ -113,6 +114,7 @@ export function EinstellungenPage() {
         </div>
         <div className="row end"><span className="grow" />{saved && <span className="pos">Gespeichert</span>}<button className="primary" onClick={save}>Speichern</button></div>
       </section>
+      <KiKarte />
       <SicherheitKarte />
       <EntityTable
         title="Bankkonten je Objekt"
@@ -145,3 +147,34 @@ export function EinstellungenPage() {
   );
 }
 
+
+/** KI-Assistent: API-Schlüssel und Modell */
+function KiKarte() {
+  const [schluessel, setSchluessel] = useState('');
+  const [hat, setHat] = useState(false);
+  const [modell, setModell] = useState(KI_STANDARD);
+  const [ok, setOk] = useState(false);
+  useEffect(() => { kiEinstellungen().then((e) => { setHat(!!e.schluessel); setModell(e.modell); }); }, []);
+  async function save() {
+    if (schluessel.trim()) await kiSchluesselSpeichern(schluessel);
+    await db.execute(`INSERT INTO einstellungen (schluessel, wert) VALUES ('ki_modell', $1)
+      ON CONFLICT (schluessel) DO UPDATE SET wert = excluded.wert`, [modell]);
+    if (schluessel.trim()) setHat(true);
+    setSchluessel(''); setOk(true); setTimeout(() => setOk(false), 2000);
+  }
+  return (
+    <section className="card">
+      <div className="card-head"><h2>KI-Assistent</h2></div>
+      <p className="muted" style={{ marginTop: 0 }}>Der Assistent (Knopf rechts unten) nutzt Claude von Anthropic. Abgerechnet wird nach Verbrauch über dein Anthropic-Konto (console.anthropic.com). Dort kannst du auch ein Monatslimit setzen. Fragen und die dafür gelesenen Daten werden an Anthropic übertragen.</p>
+      <div className="form">
+        <label className="wide"><span>API-Schlüssel {hat ? '(hinterlegt, zum Ändern neu eingeben)' : '(noch keiner hinterlegt)'}</span>
+          <input type="password" placeholder={hat ? '••••••••••••' : 'sk-ant-…'} value={schluessel} onChange={(e) => setSchluessel(e.target.value)} /></label>
+        <label><span>Modell</span>
+          <select value={modell} onChange={(e) => setModell(e.target.value)}>{KI_MODELLE.map(([m, l]) => <option key={m} value={m}>{l}</option>)}</select></label>
+      </div>
+      <div className="row end"><span className="grow" />
+        {hat && <button onClick={async () => { await kiSchluesselSpeichern(''); setHat(false); }}>Schlüssel entfernen</button>}
+        {ok && <span className="pos">Gespeichert</span>}<button className="primary" onClick={save}>Speichern</button></div>
+    </section>
+  );
+}

@@ -7,6 +7,8 @@ type Param = string | number | null;
 
 interface Driver {
   select(sql: string, params: Param[]): Promise<Row[]>;
+  /** nur lesende Abfrage, sonst Fehler (für den KI-Assistenten) */
+  selectLesend(sql: string): Promise<Row[]>;
   execute(sql: string, params: Param[]): Promise<{ lastInsertId?: number; rowsAffected: number }>;
 }
 
@@ -21,6 +23,7 @@ async function invoke<T>(cmd: string, args: Record<string, unknown> = {}): Promi
 function tauriDriver(): Driver {
   return {
     select: (sql, params) => invoke<Row[]>('db_select', { sql, params }),
+    selectLesend: (sql) => invoke<Row[]>('db_select_lesend', { sql }),
     execute: (sql, params) => invoke<{ lastInsertId: number; rowsAffected: number }>('db_execute', { sql, params }),
   };
 }
@@ -40,6 +43,18 @@ async function browserDriver(): Promise<Driver> {
       while (stmt.step()) rows.push(stmt.getAsObject());
       stmt.free();
       return rows;
+    },
+    selectLesend: async (sql) => {
+      const stmt = db.prepare(sql);
+      try {
+        // sql.js kennt kein readonly(): nur eine einzelne SELECT/WITH-Anweisung ohne Schreibbefehle zulassen
+        const t = sql.trim().replace(/;\s*$/, '');
+        if (!/^(select|with)\b/i.test(t) || t.includes(';') || /\b(insert|update|delete|drop|alter|create|replace|attach|pragma|vacuum)\b/i.test(t))
+          throw new Error('Nur lesende Abfragen (SELECT) sind erlaubt.');
+        const rows: Row[] = [];
+        while (stmt.step()) rows.push(stmt.getAsObject());
+        return rows;
+      } finally { stmt.free(); }
     },
     execute: async (sql, p) => {
       if (p.length) db.run(sql.replace(/\$(\d+)/g, '?$1'), p);
@@ -105,6 +120,9 @@ export const DATEN_EVENT = 'nano-daten';
 export const db = {
   async select<T = Row>(sql: string, params: Param[] = []): Promise<T[]> {
     return (await driver()).select(sql, params) as Promise<T[]>;
+  },
+  async selectLesend(sql: string): Promise<Row[]> {
+    return (await driver()).selectLesend(sql);
   },
   async execute(sql: string, params: Param[] = []) {
     const r = await (await driver()).execute(sql, params);
