@@ -544,3 +544,6 @@ tr.frist-ueber td { background: #fdf1ef; }
 .vorlagen-liste { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 14px; margin: 10px 0; }
 .vorlagen-liste label { display: flex; gap: 8px; align-items: baseline; }
 tr.beleg-over td { background: var(--accent-soft) !important; outline: 2px dashed var(--accent); outline-offset: -2px; }
+
+.protokoll { max-height: 360px; overflow: auto; margin-top: 10px; }
+.sec:has(.grow) { display: flex; align-items: center; gap: 8px; } .sec .grow { flex: 1; }

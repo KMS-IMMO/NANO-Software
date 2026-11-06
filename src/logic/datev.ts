@@ -1,7 +1,7 @@
 // DATEV-Export (Buchungsstapel im DATEV-Format, Version 700) für den Steuerberater.
 // Je Liegenschaft und Zeitraum eine CSV-Datei, dazu die Belege in einem Ordner daneben.
 import { db, type Row } from '../db';
-import { ablagePfad, sicher } from '../lib/dateien';
+import { ablagePfad, aufloesen, sicher } from '../lib/dateien';
 
 const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 
@@ -85,7 +85,7 @@ export async function datevSpeichern(x: DatevErgebnis): Promise<{ ordner: string
   await writeFile(await join(ordner, x.dateiname + '.csv'), x.csv);
   let kopiert = 0, fehlend = 0;
   for (const b of x.belege) {
-    try { await copyFile(b.quelle, await join(ordner, 'Belege', b.ziel)); kopiert++; } catch { fehlend++; }
+    try { await copyFile(await aufloesen(b.quelle), await join(ordner, 'Belege', b.ziel)); kopiert++; } catch { fehlend++; }
   }
   return { ordner, kopiert, fehlend };
 }

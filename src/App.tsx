@@ -4,7 +4,7 @@ import {
   AlarmClock, Banknote, CalendarClock, Bell, Building2, Calendar, ChevronRight, CircleCheck, Columns3, Contact, CreditCard, FolderOpen, LayoutDashboard, Landmark, Lock,
   Network, Receipt, Search, Settings, SquarePen, UserCog, Users,
 } from 'lucide-react';
-import { db, sicherheit, type Row } from './db';
+import { db, mehrplatz, sicherheit, type Row } from './db';
 import { personLabel } from './db/labels';
 import { OP_SQL } from './logic/soll';
 import { Sperre, SPERREN } from './components/Sperre';
@@ -139,8 +139,9 @@ function Topbar() {
   const loc = useLocation();
   useEffect(() => {
     db.select(`SELECT COUNT(*) AS n FROM (${OP_SQL}) WHERE betrag - bezahlt > 0.005 AND faellig < date('now')`).then((r) => setOffen(Number(r[0]?.n) || 0));
+    const ich = mehrplatz.benutzer();
     db.select(`SELECT wert FROM einstellungen WHERE schluessel = 'firma_name'`).then((r) => {
-      const n = String(r[0]?.wert ?? 'KMS').split(/\s+/).filter(Boolean);
+      const n = String(ich?.name ?? r[0]?.wert ?? 'KMS').split(/\s+/).filter(Boolean);
       setKurz((n.length > 1 ? n[0][0] + n[1][0] : n[0]?.slice(0, 2) ?? 'K').toUpperCase());
     });
   }, [loc.pathname]);
@@ -150,8 +151,8 @@ function Topbar() {
       <NavLink to="/offene-posten" className="bell" title={`${offen} überfällige Posten`}>
         <Bell size={20} />{offen > 0 && <span className="dot">{offen > 99 ? '99+' : offen}</span>}
       </NavLink>
-      {sicherheit.aktiv && <button className="bell" title="Jetzt sperren" onClick={() => window.dispatchEvent(new Event(SPERREN))}><Lock size={20} /></button>}
-      <NavLink to="/einstellungen" className="avatar" title="Einstellungen">{kurz}</NavLink>
+      {(sicherheit.aktiv || mehrplatz.aktiv) && <button className="bell" title={mehrplatz.aktiv ? `Abmelden (${mehrplatz.benutzer()?.name ?? ''})` : 'Jetzt sperren'} onClick={() => window.dispatchEvent(new Event(SPERREN))}><Lock size={20} /></button>}
+      <NavLink to="/einstellungen" className="avatar" title={mehrplatz.aktiv ? `Angemeldet: ${mehrplatz.benutzer()?.name ?? ''}` : 'Einstellungen'}>{kurz}</NavLink>
     </header>
   );
 }

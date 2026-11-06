@@ -2234,6 +2234,7 @@ dependencies = [
  "fints-rs",
  "keyring",
  "log",
+ "reqwest 0.12.28",
  "rusqlite",
  "serde",
  "serde_json",

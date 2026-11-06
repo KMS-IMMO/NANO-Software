@@ -1,6 +1,7 @@
 import { EntityTable, eur } from '../components/EntityTable';
 import { SicherheitKarte } from '../components/SicherheitKarte';
-import { db, sicherheit } from '../db';
+import { db, mehrplatz, sicherheit } from '../db';
+import { MehrplatzKarte } from '../components/MehrplatzKarte';
 import { useObjektKontext } from '../logic/objektKontext';
 import { useEffect, useState } from 'react';
 import { Paperclip } from 'lucide-react';
@@ -99,7 +100,7 @@ export function EinstellungenPage() {
   const [saved, setSaved] = useState(false);
   useEffect(() => { db.select('SELECT * FROM einstellungen').then((r) => setW(Object.fromEntries(r.map((x) => [x.schluessel, x.wert ?? ''])))); }, []);
   async function save() {
-    for (const [k] of EINST) await db.execute(`INSERT INTO einstellungen (schluessel, wert) VALUES ($1, $2)
+    for (const [k] of EINST.filter(([k]) => !(mehrplatz.aktiv && k === 'ablage_pfad'))) await db.execute(`INSERT INTO einstellungen (schluessel, wert) VALUES ($1, $2)
       ON CONFLICT (schluessel) DO UPDATE SET wert = excluded.wert`, [k, w[k] ?? '']);
     if (sicherheit.aktiv && w.ablage_pfad) await sicherheit.ablageFreigeben(w.ablage_pfad).catch(() => {});
     setSaved(true); setTimeout(() => setSaved(false), 2000);
@@ -109,7 +110,7 @@ export function EinstellungenPage() {
       <section className="card">
         <div className="card-head"><h2>Allgemein und Mahnwesen</h2></div>
         <div className="form">
-          {EINST.map(([k, label]) => (
+          {EINST.filter(([k]) => !(mehrplatz.aktiv && k === 'ablage_pfad')).map(([k, label]) => (
             <label key={k} className={k === 'ablage_pfad' ? 'wide' : ''}><span>{label}</span>
               <input value={w[k] ?? ''} onChange={(e) => setW({ ...w, [k]: e.target.value })} /></label>
           ))}
@@ -117,7 +118,8 @@ export function EinstellungenPage() {
         <div className="row end"><span className="grow" />{saved && <span className="pos">Gespeichert</span>}<button className="primary" onClick={save}>Speichern</button></div>
       </section>
       <KiKarte />
-      <SicherheitKarte />
+      <MehrplatzKarte />
+      {!mehrplatz.aktiv && <SicherheitKarte />}
       <EntityTable
         title="Bankkonten je Objekt"
         table="bankkonten"

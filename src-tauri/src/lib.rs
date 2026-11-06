@@ -1,5 +1,6 @@
 mod bank;
 mod datenbank;
+mod server;
 
 use tauri_plugin_fs::FsExt;
 
@@ -23,7 +24,7 @@ pub fn run() {
       datenbank::db_status, datenbank::db_einrichten, datenbank::db_oeffnen, datenbank::db_sperren,
       datenbank::db_passwort_aendern, datenbank::db_select, datenbank::db_select_lesend, datenbank::db_execute,
       datenbank::db_auto_sicherung, datenbank::db_sicherung_erstellen, datenbank::db_sicherungen, datenbank::db_wiederherstellen,
-      ablage_freigeben
+      ablage_freigeben, server::server_anfrage
     ])
     .setup(|app| {
       if cfg!(debug_assertions) {
