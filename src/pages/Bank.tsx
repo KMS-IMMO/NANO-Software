@@ -5,6 +5,9 @@ import { useObjektKontext } from '../logic/objektKontext';
 import { datum, eur } from '../components/EntityTable';
 import { kontoOptions, personOptions } from '../db/labels';
 import { BankAbruf, BankVerbindungen } from '../components/BankAbruf';
+import { RechnungErfassen } from '../components/RechnungErfassen';
+import { BuchungBelege } from '../components/BuchungBelege';
+import { Paperclip } from 'lucide-react';
 import {
   automatischZuordnen, importieren, parseDatei, vorschlag, zuordnenKonto, zuordnenPerson, zuordnenRechnung, zuordnungLoesen, type Vorschlag,
 } from '../logic/bank';
@@ -23,6 +26,17 @@ export function BankPage() {
   const [personen, setPersonen] = useState<Opt[]>([]);
   const [bkonten, setBkonten] = useState<Opt[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
+  const [belegUmsatz, setBelegUmsatz] = useState<{ u: Row; datei?: File; objekt?: number } | null>(null);
+  const [belegBuchung, setBelegBuchung] = useState<Row | null>(null);
+  const [rowOver, setRowOver] = useState<number | null>(null);
+  async function belegZuUmsatz(u: Row, datei?: File) {
+    const objekt = (await db.select('SELECT objekt_id FROM bankkonten WHERE id = $1', [u.bankkonto_id]))[0]?.objekt_id ?? undefined;
+    setBelegUmsatz({ u, datei, objekt });
+  }
+  async function belegeZuordnung(u: Row) {
+    const b = (await db.select('SELECT * FROM buchungen WHERE bankumsatz_id = $1 ORDER BY id LIMIT 1', [u.id]))[0];
+    if (b) setBelegBuchung(b);
+  }
 
   const ladeKonten = async () => {
     const k = await db.select(`SELECT b.*, o.name AS objekt FROM bankkonten b LEFT JOIN objekte o ON o.id = b.objekt_id ${fix ? `WHERE b.objekt_id = ${fix.id}` : ''} ORDER BY o.name`);
@@ -127,15 +141,19 @@ export function BankPage() {
             <thead><tr><th>Datum</th><th>Auftraggeber / Empfänger</th><th>Verwendungszweck</th><th className="num">Betrag</th><th style={{ width: 340 }}>Zuordnung</th></tr></thead>
             <tbody>
               {list.slice(0, 300).map((u) => (
-                <tr key={u.id}>
+                <tr key={u.id} className={rowOver === u.id ? 'beleg-over' : ''}
+                  onDragOver={(e) => { if (u.status === 'ignoriert') return; e.preventDefault(); setRowOver(u.id); }} onDragLeave={() => setRowOver(null)}
+                  onDrop={(e) => { e.preventDefault(); setRowOver(null); const f = e.dataTransfer.files[0]; if (!f) return; if (u.status === 'offen') belegZuUmsatz(u, f); else if (u.status === 'zugeordnet') belegeZuordnung(u); }}>
                   <td>{datum(u.datum)}</td>
                   <td>{u.gegenpartei}<div className="muted small">{u.gegen_iban}</div></td>
                   <td className="small">{u.verwendungszweck}</td>
                   <td className={'num ' + (u.betrag < 0 ? 'neg' : '')}><b>{eur(u.betrag)}</b></td>
                   <td>
                     {u.status === 'offen'
-                      ? <Zuordnen u={u} v={vorschlaege[u.id]} personen={personen} konten={bkonten} done={load} />
+                      ? <><Zuordnen u={u} v={vorschlaege[u.id]} personen={personen} konten={bkonten} done={load} />
+                          <button className="link small" onClick={() => belegZuUmsatz(u)} title="Oder PDF direkt auf die Zeile ziehen"><Paperclip size={13} /> Mit Beleg als Rechnung erfassen</button></>
                       : <div className="small">
+                          {u.status === 'zugeordnet' && <button className="icon-btn beleg-btn" title="Belege zur Buchung" onClick={() => belegeZuordnung(u)}><Paperclip size={14} /></button>}
                           <span className="muted">{u.status === 'ignoriert' ? 'Ignoriert' : u.gebucht}</span>{' '}
                           <button className="link" onClick={async () => { if (u.status === 'ignoriert') await db.execute(`UPDATE bankumsaetze SET status='offen' WHERE id=$1`, [u.id]); else await zuordnungLoesen(u); load(); }}>Rückgängig</button>
                         </div>}
@@ -146,6 +164,23 @@ export function BankPage() {
           </table>
         )}
       </section>
+      {belegUmsatz && (
+        <div className="modal-bg" onClick={() => setBelegUmsatz(null)}>
+          <div className="modal breit" onClick={(e) => e.stopPropagation()}>
+            <div className="card-head"><h3>Bankumsatz mit Beleg erfassen</h3><b className={belegUmsatz.u.betrag < 0 ? 'neg' : 'pos'}>{eur(belegUmsatz.u.betrag)}</b></div>
+            <p className="muted small" style={{ margin: 0 }}>{datum(belegUmsatz.u.datum)} · {belegUmsatz.u.gegenpartei} · {belegUmsatz.u.verwendungszweck}</p>
+            <RechnungErfassen objektFest={fix?.id ?? belegUmsatz.objekt} vorlage={{ umsatz: belegUmsatz.u, datei: belegUmsatz.datei }}
+              onSaved={(t) => { setInfo(t + ' Der Bankumsatz ist zugeordnet.'); setBelegUmsatz(null); load(); }} />
+          </div>
+        </div>)}
+      {belegBuchung && (
+        <div className="modal-bg" onClick={() => setBelegBuchung(null)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h3>Belege zur Bankbuchung</h3>
+            <BuchungBelege buchung={belegBuchung} />
+            <div className="row end"><button onClick={() => setBelegBuchung(null)}>Fertig</button></div>
+          </div>
+        </div>)}
     </>
   );
 }

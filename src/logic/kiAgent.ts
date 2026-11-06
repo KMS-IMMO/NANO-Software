@@ -43,7 +43,7 @@ const SEITEN: Record<string, string> = {
   '/weg-abrechnung': 'Hausgeldabrechnung (WEG)', '/eigentuemer-abrechnung': 'Eigentümerabrechnung', '/ablage': 'Ablage/Dokumente',
   '/instandhaltung': 'Instandhaltung', '/beschluesse': 'Beschlüsse', '/journal': 'Buchungsjournal', '/regeln': 'Buchungsregeln',
   '/auswertung': 'Auswertung', '/berichte': 'Berichte', '/verwalter': 'Verwalter', '/kontakte': 'Kontakte', '/kalender': 'Kalender',
-  '/erinnerungen': 'Erinnerungen', '/tickets': 'Tickets', '/todo': 'Aufgaben', '/notizen': 'Notizen',
+  '/erinnerungen': 'Erinnerungen', '/fristen': 'Fristen (Wartung, Prüfung, Versicherung)', '/tickets': 'Tickets', '/todo': 'Aufgaben', '/notizen': 'Notizen',
 };
 
 const DATUM = { type: 'string', description: 'Datum im Format JJJJ-MM-TT' } as const;

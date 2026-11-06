@@ -11,6 +11,8 @@ import { oeffnen, speichern } from '../lib/dateien';
 import { useObjektKontext } from '../logic/objektKontext';
 import { RechnungErfassen } from '../components/RechnungErfassen';
 import { BELEGE_SQL, BuchungBelege } from '../components/BuchungBelege';
+import { DatevDialog } from '../components/DatevDialog';
+import { Wiederkehrend } from '../components/Wiederkehrend';
 import { buchungLoeschen, loeschHinweis } from '../logic/buchung';
 import { gesperrt, sperrText } from '../logic/abschluss';
 
@@ -42,13 +44,14 @@ export function JournalPage() {
   const [konten, setKonten] = useState<Row[]>([]);
   const [rows, setRows] = useState<Row[]>([]);
   const [offeneRechnungen, setOffeneRechnungen] = useState<Row[]>([]);
-  const [ansicht, setAnsicht] = useState<'buchungen' | 'rechnungen'>('buchungen');
+  const [ansicht, setAnsicht] = useState<'buchungen' | 'rechnungen' | 'wiederkehrend'>('buchungen');
   const [edit, setEdit] = useState<Row | null>(null);
   const [modus, setModus] = useState<'rechnung' | 'buchung'>('rechnung');
   const [fehler, setFehler] = useState('');
   const [info, setInfo] = useState('');
   const [rEdit, setREdit] = useState<Row | null>(null);
   const [belegFuer, setBelegFuer] = useState<Row | null>(null);
+  const [datev, setDatev] = useState(false);
 
   useEffect(() => { db.select(kontoOptions).then(setKonten); }, []);
   const load = async () => {
@@ -181,14 +184,16 @@ export function JournalPage() {
         <span className="grow" />
         <button onClick={() => exportieren('csv')}><FileSpreadsheet size={16} />CSV</button>
         <button onClick={() => exportieren('pdf')}><Download size={16} />PDF</button>
+        <button onClick={() => setDatev(true)} title="Buchungsstapel für den Steuerberater mit Belegen"><Download size={16} />DATEV</button>
         <button className="primary" onClick={() => { setFehler(''); setModus('rechnung'); setEdit({ datum: heute(), richtung: 'Ausgabe', objekt_id: objekt || '' }); }}><Plus size={16} />Buchung erfassen</button>
       </section>
       {info && <p className="info">{info}</p>}
       <div className="seg">
         <button className={ansicht === 'buchungen' ? 'on' : ''} onClick={() => setAnsicht('buchungen')}>Buchungen ({rows.length})</button>
         <button className={ansicht === 'rechnungen' ? 'on' : ''} onClick={() => setAnsicht('rechnungen')}>Offene Rechnungen ({offeneRechnungen.length})</button>
+        <button className={ansicht === 'wiederkehrend' ? 'on' : ''} onClick={() => setAnsicht('wiederkehrend')}>Wiederkehrend</button>
       </div>
-      {ansicht === 'rechnungen' ? (
+      {ansicht === 'wiederkehrend' ? <Wiederkehrend objektId={fix?.id ?? (objekt === '' ? undefined : Number(objekt))} onChange={load} /> : ansicht === 'rechnungen' ? (
         <section className="card">
           <div className="card-head"><h2 className="title-ico"><Receipt size={22} />Offene Rechnungen</h2><span className="muted">noch nicht bezahlt: <b className="neg">{eur(offeneRechnungen.reduce((a, r) => a + Number(r.betrag), 0))}</b></span></div>
           {offeneRechnungen.length === 0 ? <p className="muted">Keine offenen Rechnungen.</p> : (
@@ -253,6 +258,7 @@ export function JournalPage() {
                 </div></>}
           </div>
         </div>)}
+      {datev && <DatevDialog objekte={objekte} objekt={fix?.id ?? (objekt === '' ? undefined : Number(objekt))} fest={!!fix} jahr={jahr} monat={monat} onClose={() => setDatev(false)} />}
       {belegFuer && (
         <div className="modal-bg" onClick={() => setBelegFuer(null)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>

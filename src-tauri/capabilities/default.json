@@ -15,6 +15,10 @@
       "allow": [{ "path": "$DOCUMENT/**" }, { "path": "$DESKTOP/**" }, { "path": "$DOWNLOAD/**" }]
     },
     {
+      "identifier": "fs:allow-copy-file",
+      "allow": [{ "path": "$DOCUMENT/**" }, { "path": "$DESKTOP/**" }, { "path": "$DOWNLOAD/**" }]
+    },
+    {
       "identifier": "fs:allow-mkdir",
       "allow": [{ "path": "$DOCUMENT/**" }, { "path": "$DESKTOP/**" }, { "path": "$DOWNLOAD/**" }]
     }

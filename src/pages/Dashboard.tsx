@@ -34,7 +34,8 @@ export function DashboardPage() {
           (SELECT COUNT(*) FROM (${OP_SQL}) WHERE betrag - bezahlt > 0.005 AND faellig < date('now')) offen_n,
           (SELECT COUNT(*) FROM sollstellungen WHERE mahnstufe > 0 AND art <> 'Mahngebühr') gemahnt,
           (SELECT COUNT(*) FROM vorgaenge WHERE status <> 'Erledigt') vorgaenge,
-          (SELECT COUNT(*) FROM beschluesse WHERE status <> 'Erledigt' AND ergebnis = 'Angenommen') beschluesse`))[0]);
+          (SELECT COUNT(*) FROM beschluesse WHERE status <> 'Erledigt' AND ergebnis = 'Angenommen') beschluesse,
+          (SELECT COUNT(*) FROM fristen WHERE erledigt_am IS NULL AND faellig <= date('now', '+' || COALESCE(vorlauf_tage, 30) || ' days')) fristen`))[0]);
       setTermine(await db.select(`SELECT 'Eigentümerversammlung' AS was, o.name AS objekt, v.datum FROM versammlungen v JOIN objekte o ON o.id = v.objekt_id WHERE v.datum >= date('now')
           UNION ALL SELECT 'Hausgeldanpassung', o.name, h.gueltig_ab FROM hausgeld h JOIN einheiten e ON e.id = h.einheit_id JOIN objekte o ON o.id = e.objekt_id
             WHERE h.gueltig_ab > date('now') GROUP BY o.id, h.gueltig_ab
@@ -87,6 +88,7 @@ export function DashboardPage() {
           <div className="aufgaben">
             <Link to="/mahnungen"><span><b>{k.offen_n ?? 0}</b>Zahlungen überfällig</span><ChevronRight size={18} /></Link>
             <Link to="/instandhaltung"><span><b>{k.vorgaenge ?? 0}</b>Instandhaltungen offen</span><ChevronRight size={18} /></Link>
+            <Link to="/fristen"><span><b className={k.fristen ? 'neg' : ''}>{k.fristen ?? 0}</b>Fristen fällig oder bald fällig</span><ChevronRight size={18} /></Link>
             <Link to="/beschluesse"><span><b>{k.beschluesse ?? 0}</b>Beschlüsse in Umsetzung</span><ChevronRight size={18} /></Link>
             <Link to="/mahnungen"><span><b>{k.gemahnt ?? 0}</b>Posten bereits gemahnt</span><ChevronRight size={18} /></Link>
             <Link to="/objekte"><span><b>{leer.length}</b>Einheiten leer (Mietverwaltung)</span><ChevronRight size={18} /></Link>
