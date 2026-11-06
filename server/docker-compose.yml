@@ -1,0 +1,13 @@
+# NANO-Server auf der Synology: im Container Manager unter „Projekt“ → „Erstellen“ diesen Ordner wählen.
+services:
+  nano:
+    build: .
+    container_name: nano-server
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      - NANO_ADMIN_PASSWORT=bitte-aendern-1234   # nur beim allerersten Start, danach in NANO ändern
+      - TZ=Europe/Berlin
+    volumes:
+      - ./daten:/daten

@@ -1,6 +1,6 @@
 // Wiederkehrende Ausgaben (Versicherung, Hausmeister, Wartungsverträge …):
 // Ist das Datum erreicht, legt NANO die Rechnung automatisch als offene Rechnung an.
-import { db, insert, update } from '../db';
+import { db, insert } from '../db';
 import { gesperrt } from './abschluss';
 
 export const INTERVALLE = [
@@ -26,17 +26,21 @@ export async function wiederkehrendErzeugen(bis = iso(new Date())): Promise<numb
   try {
     const liste = await db.select(`SELECT * FROM wiederkehrend WHERE pausiert = 0 AND naechste <= $1`, [bis]);
     for (const w of liste) {
+      // Termine bestimmen, dann den Eintrag „beanspruchen“: nur wer naechste noch im alten Stand vorfindet, legt an.
+      // So entstehen keine doppelten Rechnungen, wenn mehrere Arbeitsplätze gleichzeitig starten.
+      const termine: string[] = [];
       let d = String(w.naechste);
-      for (let schutz = 0; d <= bis && (!w.ende || d <= w.ende) && schutz < 60; schutz++) {
-        if (!(await gesperrt(w.objekt_id, d))) {
-          await insert('rechnungen', { objekt_id: w.objekt_id, einheit_id: w.einheit_id ?? null, firma_id: w.firma_id ?? null, rechnungsnr: null,
-            datum: d, betrag: w.betrag, buchungskonto_id: w.buchungskonto_id, faellig: plusTage(d, w.zahlungsziel == null ? 14 : Number(w.zahlungsziel)),
-            notiz: w.text ? `${w.text} (wiederkehrend)` : 'wiederkehrend', wiederkehrend_id: w.id });
-          n++;
-        }
-        d = plusMonate(d, Number(w.intervall) || 1);
+      for (let schutz = 0; d <= bis && (!w.ende || d <= w.ende) && schutz < 60; schutz++) { termine.push(d); d = plusMonate(d, Number(w.intervall) || 1); }
+      const r = await db.execute('UPDATE wiederkehrend SET naechste = $1, pausiert = $2 WHERE id = $3 AND naechste = $4',
+        [d, w.ende && d > w.ende ? 1 : 0, w.id, w.naechste]);
+      if (!r.rowsAffected) continue;
+      for (const t of termine) {
+        if (await gesperrt(w.objekt_id, t)) continue;
+        await insert('rechnungen', { objekt_id: w.objekt_id, einheit_id: w.einheit_id ?? null, firma_id: w.firma_id ?? null, rechnungsnr: null,
+          datum: t, betrag: w.betrag, buchungskonto_id: w.buchungskonto_id, faellig: plusTage(t, w.zahlungsziel == null ? 14 : Number(w.zahlungsziel)),
+          notiz: w.text ? `${w.text} (wiederkehrend)` : 'wiederkehrend', wiederkehrend_id: w.id });
+        n++;
       }
-      await update('wiederkehrend', w.id, { naechste: d, pausiert: w.ende && d > w.ende ? 1 : 0 });
     }
   } finally { laeuft = false; }
   return n;

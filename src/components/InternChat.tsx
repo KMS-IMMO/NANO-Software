@@ -2,7 +2,7 @@
 // Nachrichten liegen in der Datenbank (Tabelle chat). Arbeiten mehrere Rechner auf derselben Datenbank, sehen alle die Nachrichten.
 import { useEffect, useRef, useState } from 'react';
 import { MessageSquare, Send, ChevronRight, ChevronLeft, Trash2 } from 'lucide-react';
-import { db, type Row } from '../db';
+import { db, mehrplatz, type Row } from '../db';
 
 const NAME_KEY = 'chat_name';
 const ZU_KEY = 'nano-chat-zu';
@@ -25,7 +25,10 @@ export function InternChat() {
 
   const load = () => db.select('SELECT * FROM chat ORDER BY id DESC LIMIT 200').then((r) => setMsgs(r.reverse()));
   useEffect(() => {
-    db.select('SELECT wert FROM einstellungen WHERE schluessel = $1', [NAME_KEY]).then((r) => { const n = r[0]?.wert ?? ''; setName(n); setNameEdit(!n); });
+    // Mehrplatz: Name des angemeldeten Zugangs; sonst einmal eingeben (gilt für diesen Rechner)
+    const ich = mehrplatz.benutzer();
+    if (ich) { setName(ich.name); setNameEdit(false); }
+    else db.select('SELECT wert FROM einstellungen WHERE schluessel = $1', [NAME_KEY]).then((r) => { const n = r[0]?.wert ?? ''; setName(n); setNameEdit(!n); });
     load();
     const t = setInterval(load, 5000);
     return () => clearInterval(t);
@@ -55,7 +58,7 @@ export function InternChat() {
   return (
     <aside className="ichat card">
       <div className="ichat-kopf"><MessageSquare size={18} /><b>Team-Chat</b><span className="grow" />
-        {!nameEdit && <button className="link small" onClick={() => setNameEdit(true)} title="Namen ändern">{name}</button>}
+        {!nameEdit && mehrplatz.aktiv && <span className="muted small">{name}</span>}{!nameEdit && !mehrplatz.aktiv && <button className="link small" onClick={() => setNameEdit(true)} title="Namen ändern">{name}</button>}
         <button className="icon-btn" title="Einklappen" onClick={umschalten}><ChevronRight size={18} /></button></div>
       {nameEdit && <div className="ichat-name">
         <span className="small muted">Unter welchem Namen schreibst du?</span>

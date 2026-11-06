@@ -67,6 +67,118 @@ async function browserDriver(): Promise<Driver> {
 
 let ready: Promise<Driver> | null = null;
 
+/* =================== Mehrplatz: NANO-Server im Büronetz =================== */
+const SERVER_KEY = 'nano-server';
+export type Benutzer = { name: string; login: string; rolle: 'admin' | 'mitarbeiter' | 'lesend' };
+let token: string | null = null;
+let ich: Benutzer | null = null;
+export const ABGEMELDET = 'nano-abgemeldet';
+
+function serverAdresse(): string | null {
+  try { const v = JSON.parse(localStorage.getItem(SERVER_KEY) || 'null'); return v?.url || null; } catch { return null; }
+}
+async function anfrage<T = any>(pfad: string, methode: 'GET' | 'POST' = 'POST', body?: unknown, basis = serverAdresse()): Promise<T> {
+  if (!basis) throw new Error('Kein NANO-Server eingerichtet.');
+  const url = basis.replace(/\/+$/, '') + pfad;
+  let status: number, text: string;
+  if (isTauri) {
+    const r = await invoke<{ status: number; text: string }>('server_anfrage', { url, methode, token, body: body === undefined ? null : JSON.stringify(body) });
+    status = r.status; text = r.text;
+  } else {
+    let r: Response;
+    try {
+      r = await fetch(url, { method: methode, headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) });
+    } catch { throw new Error('Server nicht erreichbar. Bitte Adresse und Netzwerk prüfen.'); }
+    status = r.status; text = await r.text();
+  }
+  let d: any = {};
+  try { d = text ? JSON.parse(text) : {}; } catch { throw new Error(`Unerwartete Antwort vom Server (${status}). Ist die Adresse richtig?`); }
+  if (status === 401 && pfad !== '/api/anmelden') { token = null; ich = null; ready = null; window.dispatchEvent(new Event(ABGEMELDET)); }
+  if (status >= 400) throw new Error(d.fehler ?? `Fehler ${status}`);
+  return d as T;
+}
+function serverDriver(): Driver {
+  return {
+    select: (sql, params) => anfrage<Row[]>('/api/select', 'POST', { sql, params }),
+    selectLesend: (sql) => anfrage<Row[]>('/api/lesend', 'POST', { sql }),
+    execute: (sql, params) => anfrage('/api/execute', 'POST', { sql, params }),
+  };
+}
+
+/** Mehrplatz-Betrieb: alle Arbeitsplätze arbeiten auf derselben Datenbank im NANO-Server */
+export const mehrplatz = {
+  get aktiv() { return !!serverAdresse(); },
+  adresse: serverAdresse,
+  benutzer: () => ich,
+  /** Prüft, ob unter der Adresse ein NANO-Server antwortet */
+  async testen(url: string) {
+    const r = await anfrage<{ name: string; version: string }>('/api/info', 'GET', undefined, normalisieren(url));
+    if (r.name !== 'NANO-Server') throw new Error('Unter dieser Adresse antwortet kein NANO-Server.');
+    return r;
+  },
+  einstellen(url: string | null) {
+    if (url) localStorage.setItem(SERVER_KEY, JSON.stringify({ url: normalisieren(url) })); else localStorage.removeItem(SERVER_KEY);
+    token = null; ich = null; ready = null;
+  },
+  async anmelden(login: string, passwort: string) {
+    const r = await anfrage<Benutzer & { token: string }>('/api/anmelden', 'POST', { login, passwort });
+    token = r.token; ich = { name: r.name, login: r.login, rolle: r.rolle };
+    const d = serverDriver();
+    ready = migrate(d).then(() => d).catch((e) => {
+      ready = null;
+      throw new Error(/Administrator/.test(String(e?.message)) ? 'Die Datenbank auf dem Server muss für diese NANO-Version aktualisiert werden. Bitte einmal als Administrator anmelden.' : e?.message ?? String(e));
+    });
+    await ready;
+    const ablage = mehrplatz.ablageHier();
+    if (isTauri && ablage) await invoke('ablage_freigeben', { pfad: ablage }).catch(() => {});
+    return ich;
+  },
+  async abmelden() {
+    if (token) await anfrage('/api/abmelden').catch(() => {});
+    token = null; ich = null; ready = null;
+  },
+  /** Ablageordner auf diesem Rechner (z. B. Netzlaufwerk der NAS), je Arbeitsplatz verschieden */
+  ablageHier: (): string => { try { return localStorage.getItem('nano-ablage-pfad') ?? ''; } catch { return ''; } },
+  async ablageHierSetzen(pfad: string) {
+    localStorage.setItem('nano-ablage-pfad', pfad.trim());
+    if (isTauri && pfad.trim()) await invoke('ablage_freigeben', { pfad: pfad.trim() }).catch(() => {});
+  },
+  benutzerListe: () => anfrage<Row[]>('/api/benutzer', 'GET'),
+  benutzerSpeichern: (b: Row) => anfrage('/api/benutzer', 'POST', b),
+  passwortAendern: (alt: string, neu: string) => anfrage('/api/passwort', 'POST', { alt, neu }),
+  protokoll: (n = 200) => anfrage<Row[]>(`/api/protokoll?n=${n}`, 'GET'),
+  sicherung: () => anfrage<{ datei: string }>('/api/sicherung'),
+  /**
+   * Überträgt alle Daten dieses Arbeitsplatzes auf den Server (einmalig beim Umstieg).
+   * Der Server wird vorher gesichert, die Tabellen dort werden ersetzt.
+   */
+  async datenUebertragen(url: string, login: string, passwort: string, fortschritt: (t: string) => void) {
+    const lokal = await driver();
+    const alt = serverAdresse();
+    mehrplatz.einstellen(url);
+    try {
+      await mehrplatz.anmelden(login, passwort);
+      if (ich?.rolle !== 'admin') throw new Error('Für die Übertragung bitte als Administrator anmelden.');
+      const tabellen = (await lokal.select(`SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name NOT IN ('_schema') ORDER BY name`, [])).map((t) => String(t.name));
+      for (let i = 0; i < tabellen.length; i++) {
+        const t = tabellen[i];
+        const zeilen = await lokal.select(`SELECT * FROM "${t}"`, []);
+        fortschritt(`${i + 1}/${tabellen.length}: ${t} (${zeilen.length})`);
+        for (let j = 0; j === 0 || j < zeilen.length; j += 500)
+          await anfrage('/api/import', 'POST', { tabelle: t, zeilen: zeilen.slice(j, j + 500), erste: i === 0 && j === 0, sicherung: i === 0 && j === 0, erste_der_tabelle: j === 0, letzte: i === tabellen.length - 1 && j + 500 >= zeilen.length });
+      }
+      // AUTOINCREMENT-Zähler auf dem Server stimmen nach dem Einfügen mit festen ids automatisch
+      fortschritt('Fertig');
+    } catch (e) { mehrplatz.einstellen(alt); throw e; }
+  },
+};
+function normalisieren(url: string) {
+  let u = url.trim().replace(/\/+$/, '');
+  if (!/^https?:\/\//i.test(u)) u = 'http://' + u;
+  if (!/:\d+$/.test(u.replace(/^https?:\/\//, '')) && /^http:/i.test(u)) u += ':8080';
+  return u;
+}
+
 async function migrate(d: Driver) {
   await d.execute('CREATE TABLE IF NOT EXISTS _schema (version INTEGER NOT NULL)', []);
   const rows = await d.select('SELECT MAX(version) AS v FROM _schema', []);
@@ -75,11 +187,12 @@ async function migrate(d: Driver) {
     await d.execute(MIGRATIONS[i], []);
     await d.execute('INSERT INTO _schema (version) VALUES ($1)', [i + 1]);
   }
-  if (!isTauri && current === 0) await seedDemo(d);
+  if (!isTauri && !serverAdresse() && current === 0) await seedDemo(d);
 }
 
 function driver(): Promise<Driver> {
   if (!ready) {
+    if (serverAdresse()) return Promise.reject(new Error('Bitte am NANO-Server anmelden.'));
     if (isTauri) return Promise.reject(new Error('Die Datenbank ist gesperrt.'));
     ready = browserDriver().then(async (d) => { await migrate(d); return d; });
   }

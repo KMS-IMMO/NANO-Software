@@ -4,7 +4,7 @@ import { Building2, FileUp, Paperclip, Plus, UserPlus, X } from 'lucide-react';
 import { gesperrt, sperrText } from '../logic/abschluss';
 import { db, insert, type Row } from '../db';
 import { eur } from './EntityTable';
-import { speichern } from '../lib/dateien';
+import { letztesDokument, speichern } from '../lib/dateien';
 
 const heute = () => new Date().toISOString().slice(0, 10);
 const zahl = (s: string) => Number(String(s).replace(/\./g, '').replace(',', '.')) || 0;
@@ -148,8 +148,8 @@ export function RechnungErfassen({ objektFest, onSaved, vorlage }: { objektFest?
       // Beleg in die Ablage der Liegenschaft
       let dokId: number | null = null;
       if (datei) {
-        const pfad = await speichern(new Uint8Array(await datei.arrayBuffer()), datei.name, { bezug: 'Objekt', bezugId: Number(objekt), ordner: [o?.name ?? 'Liegenschaft', 'Rechnungen', datum.slice(0, 4)] });
-        dokId = Number((await db.select('SELECT id FROM dokumente WHERE pfad = $1 ORDER BY id DESC LIMIT 1', [pfad]))[0]?.id) || null;
+        await speichern(new Uint8Array(await datei.arrayBuffer()), datei.name, { bezug: 'Objekt', bezugId: Number(objekt), ordner: [o?.name ?? 'Liegenschaft', 'Rechnungen', datum.slice(0, 4)] });
+        dokId = letztesDokument() || null;
       }
       const vz = art === 'Gutschrift' ? -1 : 1;
       const basis = { objekt_id: Number(objekt), firma_id: fid, rechnungsnr: nr.trim() || null, datum, buchungskonto_id: Number(konto),
