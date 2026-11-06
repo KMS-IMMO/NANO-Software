@@ -6,7 +6,7 @@ import { datum } from '../components/EntityTable';
 import { ablagePfad, oeffnen, sicher, speichern, type Ablage } from '../lib/dateien';
 import { personLabel } from '../db/labels';
 
-type Bezug = Ablage['bezug'];
+type Bezug = Exclude<Ablage['bezug'], 'Buchung'>;
 const BEZUEGE: Bezug[] = ['Objekt', 'Einheit', 'Mietvertrag', 'Person', 'Firma'];
 const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 

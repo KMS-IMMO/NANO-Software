@@ -7,6 +7,7 @@ export async function buchungLoeschen(id: number, opt: { mitRechnung?: boolean }
   const b = (await db.select('SELECT * FROM buchungen WHERE id = $1', [id]))[0];
   if (!b) return;
   await db.execute('DELETE FROM buchungen WHERE id = $1', [id]);
+  await db.execute(`DELETE FROM dokumente WHERE bezug = 'Buchung' AND bezug_id = $1`, [id]);   // Datei bleibt in der Ablage
   if (b.bankumsatz_id) {
     const rest = await db.select('SELECT 1 FROM buchungen WHERE bankumsatz_id = $1', [b.bankumsatz_id]);
     if (!rest.length) await db.execute(`UPDATE bankumsaetze SET status = 'offen' WHERE id = $1`, [b.bankumsatz_id]);

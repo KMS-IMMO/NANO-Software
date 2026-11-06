@@ -526,3 +526,12 @@ input:focus, select:focus, textarea:focus { box-shadow: 0 0 0 3px rgba(176,138,7
 .ki-eingabe button { padding: 0 14px; }
 .ki-fuss { font-size: 10.5px; color: var(--muted); padding: 0 12px 8px; background: var(--panel); }
 @media (prefers-reduced-motion: reduce) { .ki-fab, .ki-fab::after, .ki-panel, .ki-msg, .ki-frage, .ki-punkte i { animation: none !important; } }
+
+/* Belege an Buchungen */
+.belege { border-top: 1px solid var(--line); margin-top: 14px; padding-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+.belege-kopf { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.belege-kopf b { display: inline-flex; gap: 6px; align-items: center; }
+.belege-liste td { padding: 6px 8px; } .belege-liste .tag { margin-left: 8px; }
+.beleg-btn { position: relative; } .beleg-btn.hat { color: var(--accent-dark); }
+.beleg-btn small { position: absolute; top: -3px; right: -4px; background: var(--accent); color: #fff; border-radius: 999px; font-size: 9.5px; min-width: 15px; height: 15px; line-height: 15px; text-align: center; padding: 0 3px; font-weight: 700; }
+.beleg-btn.leer { opacity: .45; } .beleg-btn.leer:hover { opacity: 1; }

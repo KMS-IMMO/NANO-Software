@@ -1,7 +1,7 @@
 // Buchhaltung: Buchungsjournal mit manueller Buchung, Buchungsregeln, Kontenübersicht (GuV) und Berichte.
 import { useEffect, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { BarChart3, BookOpen, Download, FileSpreadsheet, FileText, Gavel, Pencil, PiggyBank, Plus, Receipt, Sparkles, Trash2, Users, User } from 'lucide-react';
+import { BarChart3, BookOpen, Download, FileSpreadsheet, FileText, Gavel, Paperclip, Pencil, PiggyBank, Plus, Receipt, Sparkles, Trash2, Users, User } from 'lucide-react';
 import { EntityTable, datum, eur, num } from '../components/EntityTable';
 import { db, insert, remove, update, type Row } from '../db';
 import { personLabel } from '../db/labels';
@@ -10,6 +10,7 @@ import { csv, dDatum, geld, listePdf } from '../lib/pdf';
 import { oeffnen, speichern } from '../lib/dateien';
 import { useObjektKontext } from '../logic/objektKontext';
 import { RechnungErfassen } from '../components/RechnungErfassen';
+import { BELEGE_SQL, BuchungBelege } from '../components/BuchungBelege';
 import { buchungLoeschen, loeschHinweis } from '../logic/buchung';
 import { gesperrt, sperrText } from '../logic/abschluss';
 
@@ -47,6 +48,7 @@ export function JournalPage() {
   const [fehler, setFehler] = useState('');
   const [info, setInfo] = useState('');
   const [rEdit, setREdit] = useState<Row | null>(null);
+  const [belegFuer, setBelegFuer] = useState<Row | null>(null);
 
   useEffect(() => { db.select(kontoOptions).then(setKonten); }, []);
   const load = async () => {
@@ -54,7 +56,7 @@ export function JournalPage() {
     if (monat) w.push(`substr(b.datum, 6, 2) = '${monat}'`);
     if (objekt !== '') w.push(`b.objekt_id = ${Number(objekt)}`);
     if (kontoWahl.length) w.push(`b.buchungskonto_id IN (${kontoWahl.map(Number).join(',')})`);
-    setRows(await db.select(`SELECT b.*, k.nummer, k.name AS konto, o.name AS objekt, e.nummer AS einheit, COALESCE(f.name, rf.name) AS firma, r.rechnungsnr
+    setRows(await db.select(`SELECT b.*, k.nummer, k.name AS konto, o.name AS objekt, e.nummer AS einheit, COALESCE(f.name, rf.name) AS firma, r.rechnungsnr, ${BELEGE_SQL} AS belege
       FROM buchungen b LEFT JOIN buchungskonten k ON k.id = b.buchungskonto_id LEFT JOIN objekte o ON o.id = b.objekt_id LEFT JOIN einheiten e ON e.id = b.einheit_id
       LEFT JOIN firmen f ON f.id = b.firma_id LEFT JOIN rechnungen r ON r.id = b.rechnung_id LEFT JOIN firmen rf ON rf.id = r.firma_id
       WHERE ${w.join(' AND ')} ORDER BY b.datum, b.id`));
@@ -218,7 +220,8 @@ export function JournalPage() {
                 <td>{r.firma ?? <span className="muted">–</span>}</td>
                 <td className="small">{r.text}{r.rechnungsnr && !String(r.text ?? "").includes(r.rechnungsnr) ? <span className="muted"> · Rechnung {r.rechnungsnr}</span> : ''}{r.bankumsatz_id ? <span className="muted"> · Bank</span> : ''}</td>
                 <td className="num neg">{r.betrag < 0 ? eur(-r.betrag) : '–'}</td><td className="num">{r.betrag > 0 ? eur(r.betrag) : '–'}</td>
-                <td className="actions nowrap"><button className="icon-btn" title="Buchung bearbeiten" onClick={() => bearbeiten(r)}><Pencil size={15} /></button>
+                <td className="actions nowrap"><button className={'icon-btn beleg-btn ' + (r.belege ? 'hat' : 'leer')} title={r.belege ? `${r.belege} Beleg(e) ansehen oder anhängen` : 'Beleg anhängen'} onClick={() => setBelegFuer(r)}><Paperclip size={15} />{r.belege > 0 && <small>{r.belege}</small>}</button>
+                  <button className="icon-btn" title="Buchung bearbeiten" onClick={() => bearbeiten(r)}><Pencil size={15} /></button>
                   <button className="icon-btn" title="Buchung löschen" onClick={() => loeschen(r)}><Trash2 size={15} /></button></td>
               </tr>))}
             </tbody>
@@ -240,6 +243,7 @@ export function JournalPage() {
                 <BuchungForm edit={edit} setEdit={setEdit} objekte={objekte} konten={konten} fest={!!fix} />
                 {edit.id && (edit.bankumsatz_id || edit.sollstellung_id || edit.rechnung_id) && <p className="warn small">
                   Diese Buchung gehört {edit.bankumsatz_id ? 'zu einem Bankumsatz' : edit.sollstellung_id ? 'zu einem offenen Posten' : 'zu einer Rechnung'}. Konto, Text und Einheit kannst du frei ändern. Bei einem anderen Betrag fragt das Programm nach.</p>}
+                {edit.id && <BuchungBelege buchung={edit} onChange={load} />}
                 {fehler && <p className="error">{fehler}</p>}
                 <div className="row end">
                   {edit.id && <button className="danger" onClick={() => loeschen()}>Löschen</button>}
@@ -247,6 +251,15 @@ export function JournalPage() {
                   <button onClick={() => setEdit(null)}>Abbrechen</button>
                   <button className="primary" onClick={speichernBuchung}>Buchung speichern</button>
                 </div></>}
+          </div>
+        </div>)}
+      {belegFuer && (
+        <div className="modal-bg" onClick={() => setBelegFuer(null)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="card-head"><h3>Buchung {belegFuer.id} · {datum(belegFuer.datum)}</h3><b className={belegFuer.betrag < 0 ? 'neg' : 'pos'}>{eur(belegFuer.betrag)}</b></div>
+            <p className="muted small" style={{ margin: 0 }}>{[belegFuer.objekt, belegFuer.firma, belegFuer.text].filter(Boolean).join(' · ')}</p>
+            <BuchungBelege buchung={belegFuer} onChange={load} />
+            <div className="row end"><button onClick={() => setBelegFuer(null)}>Fertig</button></div>
           </div>
         </div>)}
       {rEdit && (
