@@ -714,3 +714,20 @@ tr:hover .pill { transform: scale(1.04); }
 .kpi.icon svg { width: 30px; height: 30px; }
 .kpi.icon b { font-size: 22px; }
 .kpi.icon span { font-size: 13px; }
+
+/* Kopfleiste: Fortsetzung der Logo-Leiterbahnen */
+.topbar { position: sticky; overflow: hidden; }
+.topbar > :not(.kopf-netz) { position: relative; z-index: 1; }
+.kopf-netz { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; }
+.kopf-netz .bahn { fill: none; stroke: #e6ddcc; stroke-width: 1; }
+.kopf-netz .paket { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linecap: round; stroke-dasharray: 4 96; stroke-dashoffset: 100; opacity: .8;
+  animation: logo-paket 5.2s linear infinite; filter: drop-shadow(0 0 2px rgba(176,138,74,.7)); }
+.kopf-netz .q1 { animation-duration: 6.4s; animation-delay: -2.1s; stroke: #6f7782; }
+.kopf-netz .q2 { animation-duration: 5.8s; animation-delay: -3.7s; }
+.kopf-netz .q3 { animation-duration: 3.1s; animation-delay: -1.2s; stroke: #6f7782; }
+.kopf-netz .q4 { animation-duration: 3.6s; animation-delay: -.5s; }
+.kopf-netz .knoten { fill: #fff; stroke: #dcd1bd; stroke-width: 1; animation: logo-knoten 5.2s ease-in-out infinite; }
+.kopf-netz .j1 { animation-delay: -2.1s; } .kopf-netz .j2 { animation-delay: -3.7s; } .kopf-netz .j3 { animation-delay: -1.2s; } .kopf-netz .j4 { animation-delay: -.5s; } .kopf-netz .j5 { animation-delay: -2.8s; }
+.kopf-netz.aktiv .paket { animation-duration: 1.4s !important; opacity: 1; stroke-width: 2.4; }
+.kopf-netz.aktiv .knoten { animation-duration: 1.4s; }
+@media (prefers-reduced-motion: reduce) { .kopf-netz .paket { display: none; } }
