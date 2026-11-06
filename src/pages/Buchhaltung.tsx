@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { BarChart3, BookOpen, Download, FileSpreadsheet, FileText, Gavel, Paperclip, Pencil, PiggyBank, Plus, Receipt, Sparkles, Trash2, Users, User } from 'lucide-react';
 import { EntityTable, datum, eur, num } from '../components/EntityTable';
 import { db, insert, remove, update, type Row } from '../db';
-import { personLabel } from '../db/labels';
+import { einheitLabel, personLabel } from '../db/labels';
 import { OP_SQL } from '../logic/soll';
 import { csv, dDatum, geld, listePdf } from '../lib/pdf';
 import { oeffnen, speichern } from '../lib/dateien';
@@ -317,7 +317,7 @@ function BuchungForm({ edit, setEdit, objekte, konten, fest }: { edit: Row; setE
   const [einheiten, setEinheiten] = useState<Row[]>([]);
   const [firmen, setFirmen] = useState<Row[]>([]);
   useEffect(() => { db.select('SELECT id, name FROM firmen ORDER BY name').then(setFirmen); }, []);
-  useEffect(() => { if (edit.objekt_id) db.select('SELECT id, nummer FROM einheiten WHERE objekt_id = $1 ORDER BY nummer', [Number(edit.objekt_id)]).then(setEinheiten); }, [edit.objekt_id]);
+  useEffect(() => { if (edit.objekt_id) db.select(`SELECT e.id, ${einheitLabel('e')} AS nummer FROM einheiten e WHERE e.objekt_id = $1 ORDER BY e.nummer`, [Number(edit.objekt_id)]).then(setEinheiten); }, [edit.objekt_id]);
   const set = (k: string, v: any) => setEdit({ ...edit, [k]: v });
   const anteile: Record<string, string> = edit.anteile ?? {};
   const gesamt = Math.abs(zahl(String(edit.betrag ?? '')));

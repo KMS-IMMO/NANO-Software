@@ -2,15 +2,14 @@
 // für einen Zeitraum aus den Stammdaten erzeugen, einzeln bearbeiten, löschen oder von Hand anlegen.
 import { useEffect, useMemo, useState } from 'react';
 import { CalendarRange, Plus, Trash2 } from 'lucide-react';
-import { db, insert, remove, update, type Row } from '../db';
-import { personLabel } from '../db/labels';
+import { db, remove, update, type Row } from '../db';
 import { useObjektKontext } from '../logic/objektKontext';
 import { eur } from '../components/EntityTable';
+import { SollstellungNeu } from '../components/SollstellungNeu';
 import { OP_SQL, postenStatus, sollStellen, zahlungBuchen, mahnenAbTage } from '../logic/soll';
 
 const heute = () => new Date().toISOString().slice(0, 10);
 const zahl = (s: string) => Number(String(s).replace(/\./g, '').replace(',', '.')) || 0;
-const ARTEN = ['Kaltmiete', 'NK', 'HK', 'USt', 'Hausgeld', 'Rücklage', 'Sonderumlage', 'Nachzahlung', 'Sonstiges'];
 const monatName = (m: string) => /^\d{4}-\d{2}$/.test(m) ? new Date(Number(m.slice(0, 4)), Number(m.slice(5, 7)) - 1).toLocaleDateString('de-DE', { month: 'long', year: 'numeric' }) : m;
 export const STATUS_KLASSE: Record<string, string> = { bezahlt: 'aktiv', erwartet: 'erwartet', 'fällig': 'faellig', mahnen: 'mahnen', gemahnt: 'gemahnt' };
 
@@ -24,7 +23,6 @@ export function SollstellungenPage() {
   const [rows, setRows] = useState<Row[]>([]);
   const [info, setInfo] = useState('');
   const [neu, setNeu] = useState<Row | null>(null);
-  const [einheiten, setEinheiten] = useState<Row[]>([]);
   const [grenze, setGrenze] = useState(14);
 
   useEffect(() => { db.select('SELECT id, name FROM objekte ORDER BY name').then(setObjekte); mahnenAbTage().then(setGrenze); }, []);
@@ -32,10 +30,6 @@ export function SollstellungenPage() {
     const w = [`substr(s.monat, 1, 7) BETWEEN $1 AND $2`];
     if (objekt !== '') w.push(`o.id = ${Number(objekt)}`);
     setRows(await db.select(`SELECT * FROM (${OP_SQL} WHERE ${w.join(' AND ')}) ORDER BY monat, objekt, einheit, art`, [von, bis]));
-    if (objekt !== '') setEinheiten(await db.select(`SELECT e.id, e.nummer,
-        (SELECT v.mieter_id FROM mietvertraege v WHERE v.einheit_id = e.id AND (v.ende IS NULL OR v.ende >= date('now')) ORDER BY v.beginn DESC LIMIT 1) AS mieter,
-        (SELECT ei.person_id FROM eigentum ei WHERE ei.einheit_id = e.id AND (ei.bis IS NULL OR ei.bis >= date('now')) ORDER BY ei.anteil DESC LIMIT 1) AS eigentuemer
-      FROM einheiten e WHERE e.objekt_id = $1 ORDER BY e.nummer`, [objekt]));
   };
   useEffect(() => { load(); }, [von, bis, objekt]);
 
@@ -54,14 +48,6 @@ export function SollstellungenPage() {
     if (r.bezahlt > 0.005) { setInfo('Auf diesen Posten ist schon eine Zahlung gebucht. Bitte zuerst die Zahlung lösen.'); return; }
     await remove('sollstellungen', r.id); load();
   }
-  async function anlegen() {
-    if (!neu?.einheit_id || !neu.monat || !neu.art || !zahl(String(neu.betrag ?? ''))) { setInfo('Bitte Einheit, Monat, Art und Betrag angeben.'); return; }
-    try {
-      await insert('sollstellungen', { einheit_id: Number(neu.einheit_id), person_id: neu.person_id ? Number(neu.person_id) : null, monat: neu.monat, art: neu.art,
-        betrag: zahl(String(neu.betrag)), faellig: neu.faellig || `${neu.monat}-03` });
-      setNeu(null); setInfo('Posten angelegt.'); load();
-    } catch { setInfo('Diesen Posten gibt es für Einheit, Monat und Art schon. Bitte den vorhandenen bearbeiten.'); }
-  }
 
   const monate = useMemo(() => {
     const m = new Map<string, Row[]>();
@@ -69,8 +55,6 @@ export function SollstellungenPage() {
     return [...m.entries()];
   }, [rows]);
   const summe = rows.reduce((a, r) => a + r.betrag, 0), bezahlt = rows.reduce((a, r) => a + Math.min(r.bezahlt, r.betrag), 0);
-  const [personen, setPersonen] = useState<Row[]>([]);
-  useEffect(() => { if (neu) db.select(`SELECT p.id, ${personLabel('p')} AS name FROM personen p ORDER BY name`).then(setPersonen); }, [!!neu]);
 
   return (
     <>
@@ -120,23 +104,7 @@ export function SollstellungenPage() {
             </table></div>
           </section>);
       })}
-      {neu && (
-        <div className="modal-bg" onClick={() => setNeu(null)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <h3>Sollstellung hinzufügen</h3>
-            <div className="form">
-              <label><span>Einheit *</span><select value={neu.einheit_id ?? ''} onChange={(e) => { const x = einheiten.find((u) => u.id === Number(e.target.value)); setNeu({ ...neu, einheit_id: e.target.value, person_id: x?.mieter ?? x?.eigentuemer ?? '' }); }}>
-                <option value="">– bitte wählen –</option>{einheiten.map((u) => <option key={u.id} value={u.id}>{u.nummer}</option>)}</select></label>
-              <label><span>Mieter / Eigentümer</span><select value={neu.person_id ?? ''} onChange={(e) => setNeu({ ...neu, person_id: e.target.value })}>
-                <option value="">–</option>{personen.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
-              <label><span>Monat *</span><input type="month" value={neu.monat} onChange={(e) => setNeu({ ...neu, monat: e.target.value })} /></label>
-              <label><span>Art *</span><select value={neu.art} onChange={(e) => setNeu({ ...neu, art: e.target.value })}>{ARTEN.map((a) => <option key={a}>{a}</option>)}</select></label>
-              <label><span>Betrag € *</span><input inputMode="decimal" value={neu.betrag ?? ''} onChange={(e) => setNeu({ ...neu, betrag: e.target.value })} /></label>
-              <label><span>Fällig am</span><input type="date" value={neu.faellig ?? ''} onChange={(e) => setNeu({ ...neu, faellig: e.target.value })} /></label>
-            </div>
-            <div className="row end"><span className="grow" /><button onClick={() => setNeu(null)}>Abbrechen</button><button className="primary" onClick={anlegen}>Anlegen</button></div>
-          </div>
-        </div>)}
+      {neu && objekt !== '' && <SollstellungNeu objektId={Number(objekt)} onClose={() => setNeu(null)} onSaved={(t) => { setNeu(null); setInfo(t); load(); }} />}
     </>
   );
 }

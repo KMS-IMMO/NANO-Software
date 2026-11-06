@@ -35,7 +35,7 @@ export function mieteImMonat(v: Row, anpassungen: Row[], monat: string) {
 
 const faelligAm = (monat: string, tag: number) => `${monat}-${String(Math.min(Math.max(tag || 3, 1), 28)).padStart(2, '0')}`;
 
-async function soll(row: Row): Promise<number> {
+export async function soll(row: Row): Promise<number> {
   const r = await db.execute(
     `INSERT OR IGNORE INTO sollstellungen (vertrag_id, einheit_id, person_id, monat, art, betrag, faellig)
      VALUES ($1, $2, $3, $4, $5, $6, $7)`,
@@ -95,6 +95,48 @@ export async function sollStellen(bisMonat: string, opt: { von?: string; objektI
     }
   }
   return n;
+}
+
+export type Posten = { einheit_id: number; monat: string; art: string; betrag: number; person_id: number | null; vertrag_id: number | null; faellig: string };
+export const ALLE_ARTEN = 'Alles laut Stammdaten';
+
+/**
+ * Beträge laut Stammdaten für einzelne Einheiten und Monate: Miete (Kalt, NK, HK, USt) aus dem Mietvertrag inkl. Anpassungen,
+ * Hausgeld und Rücklage aus dem Hausgeld der Einheit. `art` = eine Art oder ALLE_ARTEN. Arten ohne Stammdaten liefern nichts.
+ */
+export async function stammdatenPosten(einheitIds: number[], monateListe: string[], art: string, faelligTag?: number): Promise<Posten[]> {
+  if (!einheitIds.length || !monateListe.length) return [];
+  const ids = einheitIds.map(Number).join(',');
+  const vertraege = await db.select(`SELECT * FROM mietvertraege WHERE einheit_id IN (${ids}) AND COALESCE(zahlung_an, 'Verwaltung') <> 'Eigentümer' ORDER BY beginn`);
+  const anp = vertraege.length ? await db.select(`SELECT * FROM mietanpassungen WHERE vertrag_id IN (${vertraege.map((v) => v.id).join(',')})`) : [];
+  const hg = await db.select(`SELECT h.*, o.ruecklage_zahlweise FROM hausgeld h JOIN einheiten e ON e.id = h.einheit_id JOIN objekte o ON o.id = e.objekt_id
+    WHERE h.einheit_id IN (${ids}) ORDER BY h.gueltig_ab`);
+  const eig = await db.select(`SELECT * FROM eigentum WHERE einheit_id IN (${ids}) ORDER BY anteil DESC`);
+  const out: Posten[] = [];
+  const will = (a: string) => art === ALLE_ARTEN || art === a;
+  for (const eid of einheitIds) {
+    for (const monat of monateListe) {
+      const anfang = `${monat}-01`, ende = `${monat}-31`;
+      const v = [...vertraege].reverse().find((x) => x.einheit_id === eid && String(x.beginn) <= ende && (!x.ende || String(x.ende) >= anfang));
+      if (v) {
+        const m = mieteImMonat(v, anp.filter((a) => a.vertrag_id === v.id), monat);
+        const f = faelligAm(monat, faelligTag ?? v.faellig_tag);
+        for (const [a, b] of [['Kaltmiete', m.kalt], ['NK', m.nk], ['HK', m.hk], ['USt', m.ust]] as const)
+          if (b && will(a)) out.push({ einheit_id: eid, monat, art: a, betrag: b, person_id: v.mieter_id, vertrag_id: v.id, faellig: f });
+      }
+      const satz = [...hg].reverse().find((h) => h.einheit_id === eid && h.gueltig_ab <= anfang);
+      const owner = eig.find((e) => e.einheit_id === eid && (!e.von || e.von <= ende) && (!e.bis || e.bis >= anfang));
+      if (satz?.betrag && owner) {
+        const f = faelligAm(monat, faelligTag ?? 3);
+        const rl = r2(Number(satz.davon_ruecklage) || 0);
+        const getrennt = (owner.zahlweise || satz.ruecklage_zahlweise) === 'getrennt' && rl > 0 && rl < satz.betrag;
+        const base = { einheit_id: eid, monat, person_id: owner.person_id, vertrag_id: null, faellig: f };
+        if (will('Hausgeld')) out.push({ ...base, art: 'Hausgeld', betrag: getrennt ? r2(satz.betrag - rl) : Number(satz.betrag) });
+        if (getrennt && will('Rücklage')) out.push({ ...base, art: 'Rücklage', betrag: rl });
+      }
+    }
+  }
+  return out;
 }
 
 /** Hausgeld-Posten einer Liegenschaft ab `abMonat` neu stellen, z. B. nach geändertem Hausgeld, Rücklage oder Zahlweise.

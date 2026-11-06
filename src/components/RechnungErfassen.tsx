@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Building2, FileUp, Paperclip, Plus, UserPlus, X } from 'lucide-react';
 import { gesperrt, sperrText } from '../logic/abschluss';
 import { db, insert, type Row } from '../db';
+import { einheitPerson } from '../db/labels';
 import { eur } from './EntityTable';
 import { letztesDokument, speichern } from '../lib/dateien';
 
@@ -98,7 +99,7 @@ export function RechnungErfassen({ objektFest, onSaved, vorlage }: { objektFest?
   }, [firmenDa]);
   useEffect(() => {
     if (objekt === '') { setEinheiten([]); return; }
-    db.select('SELECT id, nummer, typ FROM einheiten WHERE objekt_id = $1 ORDER BY nummer', [objekt]).then(setEinheiten);
+    db.select(`SELECT e.id, e.nummer, e.typ, ${einheitPerson('e')} AS person FROM einheiten e WHERE e.objekt_id = $1 ORDER BY e.nummer`, [objekt]).then(setEinheiten);
     setAnteile({});
   }, [objekt]);
 
@@ -209,7 +210,7 @@ export function RechnungErfassen({ objektFest, onSaved, vorlage }: { objektFest?
                 const an = anteile[e.id] !== undefined && anteile[e.id] !== '';
                 return (
                   <div key={e.id} className="row">
-                    <label className="check grow"><input type="checkbox" checked={an} onChange={() => einheitUmschalten(e.id)} /><span>{e.nummer} <span className="muted">{e.typ}</span></span></label>
+                    <label className="check grow"><input type="checkbox" checked={an} onChange={() => einheitUmschalten(e.id)} /><span>{e.nummer} {e.person && <b className="einheit-person">{e.person}</b>} <span className="muted">{e.typ}</span></span></label>
                     {an && <input className="cell" inputMode="decimal" value={anteile[e.id]} onChange={(x) => setAnteile({ ...anteile, [e.id]: x.target.value })} />}
                   </div>);
               })}

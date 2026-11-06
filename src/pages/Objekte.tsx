@@ -18,7 +18,7 @@ import { EigentuemerAbrechnungPage, WegAbrechnungPage } from './Jahresabrechnung
 import { DokumentePage } from './Dokumente';
 import { FristenPage } from './Fristen';
 import { db, type Row } from '../db';
-import { AKTIV, EINHEIT_TYPEN, SCHLUESSEL, WARMWASSER, personLabel, personOptions, widSql } from '../db/labels';
+import { AKTIV, EINHEIT_TYPEN, einheitLabel, SCHLUESSEL, WARMWASSER, personLabel, personOptions, widSql } from '../db/labels';
 
 const adresse = (o: Row) => [o.strasse, [o.plz, o.ort].filter(Boolean).join(' ')].filter(Boolean).join(', ');
 const statusPill = (v: any) => <span className={'pill ' + String(v ?? 'Aktiv').toLowerCase()}>{v ?? 'Aktiv'}</span>;
@@ -351,7 +351,7 @@ function EinheitenTab({ objektId, weg, onChange }: { objektId: number; weg: bool
   );
 }
 
-const einheitOptions = (objektId: number) => `SELECT id AS value, nummer AS label FROM einheiten WHERE objekt_id = ${objektId} ORDER BY nummer`;
+const einheitOptions = (objektId: number) => `SELECT e.id AS value, ${einheitLabel('e')} AS label FROM einheiten e WHERE e.objekt_id = ${objektId} ORDER BY e.nummer`;
 
 const ZAHLWEISE: Record<string, string> = { zusammen: 'Hausgeld und Rücklage in einer Summe', getrennt: 'Hausgeld und Rücklage getrennt' };
 const zahlStr = (n: number) => (n ? n.toFixed(2).replace('.', ',') : '');

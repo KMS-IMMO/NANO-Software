@@ -7,7 +7,7 @@ import { useEffect, useState } from 'react';
 import { Paperclip } from 'lucide-react';
 import { RechnungErfassen } from '../components/RechnungErfassen';
 import { oeffnen } from '../lib/dateien';
-import { SCHLUESSEL, kontoOptions } from '../db/labels';
+import { SCHLUESSEL, einheitLabel, kontoOptions } from '../db/labels';
 import { DATEV_EINST } from '../logic/datev';
 import { KI_MODELLE, KI_STANDARD, kiEinstellungen, kiSchluesselSpeichern } from '../logic/kiAgent';
 
@@ -54,7 +54,7 @@ export function RechnungenPage() {
         { key: 'datum', label: 'Datum', type: 'date', required: true },
         ...(fix ? [] : [{ key: 'objekt_id', label: 'Objekt', type: 'select' as const, required: true, optionsSql: 'SELECT id AS value, name AS label FROM objekte ORDER BY name' }]),
         { key: 'einheit_id', label: 'Einheit', type: 'select', leer: 'Alle Einheiten (Umlage nach Schlüssel)',
-          optionsSql: `SELECT e.id AS value, ${fix ? '' : "o.name || ' – ' || "}e.nummer AS label FROM einheiten e JOIN objekte o ON o.id = e.objekt_id ${fix ? `WHERE e.objekt_id = ${fix.id}` : ''} ORDER BY label` },
+          optionsSql: `SELECT e.id AS value, ${fix ? '' : "o.name || ' – ' || "}${einheitLabel('e')} AS label FROM einheiten e JOIN objekte o ON o.id = e.objekt_id ${fix ? `WHERE e.objekt_id = ${fix.id}` : ''} ORDER BY o.name, e.nummer` },
         { key: 'firma_id', label: 'Firma', type: 'select', optionsSql: 'SELECT id AS value, name AS label FROM firmen ORDER BY name' },
         { key: 'rechnungsnr', label: 'Rechnungsnr.' },
         { key: 'buchungskonto_id', label: 'Buchungskonto', type: 'select', required: true, wide: true, optionsSql: kontoOptions("art IN ('Aufwand')") },
