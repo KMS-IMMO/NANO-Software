@@ -143,7 +143,8 @@ export function NebenkostenPage() {
         <div className="kpi"><span>Umlagefähige Kosten</span><b>{eur(kosten)}</b></div>
         <div className="kpi"><span>Vorauszahlungen{mieter.some((r) => r.ueberEigentuemer) ? ' (gezahlt bzw. laut Vertrag)' : ' (gezahlt)'}</span><b>{eur(mieter.reduce((a, r) => a + r.vz, 0))}</b></div>
         <div className="kpi"><span>Nachzahlungen − Guthaben</span><b>{eur(mieter.reduce((a, r) => a + r.saldo, 0))}</b></div>
-        <div className="kpi"><span>{weg ? 'Anteil selbst genutzt / nicht vermietet' : 'Anteil Leerstand (Eigentümer)'}</span><b>{eur(leer.reduce((a, r) => a + r.summe, 0))}</b></div>
+        {weg ? <div className="kpi"><span>Mieter in der Abrechnung</span><b>{mieter.length}</b><small>{einheiten.length - new Set(mieter.map((r) => r.einheit.id)).size} Einheiten nicht vermietet</small></div>
+          : <div className="kpi"><span>Anteil Leerstand (Eigentümer)</span><b>{eur(leer.reduce((a, r) => a + r.summe, 0))}</b></div>}
       </div>
 
       <fieldset className="gesperrt" disabled={!!zu}>
@@ -172,6 +173,7 @@ export function NebenkostenPage() {
       </fieldset>
 
       {objekt !== '' && <AbrechnungsUebersicht objekt={Number(objekt)} jahr={jahr} pos={pos} titel={`Abrechnungsübersicht ${jahr}: umlagefähige Kosten`} nurUmlagefaehig
+        mitEinnahmen={!weg} einnahmeKonten={['1001', '1002']} einnahmenTitel="Vorauszahlungen der Mieter"
         onChanged={zu ? undefined : (t) => { setInfo(t); setStand((x) => x + 1); laden(); }}
         schluessel={(p) => zu ? <>{schluesselText(p.schluessel)}</> : <SchluesselWahl objekt={Number(objekt)} jahr={jahr} p={p} onChanged={(t) => { setInfo(t); laden(); }} anteile={(k) => {
           const m: Record<number, number> = {};
@@ -183,7 +185,7 @@ export function NebenkostenPage() {
         {erg.length === 0 ? <p className="muted">Keine Nutzer im Jahr.</p> : (
           <table className="list">
             <thead><tr><th>Einheit</th><th>Nutzer</th><th>Zeitraum</th><th className="num">Kostenanteil</th><th className="num">Vorauszahlung</th><th className="num">Ergebnis</th><th className="num">§35a HDL / HWL</th></tr></thead>
-            <tbody>{erg.map((r) => (
+            <tbody>{erg.filter((r) => !weg || r.nutzer.art === 'Mieter').map((r) => (
               <tr key={r.nutzer.key}>
                 <td>{r.einheit.nummer}</td>
                 <td>{r.nutzer.art === 'Leerstand' ? <span className="tag">{weg ? 'Eigentümer (selbst genutzt / nicht vermietet)' : 'Leerstand / nicht vermietet · Eigentümer'}</span>
@@ -196,6 +198,7 @@ export function NebenkostenPage() {
               </tr>))}
             </tbody>
           </table>)}
+        {weg && <p className="muted small">Hier steht nur, was die Mieter betrifft: umlagefähige Kosten und ihre Vorauszahlungen. Hausgeld, Erhaltungsrücklage und die Anteile selbst genutzter Einheiten gehören den Eigentümern und stehen nur in der Hausgeldabrechnung. Diese Abrechnung ändert an der Hausgeldabrechnung nichts.</p>}
       </section>
     </>
   );
