@@ -1,11 +1,12 @@
 // Produktivität: Kalender, Erinnerungen, Ticket-Boards, Todo und Notizen
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { AlarmClock, Calendar, ChevronLeft, ChevronRight, CircleCheck, Columns3, Plus, SquarePen, Trash2 } from 'lucide-react';
+import { AlarmClock, Calendar, ChevronLeft, ChevronRight, CircleCheck, Columns3, Plus, Printer, SquarePen, Trash2 } from 'lucide-react';
 import { db, insert, remove, update, type Row } from '../db';
 import { datum } from '../components/EntityTable';
 import { FirmenPage, PersonenPage } from './Personen';
 import { TERMINARTEN, terminKlasse } from '../logic/termine';
+import { SchadensberichtDialog } from '../components/SchadensberichtDialog';
 
 const heute = () => new Date().toISOString().slice(0, 10);
 const OBJEKTE_SQL = 'SELECT id, name FROM objekte ORDER BY name';
@@ -200,6 +201,7 @@ export function TicketBoardsPage() {
   const [neuBoard, setNeuBoard] = useState('');
   const [ziehe, setZiehe] = useState<number | null>(null);
   const [ueber, setUeber] = useState('');
+  const [bericht, setBericht] = useState(false);
   const instand = board === INSTAND;
   const ladeBoards = () => db.select('SELECT b.*, (SELECT COUNT(*) FROM tickets t WHERE t.board_id = b.id AND t.status <> \'Erledigt\') AS offen FROM boards b ORDER BY b.name').then(setBoards);
   const load = async () => setKarten(instand
@@ -238,9 +240,11 @@ export function TicketBoardsPage() {
           {boards.map((b) => <button key={b.id} className={board === b.id ? 'on' : ''} onClick={() => setBoard(b.id)}>{b.name}{b.offen ? ` (${b.offen})` : ''}</button>)}
         </div>
         <span className="grow" />
+        <button onClick={() => setBericht(true)}><Printer size={16} />Schadensbericht drucken</button>
         <button onClick={() => setVerwalten(true)}>Board-Verwaltung</button>
         <button className="primary" onClick={() => setEdit({ status: 'Offen', prioritaet: 'Mittel' })}><Plus size={16} />Karte</button>
       </section>
+      {bericht && <SchadensberichtDialog onClose={() => setBericht(false)} />}
       <div className="board">
         {SPALTEN.map((s) => {
           const liste = karten.filter((k) => k.status === s);

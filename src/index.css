@@ -953,3 +953,4 @@ i.hq { background: #e6d3ae; border: 1.5px solid #3a3d42; } i.mv { background: #5
 .osa-ki p { margin: 6px 0 0; }
 .osa-aktionen { margin-top: 14px; flex-wrap: wrap; gap: 8px; }
 @media (max-width: 1200px) { .osa-raster { grid-template-columns: 1fr; } }
+.schaden-filter { flex-wrap: wrap; gap: 10px; margin-bottom: 6px; }
