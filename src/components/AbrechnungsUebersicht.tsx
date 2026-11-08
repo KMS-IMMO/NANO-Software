@@ -104,10 +104,12 @@ function Belege({ liste, ausgabe, kontoId, objekt, jahr, onChanged }: { liste: R
   );
 }
 
-export function AbrechnungsUebersicht({ objekt, jahr, pos, schluessel, stand = 0, mitEinnahmen = true, titel, onChanged, nurUmlagefaehig = false }: {
+export function AbrechnungsUebersicht({ objekt, jahr, pos, schluessel, stand = 0, mitEinnahmen = true, titel, onChanged, nurUmlagefaehig = false, einnahmeKonten, einnahmenTitel }: {
   objekt: number; jahr: number; pos: Position[]; schluessel: (p: Position) => ReactNode; stand?: number; mitEinnahmen?: boolean; titel?: string;
   /** Wird nach Ändern, Löschen oder Hinzufügen eines Betrags aufgerufen; ohne diese Funktion ist die Übersicht nur lesbar */
   onChanged?: (text: string) => void; nurUmlagefaehig?: boolean;
+  /** Nur diese Einnahmekonten zeigen (Nebenkostenabrechnung: nur Vorauszahlungen der Mieter, nie Hausgeld oder Rücklage der Eigentümer) */
+  einnahmeKonten?: string[]; einnahmenTitel?: string;
 }) {
   const [neu, setNeu] = useState<{ konto: string; datum: string; text: string; betrag: string } | null>(null);
   const [neuFehler, setNeuFehler] = useState('');
@@ -126,7 +128,8 @@ export function AbrechnungsUebersicht({ objekt, jahr, pos, schluessel, stand = 0
   }, [objekt, jahr, stand, pos, intern]);
 
   const umschalten = (k: string) => { const n = new Set(offen); n.has(k) ? n.delete(k) : n.add(k); setOffen(n); };
-  const einnahmen = [...new Set(belege.ein.map((b) => b.buchungskonto_id))].map((id) => {
+  const einErlaubt = (id: number) => !einnahmeKonten || einnahmeKonten.includes(String(konten.find((x) => x.id === id)?.nummer ?? ''));
+  const einnahmen = [...new Set(belege.ein.map((b) => b.buchungskonto_id))].filter(einErlaubt).map((id) => {
     const k = konten.find((x) => x.id === id) ?? { nummer: '', name: 'ohne Konto' };
     const liste = belege.ein.filter((b) => b.buchungskonto_id === id);
     return { id, nummer: k.nummer, name: k.name, liste, betrag: liste.reduce((a, b) => a + b.betrag, 0) };
@@ -197,8 +200,8 @@ export function AbrechnungsUebersicht({ objekt, jahr, pos, schluessel, stand = 0
           <tfoot><tr><td /><td colSpan={4}>Summe Ausgaben gesamt</td><td className="num">{eur(summeAus)}</td></tr></tfoot>
         </table>)}
       {mitEinnahmen && <>
-        <h3 className="sec">Einnahmen</h3>
-        {einnahmen.length === 0 ? <p className="muted">Keine Einnahmen im Jahr {jahr} gebucht.</p> : (
+        <h3 className="sec">{einnahmenTitel ?? 'Einnahmen'}</h3>
+        {einnahmen.length === 0 ? <p className="muted">{einnahmeKonten ? `Keine Vorauszahlungen von Mietern im Jahr ${jahr} bei uns gebucht.` : `Keine Einnahmen im Jahr ${jahr} gebucht.`}</p> : (
           <table className="list">
             <thead><tr><th style={{ width: 36 }} /><th>Konto</th><th>Art</th><th className="num">Buchungen</th><th className="num">Gesamt</th></tr></thead>
             <tbody>{einnahmen.map((e) => {
