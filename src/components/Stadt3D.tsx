@@ -6,11 +6,15 @@ import * as THREE from 'three';
 
 export type StadtObjekt = { id: number; name: string; einheiten: number; verwaltungsart: string };
 
-const GOLD = 0xd4a65a;
-const FARBE: Record<string, number> = { WEG: 0x6b8fd6, Mietverwaltung: 0x4fa3a5 };
+// Helles Design passend zum System: cremefarbener Grund, weiße Gebäude, goldene und farbige Kanten
+const GOLD = 0xb8873a;
+const GOLD_HELL = 0xd9a441;
+const TUERKIS = 0x2e9ca1;
+const FARBE: Record<string, number> = { WEG: 0x4f78c9, Mietverwaltung: 0x2f9a9c };
+const hell = (farbe: number, anteil = 0.16) => new THREE.Color(0xffffff).lerp(new THREE.Color(farbe), anteil);
 const BEKANNT = 'nano-stadt-bekannt';
 
-function schild(text: string, farbe = '#f3e3c3', gross = false) {
+function schild(text: string, farbe = '#3b3428', gross = false) {
   const c = document.createElement('canvas');
   const s = gross ? 2 : 1;
   c.width = 512 * s; c.height = 112 * s;
@@ -20,9 +24,10 @@ function schild(text: string, farbe = '#f3e3c3', gross = false) {
   const t = text.length > 26 ? text.slice(0, 25) + '…' : text;
   const w = Math.min(500, g.measureText(t).width + 44);
   const x = (512 - w) / 2;
-  g.fillStyle = 'rgba(14,17,22,.78)';
+  g.shadowColor = 'rgba(80,60,30,.18)'; g.shadowBlur = 10; g.shadowOffsetY = 3;
+  g.fillStyle = 'rgba(255,255,255,.94)';
   g.beginPath(); g.roundRect(x, 18, w, 72, 36); g.fill();
-  g.strokeStyle = 'rgba(212,166,90,.75)'; g.lineWidth = 2; g.stroke();
+  g.shadowColor = 'transparent'; g.strokeStyle = 'rgba(184,135,58,.8)'; g.lineWidth = 2.5; g.stroke();
   g.fillStyle = farbe; g.textAlign = 'center'; g.textBaseline = 'middle';
   g.fillText(t, 256, 56);
   const tex = new THREE.CanvasTexture(c);
@@ -59,21 +64,21 @@ export function Stadt3D({ objekte, gewaehlt, onWahl }: { objekte: StadtObjekt[];
     renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
     el.appendChild(renderer.domElement);
     const szene = new THREE.Scene();
-    szene.fog = new THREE.Fog(0x0f1217, 38, 95);
+    szene.fog = new THREE.Fog(0xf6f1e8, 70, 170);
     const kamera = new THREE.PerspectiveCamera(36, 1, 0.1, 400);
 
-    szene.add(new THREE.AmbientLight(0xffffff, 0.55));
-    const sonne = new THREE.DirectionalLight(0xfff1dc, 1.1); sonne.position.set(14, 26, 10); szene.add(sonne);
-    const hqLicht = new THREE.PointLight(GOLD, 30, 30, 1.6); hqLicht.position.set(0, 9, 0); szene.add(hqLicht);
+    szene.add(new THREE.HemisphereLight(0xffffff, 0xe9dfcd, 1.25));
+    const sonne = new THREE.DirectionalLight(0xfff6e8, 1.5); sonne.position.set(14, 26, 10); szene.add(sonne);
+    const hqLicht = new THREE.PointLight(GOLD_HELL, 14, 26, 1.6); hqLicht.position.set(0, 9, 0); szene.add(hqLicht);
 
     // Boden mit digitalem Raster
-    const boden = new THREE.Mesh(new THREE.CircleGeometry(60, 96), new THREE.MeshStandardMaterial({ color: 0x151a21, roughness: 1 }));
+    const boden = new THREE.Mesh(new THREE.CircleGeometry(60, 96), new THREE.MeshStandardMaterial({ color: 0xf1ebe0, roughness: 1 }));
     boden.rotation.x = -Math.PI / 2; szene.add(boden);
-    const raster = new THREE.GridHelper(120, 60, 0x3a3326, 0x232830);
-    (raster.material as THREE.Material).transparent = true; (raster.material as THREE.Material).opacity = 0.55;
+    const raster = new THREE.GridHelper(120, 60, 0xd8c7a6, 0xe4dccd);
+    (raster.material as THREE.Material).transparent = true; (raster.material as THREE.Material).opacity = 0.8;
     raster.position.y = 0.01; szene.add(raster);
     for (const r of [7.5, 12.1, 16.7, 21.3]) {
-      const ring = new THREE.Mesh(new THREE.RingGeometry(r - 0.03, r + 0.03, 128), new THREE.MeshBasicMaterial({ color: GOLD, transparent: true, opacity: 0.16 }));
+      const ring = new THREE.Mesh(new THREE.RingGeometry(r - 0.03, r + 0.03, 128), new THREE.MeshBasicMaterial({ color: GOLD, transparent: true, opacity: 0.3 }));
       ring.rotation.x = -Math.PI / 2; ring.position.y = 0.02; szene.add(ring);
     }
 
@@ -82,33 +87,33 @@ export function Stadt3D({ objekte, gewaehlt, onWahl }: { objekte: StadtObjekt[];
     const hqTeile: [number, number, number, number][] = [[3.4, 2.2, 3.4, 0], [2.6, 4.2, 2.6, 2.2], [1.8, 2.6, 1.8, 6.4]];
     for (const [w, h, d, y] of hqTeile) {
       const g = new THREE.BoxGeometry(w, h, d);
-      const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: 0x232833, metalness: 0.4, roughness: 0.5, emissive: 0x3a2c14, emissiveIntensity: 0.35 }));
+      const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: 0xfbf7f0, metalness: 0.15, roughness: 0.55, emissive: 0xf2d9a8, emissiveIntensity: 0.12 }));
       m.position.y = y + h / 2; hq.add(m);
       const k = new THREE.LineSegments(new THREE.EdgesGeometry(g), new THREE.LineBasicMaterial({ color: GOLD }));
       k.position.copy(m.position); hq.add(k);
       for (let f = 0.5; f < h; f += 0.6) {   // leuchtende Etagen
-        const band = new THREE.Mesh(new THREE.BoxGeometry(w + 0.02, 0.06, d + 0.02), new THREE.MeshBasicMaterial({ color: GOLD, transparent: true, opacity: 0.35 }));
+        const band = new THREE.Mesh(new THREE.BoxGeometry(w + 0.02, 0.06, d + 0.02), new THREE.MeshBasicMaterial({ color: GOLD, transparent: true, opacity: 0.45 }));
         band.position.y = y + f; hq.add(band);
       }
     }
     const antenne = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 1.6), new THREE.MeshBasicMaterial({ color: GOLD }));
     antenne.position.y = 9.8; hq.add(antenne);
-    const hqSchild = schild('KMS HQ', '#f6d48d', true); hqSchild.position.set(0, 13.6, 0); hq.add(hqSchild);
+    const hqSchild = schild('KMS HQ', '#9a6f2c', true); hqSchild.position.set(0, 13.6, 0); hq.add(hqSchild);
     const hqWelle = new THREE.Mesh(new THREE.RingGeometry(1.9, 2.2, 64), new THREE.MeshBasicMaterial({ color: GOLD, transparent: true, opacity: 0.6, side: THREE.DoubleSide }));
     hqWelle.rotation.x = -Math.PI / 2; hqWelle.position.y = 0.05; szene.add(hqWelle);
 
     // Agent O.S.A schwebt über dem HQ
     const osa = new THREE.Group(); osa.position.set(0, 11.6, 0); szene.add(osa);
-    const kern = new THREE.Mesh(new THREE.IcosahedronGeometry(0.7, 1), new THREE.MeshStandardMaterial({ color: 0xffd98a, emissive: 0xd4a65a, emissiveIntensity: 1.4, flatShading: true }));
+    const kern = new THREE.Mesh(new THREE.IcosahedronGeometry(0.7, 1), new THREE.MeshStandardMaterial({ color: 0xf5c463, emissive: 0xe0a640, emissiveIntensity: 0.9, flatShading: true }));
     osa.add(kern);
     const huelle = new THREE.Mesh(new THREE.IcosahedronGeometry(1.05, 1), new THREE.MeshBasicMaterial({ color: GOLD, wireframe: true, transparent: true, opacity: 0.45 }));
     osa.add(huelle);
     const bahnen: THREE.Mesh[] = [];
     for (let i = 0; i < 3; i++) {
-      const r = new THREE.Mesh(new THREE.TorusGeometry(1.5 + i * 0.25, 0.022, 8, 80), new THREE.MeshBasicMaterial({ color: i === 1 ? 0x8fd3d6 : GOLD, transparent: true, opacity: 0.7 }));
+      const r = new THREE.Mesh(new THREE.TorusGeometry(1.5 + i * 0.25, 0.022, 8, 80), new THREE.MeshBasicMaterial({ color: i === 1 ? TUERKIS : GOLD, transparent: true, opacity: 0.85 }));
       r.rotation.set(Math.PI / 2 + i * 0.6, i * 0.9, 0); osa.add(r); bahnen.push(r);
     }
-    const osaSchild = schild('Agent O.S.A', '#bfeef0'); osaSchild.scale.multiplyScalar(0.8); osaSchild.position.set(0, -1.75, 0); osa.add(osaSchild);
+    const osaSchild = schild('Agent O.S.A', '#237b80'); osaSchild.scale.multiplyScalar(0.8); osaSchild.position.set(0, -1.75, 0); osa.add(osaSchild);
     const hqPunkt = new THREE.Vector3(0, 10.5, 0);
 
     // Gebäude
@@ -125,12 +130,12 @@ export function Stadt3D({ objekte, gewaehlt, onWahl }: { objekte: StadtObjekt[];
       const farbe = FARBE[o.verwaltungsart] ?? 0x9b7fd1;
       const gruppe = new THREE.Group(); gruppe.position.copy(pos);
       const geo = new THREE.BoxGeometry(breite, hoehe, breite); geo.translate(0, hoehe / 2, 0);
-      const koerper = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: 0x1d232c, emissive: farbe, emissiveIntensity: 0.12, metalness: 0.3, roughness: 0.6, transparent: true, opacity: 0.94 }));
+      const koerper = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: hell(farbe, 0.3), emissive: farbe, emissiveIntensity: 0.04, metalness: 0.1, roughness: 0.6, transparent: true, opacity: 0.96 }));
       koerper.userData.id = o.id; gruppe.add(koerper);
       const kanten = new THREE.LineSegments(new THREE.EdgesGeometry(geo), new THREE.LineBasicMaterial({ color: farbe, transparent: true, opacity: 0.9 }));
       gruppe.add(kanten);
       for (let f = 0.55; f < hoehe - 0.2; f += 0.55) {
-        const band = new THREE.Mesh(new THREE.BoxGeometry(breite + 0.02, 0.05, breite + 0.02), new THREE.MeshBasicMaterial({ color: farbe, transparent: true, opacity: 0.28 }));
+        const band = new THREE.Mesh(new THREE.BoxGeometry(breite + 0.02, 0.05, breite + 0.02), new THREE.MeshBasicMaterial({ color: farbe, transparent: true, opacity: 0.35 }));
         band.position.y = f; gruppe.add(band);
       }
       const s = schild(o.name); s.position.set(0, hoehe + 1.1, 0); gruppe.add(s);
@@ -224,7 +229,7 @@ export function Stadt3D({ objekte, gewaehlt, onWahl }: { objekte: StadtObjekt[];
       osa.position.y = 11.6 + Math.sin(t * 1.6) * 0.25;
       kern.rotation.y = t * 0.8; huelle.rotation.y = -t * 0.4; huelle.rotation.x = t * 0.25;
       bahnen.forEach((b, i) => { b.rotation.z = t * (0.6 + i * 0.3); });
-      (kern.material as THREE.MeshStandardMaterial).emissiveIntensity = 1.2 + Math.sin(t * 3) * 0.4;
+      (kern.material as THREE.MeshStandardMaterial).emissiveIntensity = 0.8 + Math.sin(t * 3) * 0.3;
       const wz = (t * 0.5) % 1; hqWelle.scale.setScalar(1 + wz * 3.5); (hqWelle.material as THREE.MeshBasicMaterial).opacity = 0.55 * (1 - wz);
       hqLicht.intensity = 26 + Math.sin(t * 3) * 6;
 
@@ -235,12 +240,12 @@ export function Stadt3D({ objekte, gewaehlt, onWahl }: { objekte: StadtObjekt[];
         h.gruppe.scale.set(1, Math.max(0.001, p === 0 ? 0.001 : e), 1);
         const an = wahl === h.id, hover = ueber === h.id;
         const mat = h.koerper.material as THREE.MeshStandardMaterial;
-        const zielGlanz = an ? 0.55 + Math.sin(t * 4) * 0.2 : hover ? 0.35 : h.neu && p < 1 ? 0.6 : 0.12;
+        const zielGlanz = an ? 0.32 + Math.sin(t * 4) * 0.12 : hover ? 0.2 : h.neu && p < 1 ? 0.35 : 0.04;
         mat.emissiveIntensity += (zielGlanz - mat.emissiveIntensity) * 0.12;
         const lm = h.linie.material as THREE.LineBasicMaterial;
-        const zielLinie = p < 0.6 ? 0 : wahl == null ? 0.32 : an ? 0.95 : 0.1;
+        const zielLinie = p < 0.6 ? 0 : wahl == null ? 0.45 : an ? 1 : 0.15;
         lm.opacity += (zielLinie - lm.opacity) * 0.08;
-        lm.color.setHex(an ? 0xffe2a3 : GOLD);
+        lm.color.setHex(an ? GOLD_HELL : GOLD);
         const bm = h.boden.material as THREE.MeshBasicMaterial;
         if (an || (h.neu && p > 0 && p < 1)) { const z = (t * 0.9) % 1; h.boden.scale.setScalar(1 + z * 1.8); bm.opacity = 0.8 * (1 - z); }
         else bm.opacity *= 0.9;
@@ -252,10 +257,10 @@ export function Stadt3D({ objekte, gewaehlt, onWahl }: { objekte: StadtObjekt[];
       if (t > naechsterPuls && liste.length) {
         naechsterPuls = t + (wahl == null ? 0.35 : 0.9);
         const h = liste[Math.floor(Math.random() * liste.length)];
-        if (wahl == null || h.id !== wahl) puls(h, Math.random() < 0.4, Math.random() < 0.25 ? 0x8fd3d6 : GOLD, wahl == null ? 1 : 0.7);
+        if (wahl == null || h.id !== wahl) puls(h, Math.random() < 0.4, Math.random() < 0.25 ? TUERKIS : GOLD_HELL, wahl == null ? 1 : 0.7);
       }
       const gw = wahl != null ? haeuser.get(wahl) : null;
-      if (gw && t > naechsterWahlPuls) { naechsterWahlPuls = t + 0.22; puls(gw, Math.random() < 0.3, 0xffe2a3, 1.35); }
+      if (gw && t > naechsterWahlPuls) { naechsterWahlPuls = t + 0.22; puls(gw, Math.random() < 0.3, GOLD_HELL, 1.35); }
       for (let i = pulse.length - 1; i >= 0; i--) {
         const p = pulse[i]; p.t += dt * p.v;
         if (p.t >= 1) { szene.remove(p.m); (p.m.material as THREE.Material).dispose(); pulse.splice(i, 1); continue; }

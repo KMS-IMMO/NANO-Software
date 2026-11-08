@@ -175,21 +175,26 @@ export function AbrechnungsUebersicht({ objekt, jahr, pos, schluessel, stand = 0
       <h3 className="sec">Ausgaben</h3>
       {pos.length === 0 ? <p className="muted">Keine Ausgaben im Jahr {jahr}. Kosten kommen aus dem Bankimport und aus erfassten Rechnungen.</p> : (
         <table className="list">
-          <thead><tr><th style={{ width: 36 }} /><th>Konto</th><th>Kostenart</th><th>umlagefähig</th><th>Verteilerschlüssel {jahr}</th><th className="num">Belege</th><th className="num">Gesamtkosten</th></tr></thead>
-          <tbody>{pos.map((p) => {
+          <thead><tr><th style={{ width: 36 }} /><th>Konto</th><th>Kostenart</th><th>Verteilerschlüssel {jahr}</th><th className="num">Belege</th><th className="num">Gesamtkosten</th></tr></thead>
+          {([['Umlagefähige Kosten', pos.filter((p) => p.umlagefaehig), 'umlage'], ['Nicht umlagefähige Kosten', pos.filter((p) => !p.umlagefaehig), 'nicht']] as const).map(([gTitel, gPos, art]) => gPos.length > 0 && (
+          <tbody key={art} className={'abr-gruppe ' + art}>
+            <tr className="abr-gruppe-kopf"><td /><td colSpan={5}>{gTitel}<span className="muted small"> · {art === 'umlage' ? 'auf Mieter umlegbar (BetrKV)' : 'nicht auf Mieter umlegbar'}</span></td></tr>
+            {gPos.map((p) => {
             const k = 'a' + p.konto_id, liste = belege.aus.filter((b) => b.buchungskonto_id === p.konto_id);
             return (
               <Fragment key={k}>
                 <tr className={offen.has(k) ? 'auf' : ''}>
-                  <td><Pfeil k={k} n={liste.length} /></td><td>{p.nummer}</td><td>{p.name}{(p.hdl || p.hwl) && <div className="muted small">§ 35a {p.hdl ? 'HDL' : 'HWL'}: {eur(p.betrag35a ?? p.betrag)}</div>}</td><td>{p.umlagefaehig ? 'ja' : 'nein'}</td>
+                  <td><Pfeil k={k} n={liste.length} /></td><td>{p.nummer}</td><td>{p.name}{(p.hdl || p.hwl) && <div className="muted small">§ 35a {p.hdl ? 'HDL' : 'HWL'}: {eur(p.betrag35a ?? p.betrag)}</div>}</td>
                   <td>{schluessel(p)}{eigeneJahr.has(p.konto_id) && <span className="pill st-aktiv klein" title={`Eigener Schlüssel nur für ${jahr}`}>nur {jahr}</span>}</td>
                   <td className="num">{liste.length}</td><td className="num"><b>{eur(p.betrag)}</b></td>
                 </tr>
-                {offen.has(k) && <tr className="belege-zeile"><td /><td colSpan={6}><Belege liste={liste} ausgabe kontoId={p.konto_id} objekt={objekt} jahr={jahr} onChanged={geaendert} />
+                {offen.has(k) && <tr className="belege-zeile"><td /><td colSpan={5}><Belege liste={liste} ausgabe kontoId={p.konto_id} objekt={objekt} jahr={jahr} onChanged={geaendert} />
                   {Math.abs(liste.reduce((a, b) => a + b.betrag, 0) - p.betrag) > 0.005 && <p className="warn small">Die Belege ergeben {eur(liste.reduce((a, b) => a + b.betrag, 0))}, gebucht sind {eur(p.betrag)}.</p>}</td></tr>}
               </Fragment>);
-          })}</tbody>
-          <tfoot><tr><td /><td colSpan={5}>Summe Ausgaben</td><td className="num">{eur(summeAus)}</td></tr></tfoot>
+          })}
+            <tr className="abr-zwischensumme"><td /><td colSpan={4}>Summe {gTitel.toLowerCase().replace('kosten', 'Kosten')}</td><td className="num">{eur(gPos.reduce((a, p) => a + p.betrag, 0))}</td></tr>
+          </tbody>))}
+          <tfoot><tr><td /><td colSpan={4}>Summe Ausgaben gesamt</td><td className="num">{eur(summeAus)}</td></tr></tfoot>
         </table>)}
       {mitEinnahmen && <>
         <h3 className="sec">Einnahmen</h3>
