@@ -2,6 +2,7 @@ import { EntityTable, eur } from '../components/EntityTable';
 import { SicherheitKarte } from '../components/SicherheitKarte';
 import { db, mehrplatz, sicherheit } from '../db';
 import { MehrplatzKarte } from '../components/MehrplatzKarte';
+import { BriefpapierKarte } from '../components/BriefpapierKarte';
 import { useObjektKontext } from '../logic/objektKontext';
 import { useEffect, useState } from 'react';
 import { Paperclip } from 'lucide-react';
@@ -118,6 +119,7 @@ export function EinstellungenPage() {
         </div>
         <div className="row end"><span className="grow" />{saved && <span className="pos">Gespeichert</span>}<button className="primary" onClick={save}>Speichern</button></div>
       </section>
+      <BriefpapierKarte />
       <KiKarte />
       <MehrplatzKarte />
       {!mehrplatz.aktiv && <SicherheitKarte />}

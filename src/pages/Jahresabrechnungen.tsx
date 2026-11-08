@@ -162,10 +162,16 @@ export function WegAbrechnungPage() {
     const g = brief();
     g.kopf([`Wohnungseigentümergemeinschaft ${o.name.replace(/^WEG\s+/i, '')}`, o.strasse, [o.plz, o.ort].filter(Boolean).join(' ')], new Date().toISOString().slice(0, 10));
     g.betreff(`Gesamtabrechnung ${jahr} (Wirtschaftsjahr 01.01.–31.12.${jahr})`);
-    g.tabelle(['Konto', 'Kostenart', 'Schlüssel', 'Betrag'], pos.map((p) => [p.nummer, p.name, p.schluessel, geld(p.betrag)]),
-      [['', 'Summe Ausgaben', '', geld(pos.reduce((a, p) => a + p.betrag, 0))]], 3);
-    g.tabelle(['Einheit', 'Eigentümer', 'Kostenanteil', 'Vorschüsse (Soll)', 'Abrechnungsspitze'],
-      erg.map((r) => [r.einheit.nummer, r.nutzer.name, geld(r.summe), geld(r.vorschuss), geld(r.spitze)]), undefined, 2);
+    const pU = pos.filter((p) => p.umlagefaehig), pN = pos.filter((p) => !p.umlagefaehig);
+    const sum = (l: Position[]) => l.reduce((a, p) => a + p.betrag, 0);
+    if (pU.length) g.tabelle(['Konto', 'Umlagefähige Kosten', 'Schlüssel', 'Betrag'], pU.map((p) => [p.nummer, p.name, p.schluessel, geld(p.betrag)]),
+      [['', 'Summe umlagefähige Kosten', '', geld(sum(pU))]], 3);
+    if (pN.length) g.tabelle(['Konto', 'Nicht umlagefähige Kosten', 'Schlüssel', 'Betrag'], pN.map((p) => [p.nummer, p.name, p.schluessel, geld(p.betrag)]),
+      [['', 'Summe nicht umlagefähige Kosten', '', geld(sum(pN))]], 3);
+    g.tabelle(['', 'Betrag'], [['Umlagefähige Kosten', geld(sum(pU))], ['Nicht umlagefähige Kosten', geld(sum(pN))]], [['Summe Ausgaben gesamt', geld(sum(pos))]]);
+    const anteil = (r: typeof erg[number], u: boolean) => r.zeilen.filter((z) => z.pos.umlagefaehig === u).reduce((a, z) => a + z.betrag, 0);
+    g.tabelle(['Einheit', 'Eigentümer', 'umlagefähig', 'nicht umlagef.', 'Kostenanteil', 'Vorschüsse', 'Spitze'],
+      erg.map((r) => [r.einheit.nummer, r.nutzer.name, geld(anteil(r, true)), geld(anteil(r, false)), geld(r.summe), geld(r.vorschuss), geld(r.spitze)]), undefined, 2);
     g.betreff(`Vermögensbericht zum 31.12.${jahr}`);
     g.tabelle(['Position', 'Betrag'], [
       ['Erhaltungsrücklage zum 31.12.', geld(verm.ruecklage ?? 0)],
@@ -239,7 +245,8 @@ export function WegAbrechnungPage() {
       {!objekte.length && <p className="muted">Noch keine WEG angelegt.</p>}
       {info && <p className="info">{info}</p>}
       <div className="kpis">
-        <div className="kpi"><span>Ausgaben {jahr}</span><b className="neg">{eur(pos.reduce((a, p) => a + p.betrag, 0))}</b></div>
+        <div className="kpi"><span>Ausgaben {jahr}</span><b className="neg">{eur(pos.reduce((a, p) => a + p.betrag, 0))}</b>
+          <small className="muted">umlagefähig {eur(pos.filter((p) => p.umlagefaehig).reduce((a, p) => a + p.betrag, 0))} · nicht umlagefähig {eur(pos.filter((p) => !p.umlagefaehig).reduce((a, p) => a + p.betrag, 0))}</small></div>
         <div className="kpi"><span>Hausgeld Soll / Ist</span><b>{eur(erg.reduce((a, r) => a + r.soll, 0))}</b><small>gezahlt {eur(erg.reduce((a, r) => a + r.ist, 0))}</small></div>
         <div className="kpi"><span>Erhaltungsrücklage 31.12.</span><b>{eur(verm.ruecklage ?? 0)}</b><small>Zuführung {eur(verm.zufJahr ?? 0)}</small></div>
         <div className="kpi"><span>Summe Abrechnungsspitzen</span><b>{eur(erg.reduce((a, r) => a + r.spitze, 0))}</b></div>
@@ -261,11 +268,11 @@ export function WegAbrechnungPage() {
       <section className="card">
         <div className="card-head"><h2>Einzelabrechnungen</h2></div>
         <table className="list">
-          <thead><tr><th>Einheit</th><th>Eigentümer</th><th>Zeitraum</th><th className="num">Kostenanteil</th><th className="num">davon umlagefähig</th><th className="num">Hausgeld-Soll</th><th className="num">abzgl. Rücklage</th><th className="num">Vorschüsse (ohne Rücklage)</th><th className="num">Abrechnungsspitze</th><th className="num">Rückstand Hausgeld</th><th>Mieter (NK-Abrechnung)</th></tr></thead>
+          <thead><tr><th>Einheit</th><th>Eigentümer</th><th>Zeitraum</th><th className="num">umlagefähig</th><th className="num">nicht umlagefähig</th><th className="num">Kostenanteil</th><th className="num">Hausgeld-Soll</th><th className="num">abzgl. Rücklage</th><th className="num">Vorschüsse (ohne Rücklage)</th><th className="num">Abrechnungsspitze</th><th className="num">Rückstand Hausgeld</th><th>Mieter (NK-Abrechnung)</th></tr></thead>
           <tbody>{erg.map((r) => (
             <tr key={r.nutzer.key}>
               <td>{r.einheit.nummer}</td><td>{r.nutzer.name}</td><td className="small">{datum(r.nutzer.von)} – {datum(r.nutzer.bis)}</td>
-              <td className="num">{eur(r.summe)}</td><td className="num">{eur(r.zeilen.filter((z) => z.pos.umlagefaehig).reduce((a, z) => a + z.betrag, 0))}</td>
+              <td className="num">{eur(r.zeilen.filter((z) => z.pos.umlagefaehig).reduce((a, z) => a + z.betrag, 0))}</td><td className="num">{eur(r.zeilen.filter((z) => !z.pos.umlagefaehig).reduce((a, z) => a + z.betrag, 0))}</td><td className="num"><b>{eur(r.summe)}</b></td>
               <td className="num">{eur(r.soll)}</td><td className="num">{eur(-r.ruecklageSoll)}</td><td className="num">{eur(r.vorschuss)}</td>
               <td className={'num ' + (r.spitze > 0 ? 'neg' : 'pos')}><b>{r.spitze > 0 ? 'Nachschuss ' : 'Erstattung '}{eur(Math.abs(r.spitze))}</b></td>
               <td className={'num ' + (r.rueckstand > 0.005 ? 'neg' : '')}>{eur(r.rueckstand)}</td>

@@ -838,19 +838,19 @@ table.list.gross td.num { font-size: 15.5px; font-variant-numeric: tabular-nums;
 .leit-karte h2 { font-size: 16px; }
 .leit-buehne.fokus .leit-karte { border-color: #e3d3b5; box-shadow: 0 0 0 1px rgba(176,138,74,.12), var(--shadow-hoch); }
 
-.leit-stadt { position: relative; border-radius: 18px; overflow: hidden; background: radial-gradient(ellipse at 50% 40%, #1d232c 0%, #0f1217 70%); box-shadow: inset 0 0 0 1px rgba(212,166,90,.25), 0 20px 50px rgba(15,18,23,.25); min-height: 520px; }
+.leit-stadt { position: relative; border-radius: 18px; overflow: hidden; background: radial-gradient(ellipse at 50% 38%, #ffffff 0%, #f6f1e8 55%, #ece4d6 100%); box-shadow: inset 0 0 0 1px rgba(184,135,58,.22), 0 18px 44px rgba(90,70,35,.10); min-height: 520px; }
 .stadt3d { position: absolute; inset: 0; }
 .stadt3d canvas { display: block; width: 100% !important; height: 100% !important; cursor: grab; touch-action: none; }
-.stadt3d.ohne-3d::after { content: 'Die 3D-Ansicht braucht WebGL. Auf diesem Gerät ist es nicht verfügbar.'; position: absolute; inset: 0; display: grid; place-items: center; color: #cfc6b6; padding: 30px; text-align: center; }
-.leit-legende { position: absolute; left: 14px; top: 12px; display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: #cfc6b6; pointer-events: none; }
-.leit-legende span { display: flex; align-items: center; gap: 6px; background: rgba(14,17,22,.6); padding: 4px 10px; border-radius: 99px; border: 1px solid rgba(212,166,90,.25); }
+.stadt3d.ohne-3d::after { content: 'Die 3D-Ansicht braucht WebGL. Auf diesem Gerät ist es nicht verfügbar.'; position: absolute; inset: 0; display: grid; place-items: center; color: #6f675b; padding: 30px; text-align: center; }
+.leit-legende { position: absolute; left: 14px; top: 12px; display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: #5d554a; pointer-events: none; }
+.leit-legende span { display: flex; align-items: center; gap: 6px; background: rgba(255,255,255,.85); padding: 4px 10px; border-radius: 99px; border: 1px solid rgba(184,135,58,.28); box-shadow: 0 2px 8px rgba(90,70,35,.06); }
 .leit-legende i, .leit-liste i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; flex: none; }
-i.hq { background: #d4a65a; box-shadow: 0 0 8px #d4a65a; } i.mv { background: #4fa3a5; } i.weg { background: #6b8fd6; }
-.leit-hinweis { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); margin: 0; font-size: 12px; color: #a9a294; background: rgba(14,17,22,.6); padding: 6px 14px; border-radius: 99px; white-space: nowrap; pointer-events: none; }
-.leit-zurueck { position: absolute; right: 14px; top: 12px; display: inline-flex; align-items: center; gap: 6px; background: rgba(14,17,22,.75); color: #f3e3c3; border: 1px solid rgba(212,166,90,.45); border-radius: 99px; padding: 6px 14px; font-size: 13px; }
-.leit-zurueck:hover { background: rgba(212,166,90,.25); }
-.leit-leer { position: absolute; left: 50%; top: 62%; transform: translateX(-50%); color: #e9e2d4; background: rgba(14,17,22,.75); padding: 12px 18px; border-radius: 12px; text-align: center; max-width: 80%; }
-.leit-leer a { color: #f6d48d; }
+i.hq { background: #c89543; box-shadow: 0 0 6px rgba(200,149,67,.6); } i.mv { background: #2f9a9c; } i.weg { background: #4f78c9; }
+.leit-hinweis { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); margin: 0; font-size: 12px; color: #6f675b; background: rgba(255,255,255,.85); border: 1px solid rgba(184,135,58,.2); padding: 6px 14px; border-radius: 99px; white-space: nowrap; pointer-events: none; }
+.leit-zurueck { position: absolute; right: 14px; top: 12px; display: inline-flex; align-items: center; gap: 6px; background: rgba(255,255,255,.9); color: #5d4a2a; border: 1px solid rgba(184,135,58,.4); border-radius: 99px; padding: 6px 14px; font-size: 13px; box-shadow: 0 2px 8px rgba(90,70,35,.08); }
+.leit-zurueck:hover { background: #fbf3e4; }
+.leit-leer { position: absolute; left: 50%; top: 62%; transform: translateX(-50%); color: #3b3428; background: rgba(255,255,255,.92); border: 1px solid rgba(184,135,58,.25); padding: 12px 18px; border-radius: 12px; text-align: center; max-width: 80%; }
+.leit-leer a { color: #9a6f2c; }
 
 .donut-wrap.klein { gap: 14px; }
 .donut-wrap.klein svg { width: 104px; height: 104px; }
@@ -891,3 +891,24 @@ i.hq { background: #d4a65a; box-shadow: 0 0 8px #d4a65a; } i.mv { background: #4
   .leit-stadt { grid-column: 1 / -1; order: -1; height: 520px; }
 }
 @media (max-width: 700px) { .leit-buehne { grid-template-columns: 1fr; } .leit-stadt { height: 420px; } .leit-suche { min-width: 0; max-width: none; width: 100%; } }
+
+/* Briefpapier (Einstellungen) */
+.bp-reihe { display: grid; grid-template-columns: 210px 210px 1fr; gap: 20px; align-items: start; }
+.bp-seite { display: flex; flex-direction: column; gap: 6px; }
+.bp-titel { font-size: 12px; font-weight: 600; color: var(--muted, #8a8478); text-transform: uppercase; letter-spacing: .04em; }
+.bp-seite img, .bp-leer { width: 210px; aspect-ratio: 210 / 297; border: 1px solid #e6e0d6; border-radius: 8px; background: #fff; box-shadow: 0 6px 18px rgba(60, 45, 20, .08); object-fit: cover; }
+.bp-leer { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; border-style: dashed; color: #8a8478; cursor: pointer; padding: 12px; text-align: center; }
+.bp-leer:hover:not(:disabled) { border-color: #b08a4a; color: #b08a4a; background: #fdf9f2; }
+.bp-leer:disabled { opacity: .55; cursor: default; }
+.bp-leer small { font-size: 11.5px; opacity: .8; }
+.bp-optionen .form { margin: 12px 0; }
+.danger-link { color: #b54434; }
+.bp-muster { flex: 1; overflow: auto; background: #525659; border-radius: 8px; padding: 18px; display: flex; flex-direction: column; align-items: center; gap: 16px; }
+.bp-muster img { width: min(760px, 95%); background: #fff; box-shadow: 0 4px 18px rgba(0, 0, 0, .4); }
+@media (max-width: 1100px) { .bp-reihe { grid-template-columns: 1fr 1fr; } .bp-optionen { grid-column: 1 / -1; } }
+
+/* Abrechnung: umlagefähig / nicht umlagefähig */
+.abr-gruppe-kopf td { background: #f6f1e8; font-weight: 700; font-size: 13.5px; padding-top: 9px; padding-bottom: 9px; border-top: 2px solid #e6dccb; }
+.abr-gruppe.nicht .abr-gruppe-kopf td { background: #f3f1ee; }
+.abr-gruppe-kopf td .muted { font-weight: 500; }
+.abr-zwischensumme td { font-weight: 600; border-top: 1px solid #e6dccb; background: #fcfaf6; }

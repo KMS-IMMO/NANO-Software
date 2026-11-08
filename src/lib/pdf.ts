@@ -2,12 +2,14 @@
 import { jsPDF } from 'jspdf';
 import autoTable, { type RowInput } from 'jspdf-autotable';
 import { db } from '../db';
+import { briefpapierLaden, type Briefpapier } from './briefpapier';
 
-export interface Absender { name: string; strasse?: string; plz?: string; ort?: string; telefon?: string; email?: string }
+export interface Absender { name: string; strasse?: string; plz?: string; ort?: string; telefon?: string; email?: string; briefpapier?: Briefpapier | null }
 
 export async function absender(): Promise<Absender> {
   const e = Object.fromEntries((await db.select('SELECT * FROM einstellungen')).map((r) => [r.schluessel, r.wert ?? '']));
-  return { name: e.firma_name || 'KMS Immobilien', strasse: e.firma_strasse, plz: e.firma_plz, ort: e.firma_ort, telefon: e.firma_telefon, email: e.firma_email };
+  return { name: e.firma_name || 'KMS Immobilien', strasse: e.firma_strasse, plz: e.firma_plz, ort: e.firma_ort, telefon: e.firma_telefon, email: e.firma_email,
+    briefpapier: await briefpapierLaden().catch(() => null) };
 }
 
 export const geld = (n: number) => (Math.abs(n) < 0.005 ? 0 : n).toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €';
@@ -18,11 +20,32 @@ export class Brief {
   y = 0;
   abs: Absender;
   private seiten = 0;
-  constructor(abs: Absender) { this.abs = abs; }
+  private naechsteErste = false;
+  constructor(abs: Absender) {
+    this.abs = abs;
+    const bp = abs.briefpapier;
+    if (bp) {
+      // Briefpapier liegt unter dem Text: beim Anlegen jeder Seite zuerst das Bild zeichnen
+      this.hintergrund(bp.erste, 'bp-erste');
+      (this.doc as any).internal.events.subscribe('addPage', () => {
+        const erste = this.naechsteErste; this.naechsteErste = false;
+        if (erste) this.hintergrund(bp.erste, 'bp-erste');
+        else if (bp.folge) this.hintergrund(bp.folge, 'bp-folge');
+      });
+    }
+  }
+
+  private hintergrund(bild: string, alias: string) {
+    this.doc.addImage(bild, 'JPEG', 0, 0, 210, 297, alias, 'FAST');
+  }
+
+  /** Unterer Rand (mm vom Seitenende), oberer Rand auf Folgeseiten */
+  private get grenzeUnten() { return 297 - (this.abs.briefpapier?.unten ?? 27); }
+  private get obenFolge() { return this.abs.briefpapier?.obenFolge ?? 25; }
 
   /** Weiteren Brief im selben Dokument beginnen (für eine Gesamtvorschau aller Abrechnungen) */
   neuerBrief() {
-    if (this.seiten++ > 0) { this.doc.addPage(); this.y = 0; }
+    if (this.seiten++ > 0) { this.naechsteErste = true; this.doc.addPage(); this.y = 0; }
     return this;
   }
 
@@ -39,13 +62,17 @@ export class Brief {
 
   kopf(empfaenger: string[], datum: string, ort?: string) {
     const d = this.doc;
-    d.setFont('helvetica', 'bold'); d.setFontSize(16); d.setTextColor(80); d.text(this.abs.name, 20, 20);
-    d.setDrawColor(176, 138, 74); d.setLineWidth(0.6); d.line(20, 22, 20 + d.getTextWidth(this.abs.name), 22);
-    d.setFont('helvetica', 'normal'); d.setFontSize(8.5); d.setTextColor(90);
-    const zeile = [this.abs.strasse, [this.abs.plz, this.abs.ort].filter(Boolean).join(' '), this.abs.telefon, this.abs.email].filter(Boolean).join(' · ');
-    if (zeile) d.text(zeile, 20, 25);
-    // Rücksendeangabe und Anschriftfeld (Fensterumschlag DIN lang)
-    d.setFontSize(7); d.text([this.abs.name, this.abs.strasse, [this.abs.plz, this.abs.ort].filter(Boolean).join(' ')].filter(Boolean).join(', '), 20, 47);
+    const bp = this.abs.briefpapier;
+    if (!bp || bp.kopfDrucken) {
+      d.setFont('helvetica', 'bold'); d.setFontSize(16); d.setTextColor(80); d.text(this.abs.name, 20, 20);
+      d.setDrawColor(176, 138, 74); d.setLineWidth(0.6); d.line(20, 22, 20 + d.getTextWidth(this.abs.name), 22);
+      d.setFont('helvetica', 'normal'); d.setFontSize(8.5); d.setTextColor(90);
+      const zeile = [this.abs.strasse, [this.abs.plz, this.abs.ort].filter(Boolean).join(' '), this.abs.telefon, this.abs.email].filter(Boolean).join(' · ');
+      if (zeile) d.text(zeile, 20, 25);
+    }
+    d.setFont('helvetica', 'normal'); d.setTextColor(90);
+    // Rücksendeangabe und Anschriftfeld (Fensterumschlag DIN lang); beim Briefpapier steht die Rücksendeangabe meist schon drauf
+    d.setFontSize(7); if (!bp || bp.kopfDrucken) d.text([this.abs.name, this.abs.strasse, [this.abs.plz, this.abs.ort].filter(Boolean).join(' ')].filter(Boolean).join(', '), 20, 47);
     d.setTextColor(0); d.setFontSize(10.5);
     d.text(empfaenger.filter(Boolean), 20, 55);
     d.text(`${ort || this.abs.ort || ''}${ort || this.abs.ort ? ', ' : ''}${dDatum(datum)}`, 190, 90, { align: 'right' });
@@ -69,7 +96,7 @@ export class Brief {
     const align: Record<number, { halign: 'right'; cellWidth: 'wrap' }> = {};
     for (let i = rechtsAb; i < head.length; i++) align[i] = { halign: 'right', cellWidth: 'wrap' };
     autoTable(this.doc, {
-      startY: this.y, head: [head], body, foot, showFoot: 'lastPage', margin: { left: 20, right: 20 },
+      startY: this.y, head: [head], body, foot, showFoot: 'lastPage', margin: { left: 20, right: 20, top: this.abs.briefpapier ? this.obenFolge : 15, bottom: this.abs.briefpapier ? 297 - this.grenzeUnten : 15 },
       styles: { font: 'helvetica', fontSize: 9.5, cellPadding: 1.8 },
       headStyles: { fillColor: [176, 138, 74], textColor: 255 },
       footStyles: { fillColor: [248, 240, 227], textColor: 0, fontStyle: 'bold' },
@@ -80,7 +107,7 @@ export class Brief {
   }
 
   platz(mm: number) {
-    if (this.y + mm > 270) { this.doc.addPage(); this.y = 25; }
+    if (this.y + mm > this.grenzeUnten) { this.doc.addPage(); this.y = this.obenFolge; }
   }
 
   gruss() {
