@@ -636,4 +636,11 @@ CREATE TABLE fristen (
   erledigt_am TEXT                -- nur bei einmaligen Fristen
 );
 `,
+  // Migration 20: Buchen-Fenster – Rechnungsnummer-Pflicht je Konto, Buchungsjahr und Rechnungsnummer an der Buchung
+  `
+ALTER TABLE buchungskonten ADD COLUMN rechnung_pflicht INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE buchungen ADD COLUMN jahr INTEGER;
+ALTER TABLE buchungen ADD COLUMN rechnungsnr TEXT;
+UPDATE buchungskonten SET rechnung_pflicht = 1 WHERE art = 'Aufwand' AND (hdl = 1 OR hwl = 1);  -- § 35a verlangt eine Rechnung; weitere Konten im Kontenrahmen anhaken
+`,
 ];

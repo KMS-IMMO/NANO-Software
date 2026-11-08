@@ -1,6 +1,7 @@
 // WEG-Jahresabrechnung (Gesamtabrechnung, Einzelabrechnungen, Vermögensbericht)
 // und jährliche Eigentümerabrechnung für die Mietverwaltung.
 import { Fragment, useEffect, useState } from 'react';
+import { BJ } from '../logic/buchung';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { db, type Row } from '../db';
 import { wid } from '../db/labels';
@@ -336,7 +337,7 @@ export function EigentuemerAbrechnungPage() {
     if (objekt === '') return;
     (async () => {
       setEin(await db.select(`SELECT k.nummer, k.name, SUM(b.betrag) AS betrag FROM buchungen b JOIN buchungskonten k ON k.id = b.buchungskonto_id
-        WHERE b.objekt_id = $1 AND k.art = 'Einnahme' AND substr(b.datum, 1, 4) = $2 GROUP BY k.id ORDER BY k.nummer`, [objekt, String(jahr)]));
+        WHERE b.objekt_id = $1 AND k.art = 'Einnahme' AND ${BJ('b')} = CAST($2 AS INTEGER) GROUP BY k.id ORDER BY k.nummer`, [objekt, String(jahr)]));
       setAus(await kostenErmitteln(Number(objekt), jahr, false));
       setOffen(Number((await db.select(`SELECT COALESCE(SUM(s.betrag - COALESCE((SELECT SUM(b.betrag) FROM buchungen b WHERE b.sollstellung_id = s.id), 0)), 0) AS x
         FROM sollstellungen s JOIN einheiten e ON e.id = s.einheit_id WHERE e.objekt_id = $1 AND s.faellig <= $2`, [objekt, `${jahr}-12-31`]))[0].x));

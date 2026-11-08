@@ -7,7 +7,7 @@ import { Check, ChevronDown, ChevronRight, Pencil, Plus, Trash2, X } from 'lucid
 import { db, type Row } from '../db';
 import { eur } from './EntityTable';
 import type { Position } from '../logic/verteilung';
-import { buchungLoeschen, loeschHinweis } from '../logic/buchung';
+import { BJ, buchungLoeschen, loeschHinweis } from '../logic/buchung';
 
 const datum = (d: string) => (d ? new Date(d + 'T00:00:00').toLocaleDateString('de-DE') : '');
 
@@ -15,11 +15,11 @@ const datum = (d: string) => (d ? new Date(d + 'T00:00:00').toLocaleDateString('
 async function belegeLaden(objekt: number, jahr: number): Promise<{ aus: Row[]; ein: Row[] }> {
   const von = `${jahr}-01-01`, bis = `${jahr}-12-31`;
   const buch = await db.select(`SELECT b.id, b.datum, b.betrag, b.text, b.buchungskonto_id, k.art,
-      COALESCE(f.name, rf.name) AS firma, r.rechnungsnr, e.nummer AS einheit, b.bankumsatz_id, b.sollstellung_id, b.rechnung_id
+      COALESCE(f.name, rf.name) AS firma, COALESCE(b.rechnungsnr, r.rechnungsnr) AS rechnungsnr, e.nummer AS einheit, b.bankumsatz_id, b.sollstellung_id, b.rechnung_id
     FROM buchungen b JOIN buchungskonten k ON k.id = b.buchungskonto_id
     LEFT JOIN rechnungen r ON r.id = b.rechnung_id LEFT JOIN firmen f ON f.id = b.firma_id LEFT JOIN firmen rf ON rf.id = r.firma_id
     LEFT JOIN einheiten e ON e.id = b.einheit_id
-    WHERE b.objekt_id = $1 AND b.datum BETWEEN $2 AND $3 ORDER BY b.datum, b.id`, [objekt, von, bis]);
+    WHERE b.objekt_id = $1 AND ${BJ('b')} = CAST(substr($2, 1, 4) AS INTEGER) ORDER BY b.datum, b.id`, [objekt, von, bis]);
   const rech = await db.select(`SELECT r.id, r.bezahlt_am, COALESCE(r.bezahlt_am, r.datum) AS datum, r.betrag, r.buchungskonto_id, r.rechnungsnr, f.name AS firma, e.nummer AS einheit, r.notiz
     FROM rechnungen r LEFT JOIN firmen f ON f.id = r.firma_id LEFT JOIN einheiten e ON e.id = r.einheit_id
     WHERE r.objekt_id = $1 AND COALESCE(r.bezahlt_am, r.datum) BETWEEN $2 AND $3

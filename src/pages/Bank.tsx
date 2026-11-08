@@ -3,10 +3,11 @@ import { Link } from 'react-router-dom';
 import { db, type Row } from '../db';
 import { useObjektKontext } from '../logic/objektKontext';
 import { datum, eur } from '../components/EntityTable';
-import { kontoOptions, personOptions } from '../db/labels';
+import { personOptions } from '../db/labels';
 import { BankAbruf, BankVerbindungen } from '../components/BankAbruf';
 import { RechnungErfassen } from '../components/RechnungErfassen';
 import { BuchungBelege } from '../components/BuchungBelege';
+import { BuchenDialog } from '../components/BuchenDialog';
 import { Paperclip } from 'lucide-react';
 import {
   automatischZuordnen, importieren, parseDatei, vorschlag, zuordnenKonto, zuordnenPerson, zuordnenRechnung, zuordnungLoesen, type Vorschlag,
@@ -24,11 +25,11 @@ export function BankPage() {
   const [info, setInfo] = useState('');
   const [drag, setDrag] = useState(false);
   const [personen, setPersonen] = useState<Opt[]>([]);
-  const [bkonten, setBkonten] = useState<Opt[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
   const [belegUmsatz, setBelegUmsatz] = useState<{ u: Row; datei?: File; objekt?: number } | null>(null);
   const [belegBuchung, setBelegBuchung] = useState<Row | null>(null);
   const [rowOver, setRowOver] = useState<number | null>(null);
+  const [buchenU, setBuchenU] = useState<Row | null>(null);
   async function belegZuUmsatz(u: Row, datei?: File) {
     const objekt = (await db.select('SELECT objekt_id FROM bankkonten WHERE id = $1', [u.bankkonto_id]))[0]?.objekt_id ?? undefined;
     setBelegUmsatz({ u, datei, objekt });
@@ -48,7 +49,6 @@ export function BankPage() {
       const k = await ladeKonten();
       if (k.length && konto === '') setKonto(k[0].id);
       setPersonen(await db.select<Opt>(personOptions()));
-      setBkonten(await db.select<Opt>(kontoOptions()));
     })();
   }, []);
 
@@ -150,7 +150,7 @@ export function BankPage() {
                   <td className={'num ' + (u.betrag < 0 ? 'neg' : '')}><b>{eur(u.betrag)}</b></td>
                   <td>
                     {u.status === 'offen'
-                      ? <><Zuordnen u={u} v={vorschlaege[u.id]} personen={personen} konten={bkonten} done={load} />
+                      ? <><Zuordnen u={u} v={vorschlaege[u.id]} personen={personen} done={load} buchen={() => setBuchenU(u)} />
                           <button className="link small" onClick={() => belegZuUmsatz(u)} title="Oder PDF direkt auf die Zeile ziehen"><Paperclip size={13} /> Mit Beleg als Rechnung erfassen</button></>
                       : <div className="small">
                           {u.status === 'zugeordnet' && <button className="icon-btn beleg-btn" title="Belege zur Buchung" onClick={() => belegeZuordnung(u)}><Paperclip size={14} /></button>}
@@ -173,6 +173,8 @@ export function BankPage() {
               onSaved={(t) => { setInfo(t + ' Der Bankumsatz ist zugeordnet.'); setBelegUmsatz(null); load(); }} />
           </div>
         </div>)}
+      {buchenU && <BuchenDialog vorlage={{ umsatz: buchenU, objektId: fix?.id, kontoId: vorschlaege[buchenU.id]?.art === 'konto' ? vorschlaege[buchenU.id]!.id : undefined }}
+        onClose={() => setBuchenU(null)} onSaved={(t) => { setBuchenU(null); setInfo(t); load(); }} />}
       {belegBuchung && (
         <div className="modal-bg" onClick={() => setBelegBuchung(null)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
@@ -185,13 +187,11 @@ export function BankPage() {
   );
 }
 
-function Zuordnen({ u, v, personen, konten, done }: { u: Row; v?: Vorschlag | null; personen: Opt[]; konten: Opt[]; done: () => void }) {
+function Zuordnen({ u, v, personen, done, buchen }: { u: Row; v?: Vorschlag | null; personen: Opt[]; done: () => void; buchen: () => void }) {
   const [wahl, setWahl] = useState('');
   async function ok() {
     if (!wahl) return;
-    const [art, id] = wahl.split(':');
-    if (art === 'p') await zuordnenPerson(u, Number(id));
-    else await zuordnenKonto(u, Number(id));
+    await zuordnenPerson(u, Number(wahl.split(':')[1]));
     done();
   }
   return (
@@ -203,12 +203,14 @@ function Zuordnen({ u, v, personen, konten, done }: { u: Row; v?: Vorschlag | nu
         </div>
       )}
       <div className="row">
-        <select value={wahl} onChange={(e) => setWahl(e.target.value)} style={{ flex: 1, minWidth: 0 }}>
-          <option value="">{v ? 'Andere Zuordnung…' : 'Zuordnen zu…'}</option>
-          {u.betrag > 0 && <optgroup label="Mieter / Eigentümer (offene Posten)">{personen.map((p) => <option key={'p' + p.value} value={'p:' + p.value}>{p.label}</option>)}</optgroup>}
-          <optgroup label="Buchungskonto">{konten.map((k) => <option key={'k' + k.value} value={'k:' + k.value}>{k.label}</option>)}</optgroup>
-        </select>
-        <button className="small-btn" disabled={!wahl} onClick={ok}>OK</button>
+        <button className="primary small-btn" onClick={buchen} title="Konto, Einheiten, Buchungsjahr und mehr im Buchen-Fenster wählen">Buchen</button>
+        {u.betrag > 0 && <>
+          <select value={wahl} onChange={(e) => setWahl(e.target.value)} style={{ flex: 1, minWidth: 0 }}>
+            <option value="">Mieter / Eigentümer …</option>
+            {personen.map((p) => <option key={'p' + p.value} value={'p:' + p.value}>{p.label}</option>)}
+          </select>
+          <button className="small-btn" disabled={!wahl} onClick={ok}>OK</button></>}
+        <span className="grow" />
         <button className="link small" onClick={async () => { await db.execute(`UPDATE bankumsaetze SET status='ignoriert' WHERE id=$1`, [u.id]); done(); }}>Ignorieren</button>
       </div>
     </div>

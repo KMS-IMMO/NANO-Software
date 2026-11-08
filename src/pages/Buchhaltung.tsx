@@ -12,8 +12,9 @@ import { useObjektKontext } from '../logic/objektKontext';
 import { RechnungErfassen } from '../components/RechnungErfassen';
 import { BELEGE_SQL, BuchungBelege } from '../components/BuchungBelege';
 import { DatevDialog } from '../components/DatevDialog';
+import { BuchenDialog } from '../components/BuchenDialog';
 import { Wiederkehrend } from '../components/Wiederkehrend';
-import { buchungLoeschen, loeschHinweis } from '../logic/buchung';
+import { BJ, buchungLoeschen, loeschHinweis } from '../logic/buchung';
 import { gesperrt, sperrText } from '../logic/abschluss';
 
 const heute = () => new Date().toISOString().slice(0, 10);
@@ -52,14 +53,15 @@ export function JournalPage() {
   const [rEdit, setREdit] = useState<Row | null>(null);
   const [belegFuer, setBelegFuer] = useState<Row | null>(null);
   const [datev, setDatev] = useState(false);
+  const [buchen, setBuchen] = useState(false);
 
   useEffect(() => { db.select(kontoOptions).then(setKonten); }, []);
   const load = async () => {
-    const w = [`substr(b.datum, 1, 4) = '${jahr}'`];
+    const w = [`${BJ('b')} = ${Number(jahr)}`];
     if (monat) w.push(`substr(b.datum, 6, 2) = '${monat}'`);
     if (objekt !== '') w.push(`b.objekt_id = ${Number(objekt)}`);
     if (kontoWahl.length) w.push(`b.buchungskonto_id IN (${kontoWahl.map(Number).join(',')})`);
-    setRows(await db.select(`SELECT b.*, k.nummer, k.name AS konto, o.name AS objekt, e.nummer AS einheit, COALESCE(f.name, rf.name) AS firma, r.rechnungsnr, ${BELEGE_SQL} AS belege
+    setRows(await db.select(`SELECT b.*, k.nummer, k.name AS konto, o.name AS objekt, e.nummer AS einheit, COALESCE(f.name, rf.name) AS firma, COALESCE(b.rechnungsnr, r.rechnungsnr) AS rechnungsnr, ${BELEGE_SQL} AS belege
       FROM buchungen b LEFT JOIN buchungskonten k ON k.id = b.buchungskonto_id LEFT JOIN objekte o ON o.id = b.objekt_id LEFT JOIN einheiten e ON e.id = b.einheit_id
       LEFT JOIN firmen f ON f.id = b.firma_id LEFT JOIN rechnungen r ON r.id = b.rechnung_id LEFT JOIN firmen rf ON rf.id = r.firma_id
       WHERE ${w.join(' AND ')} ORDER BY b.datum, b.id`));
@@ -185,7 +187,8 @@ export function JournalPage() {
         <button onClick={() => exportieren('csv')}><FileSpreadsheet size={16} />CSV</button>
         <button onClick={() => exportieren('pdf')}><Download size={16} />PDF</button>
         <button onClick={() => setDatev(true)} title="Buchungsstapel für den Steuerberater mit Belegen"><Download size={16} />DATEV</button>
-        <button className="primary" onClick={() => { setFehler(''); setModus('rechnung'); setEdit({ datum: heute(), richtung: 'Ausgabe', objekt_id: objekt || '' }); }}><Plus size={16} />Buchung erfassen</button>
+        <button onClick={() => { setFehler(''); setModus('rechnung'); setEdit({ datum: heute(), richtung: 'Ausgabe', objekt_id: objekt || '' }); }}><Receipt size={16} />Rechnung erfassen</button>
+        <button className="primary" onClick={() => setBuchen(true)}><Plus size={16} />Buchen</button>
       </section>
       {info && <p className="info">{info}</p>}
       <div className="seg">
@@ -197,7 +200,7 @@ export function JournalPage() {
         <section className="card">
           <div className="card-head"><h2 className="title-ico"><Receipt size={22} />Offene Rechnungen</h2><span className="muted">noch nicht bezahlt: <b className="neg">{eur(offeneRechnungen.reduce((a, r) => a + Number(r.betrag), 0))}</b></span></div>
           {offeneRechnungen.length === 0 ? <p className="muted">Keine offenen Rechnungen.</p> : (
-            <div className="tablewrap"><table className="list">
+            <div className="tablewrap"><table className="list gross">
               <thead><tr><th>Datum</th><th>Fällig</th><th>Unternehmen</th><th>Rechnungs-Nr.</th><th>Konto</th><th>Einheit</th><th className="num">Betrag</th><th /></tr></thead>
               <tbody>{offeneRechnungen.map((r) => (
                 <tr key={r.id}>
@@ -216,11 +219,11 @@ export function JournalPage() {
       <section className="card">
         <div className="card-head"><h2 className="title-ico"><BookOpen size={22} />Buchungen ({rows.length})</h2></div>
         {rows.length === 0 ? <p className="muted">Keine Buchungen im Zeitraum.</p> : (
-          <div className="tablewrap"><table className="list">
-            <thead><tr><th>Bu.-Nr.</th><th>Datum</th><th>Liegenschaft</th><th>Konto</th><th>Unternehmen</th><th>Buchungstext</th><th className="num">Soll</th><th className="num">Haben</th><th /></tr></thead>
+          <div className="tablewrap"><table className="list gross">
+            <thead><tr><th>Bu.-Nr.</th><th>Datum</th><th>{fix ? 'Einheit' : 'Liegenschaft'}</th><th>Konto</th><th>Unternehmen</th><th>Buchungstext</th><th className="num">Soll</th><th className="num">Haben</th><th /></tr></thead>
             <tbody>{rows.map((r) => (
               <tr key={r.id}>
-                <td>{r.id}</td><td>{datum(r.datum)}</td><td>{r.objekt}<div className="muted small">{r.einheit ?? (r.betrag < 0 ? 'alle Einheiten' : '')}</div></td>
+                <td>{r.id}</td><td>{datum(r.datum)}</td><td>{!fix && r.objekt}<div className={fix ? '' : 'muted small'}>{r.einheit ?? (r.betrag < 0 ? 'alle Einheiten' : fix ? 'gesamtes Objekt' : '')}</div></td>
                 <td>{r.nummer ? `${r.nummer} ${r.konto}` : <span className="tag">ohne Konto</span>}</td>
                 <td>{r.firma ?? <span className="muted">–</span>}</td>
                 <td className="small">{r.text}{r.rechnungsnr && !String(r.text ?? "").includes(r.rechnungsnr) ? <span className="muted"> · Rechnung {r.rechnungsnr}</span> : ''}{r.bankumsatz_id ? <span className="muted"> · Bank</span> : ''}</td>
@@ -232,16 +235,13 @@ export function JournalPage() {
             </tbody>
             <tfoot><tr><td colSpan={6}>Summe</td><td className="num neg">{eur(soll)}</td><td className="num">{eur(haben)}</td><td /></tr></tfoot>
           </table></div>)}
-        <p className="muted small">Mit dem Stift änderst du eine Buchung, mit dem Papierkorb löschst du sie. Neue Rechnungen und Buchungen legst du über „Buchung erfassen“ an.
+        <p className="muted small">Mit dem Stift änderst du eine Buchung, mit dem Papierkorb löschst du sie. Neue Einnahmen und Ausgaben buchst du über „Buchen“, Rechnungen mit Beleg über „Rechnung erfassen“.
           Gelöschte Bankbuchungen erscheinen wieder als offener Umsatz unter „Bank &amp; Zuordnung“.</p>
       </section>)}
       {edit && (
         <div className="modal-bg" onClick={() => setEdit(null)}>
           <div className={'modal' + (modus === 'rechnung' && !edit.id ? ' breit' : '')} onClick={(e) => e.stopPropagation()}>
-            <div className="card-head"><h3>{edit.id ? 'Buchung bearbeiten' : 'Buchung erfassen'}</h3>
-              {!edit.id && <div className="seg">
-                <button className={modus === 'rechnung' ? 'on' : ''} onClick={() => setModus('rechnung')}>Rechnung / Gutschrift</button>
-                <button className={modus === 'buchung' ? 'on' : ''} onClick={() => setModus('buchung')}>Einfache Buchung</button></div>}</div>
+            <div className="card-head"><h3>{edit.id ? 'Buchung bearbeiten' : 'Rechnung / Gutschrift erfassen'}</h3></div>
             {modus === 'rechnung' && !edit.id
               ? <RechnungErfassen objektFest={fix?.id} onSaved={(t) => { setInfo(t); setEdit(null); load(); }} />
               : <>
@@ -258,6 +258,8 @@ export function JournalPage() {
                 </div></>}
           </div>
         </div>)}
+      {buchen && <BuchenDialog vorlage={{ objektId: fix?.id ?? (objekt === '' ? undefined : Number(objekt)) }} onClose={() => setBuchen(false)}
+        onSaved={(t) => { setBuchen(false); setInfo(t); load(); }} />}
       {datev && <DatevDialog objekte={objekte} objekt={fix?.id ?? (objekt === '' ? undefined : Number(objekt))} fest={!!fix} jahr={jahr} monat={monat} onClose={() => setDatev(false)} />}
       {belegFuer && (
         <div className="modal-bg" onClick={() => setBelegFuer(null)}>

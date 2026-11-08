@@ -28,6 +28,7 @@ export function KontenPage() {
         { key: 'umlagefaehig', label: 'Umlagefähig', type: 'checkbox', format: haken },
         { key: 'hdl', label: 'HDL', type: 'checkbox', format: haken },
         { key: 'hwl', label: 'HWL', type: 'checkbox', format: haken },
+        { key: 'rechnung_pflicht', label: 'Rechnungs-Nr. Pflicht', type: 'checkbox', format: haken },
         { key: 'schluessel', label: 'Schlüssel (Vorschlag)', type: 'select', options: SCHLUESSEL },
       ]}
       listSql="SELECT * FROM buchungskonten ORDER BY nummer"

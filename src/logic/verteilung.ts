@@ -2,6 +2,7 @@
 // Kosten je Buchungskonto werden nach Umlageschlüssel auf Einheiten und innerhalb
 // der Einheit zeitanteilig auf die Nutzer (Mieter, Eigentümer, Leerstand) verteilt.
 import { db, type Row } from '../db';
+import { BJ } from './buchung';
 
 export type Schluessel = 'Fläche' | 'Personen' | 'Einheiten' | 'MEA' | 'Summe' | 'Verbrauch' | 'Direkt' | 'Messdienst';
 
@@ -167,7 +168,7 @@ export async function kostenErmitteln(objektId: number, jahr: number, nurUmlagef
   const buch = await db.select(`SELECT b.buchungskonto_id, b.einheit_id, -SUM(b.betrag) AS kosten,
       SUM(COALESCE(b.anteil_35a, CASE WHEN r.anteil_lohn IS NOT NULL AND r.betrag <> 0 THEN r.anteil_lohn * (-b.betrag) / r.betrag END, -b.betrag)) AS k35a
     FROM buchungen b LEFT JOIN rechnungen r ON r.id = b.rechnung_id
-    WHERE b.objekt_id = $1 AND b.datum BETWEEN $2 AND $3 AND b.buchungskonto_id IS NOT NULL GROUP BY b.buchungskonto_id, b.einheit_id`, [objektId, von, bis]);
+    WHERE b.objekt_id = $1 AND ${BJ('b')} = CAST(substr($2, 1, 4) AS INTEGER) AND b.buchungskonto_id IS NOT NULL GROUP BY b.buchungskonto_id, b.einheit_id`, [objektId, von, bis]);
   const rech = await db.select(`SELECT buchungskonto_id, einheit_id, SUM(betrag) AS kosten, SUM(COALESCE(anteil_lohn, betrag)) AS k35a FROM rechnungen r
     WHERE objekt_id = $1 AND COALESCE(bezahlt_am, datum) BETWEEN $2 AND $3
       AND NOT EXISTS (SELECT 1 FROM buchungen b WHERE b.rechnung_id = r.id) GROUP BY buchungskonto_id, einheit_id`, [objektId, von, bis]);
