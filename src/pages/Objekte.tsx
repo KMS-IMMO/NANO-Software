@@ -178,7 +178,7 @@ function Bereich({ slug, rest, o, sum, weg, reload }: { slug: string; rest: stri
     case 'rechnungen': return <JournalPage />;
     case 'mahnungen': return <MahnungenPage />;
     case 'auswertung': return <AuswertungPage />;
-    case 'hausgeld': return <HausgeldTab objektId={id} />;
+    case 'hausgeld': return <EigentuemerTab objektId={id} nurHausgeld />;
     case 'vorauszahlungen': return <VorauszahlungenTab objektId={id} weg={weg} />;
     case 'wirtschaftsplan': return <WirtschaftsplanTab objektId={id} />;
     case 'ruecklagen': return <RuecklagenTab objektId={id} />;
@@ -359,7 +359,7 @@ const zahlStr = (n: number) => (n ? n.toFixed(2).replace('.', ',') : '');
 const zahlIn = (s: string) => Number(String(s).replace(/\./g, '').replace(',', '.')) || 0;
 
 /** Eigentümer je Einheit mit Hausgeld, Erhaltungsrücklage und Zahlweise (eine Überweisung oder zwei getrennte) */
-function EigentuemerTab({ objektId }: { objektId: number }) {
+function EigentuemerTab({ objektId, nurHausgeld }: { objektId: number; nurHausgeld?: boolean }) {
   const [standard, setStandard] = useState('zusammen');
   const [rows, setRows] = useState<Row[]>([]);
   const [edit, setEdit] = useState<Record<number, { bew: string; rl: string; zw: string }>>({});
@@ -451,7 +451,7 @@ function EigentuemerTab({ objektId }: { objektId: number }) {
         </div>
         <p className="muted small">Die Tabelle zeigt die Beträge, die am gewählten Datum gelten. Neue Beträge werden ab diesem Datum als neuer Hausgeldsatz gespeichert (frühere Sätze bleiben erhalten). Offene, noch nicht bezahlte Hausgeld-Posten ab diesem Monat werden automatisch neu gestellt.</p>
       </section>
-      <EntityTable
+      {nurHausgeld ? <HausgeldTab objektId={objektId} version={version} onChange={async () => { await hausgeldNeuStellen(objektId, '0000-00'); load(); }} /> : <EntityTable
         title="Eigentümer je Einheit"
         icon={<Users size={22} />}
         newLabel="Eigentümer zuordnen"
@@ -475,15 +475,18 @@ function EigentuemerTab({ objektId }: { objektId: number }) {
         listParams={[objektId]}
         onChange={load}
         emptyText="Noch keine Eigentümer zugeordnet. Eigentümer legst du zuerst unter „Personen“ an."
-      />
+      />}
     </>
   );
 }
 
-function HausgeldTab({ objektId }: { objektId: number }) {
+/** Verlauf aller Hausgeldsätze je Einheit. Änderungen hier stellen offene Hausgeld-Posten neu. */
+function HausgeldTab({ objektId, version, onChange }: { objektId: number; version: number; onChange: () => void }) {
   return (
     <EntityTable
-      title="Hausgeldplan je Einheit"
+      title="Verlauf der Hausgeldsätze je Einheit"
+      version={version}
+      onChange={onChange}
       icon={<Wallet size={22} />}
       newLabel="Hausgeld eintragen"
       table="hausgeld"
@@ -496,7 +499,7 @@ function HausgeldTab({ objektId }: { objektId: number }) {
       listSql={`SELECT h.*, e.nummer AS einheit_id_label FROM hausgeld h JOIN einheiten e ON e.id = h.einheit_id
         WHERE e.objekt_id = $1 ORDER BY e.nummer, h.gueltig_ab DESC`}
       listParams={[objektId]}
-      emptyText="Noch kein Hausgeld eingetragen. Bei einer Änderung trägst du einfach einen neuen Betrag mit neuem Datum ein."
+      emptyText="Noch kein Hausgeld eingetragen. Trage die Beträge oben mit „Beträge gültig ab“ ein."
     />
   );
 }

@@ -7,7 +7,7 @@ import { EntityTable, datum, eur, type Field } from '../components/EntityTable';
 import { db, type Row } from '../db';
 import { useObjektKontext } from '../logic/objektKontext';
 import { einheitLabel, personLabel, personOptions } from '../db/labels';
-import { mieteImMonat } from '../logic/soll';
+import { mieteImMonat, mieteNeuStellen } from '../logic/soll';
 
 const vertragFields: Field[] = [
   { key: 'einheit_id', label: 'Einheit', type: 'select', required: true, wide: true,
@@ -72,6 +72,7 @@ export function VertragDetailPage({ vertragId }: { vertragId?: number }) {
   const fix = useObjektKontext();
   const [v, setV] = useState<Row | null>(null);
   const [anp, setAnp] = useState<Row[]>([]);
+  const [hinweis, setHinweis] = useState('');
   const reload = async () => {
     setV((await db.select(listSql('v.id = $1'), [id]))[0] ?? null);
     setAnp(await db.select('SELECT * FROM mietanpassungen WHERE vertrag_id = $1', [id]));
@@ -95,6 +96,7 @@ export function VertragDetailPage({ vertragId }: { vertragId?: number }) {
         <div className="kpi"><span>Kaution</span><b>{eur(v.kaution ?? 0)}</b></div>
       </div>
       <VertragDokumente vertragId={id} />
+      {hinweis && <p className="info">{hinweis}</p>}
       <EntityTable
         title={v.mietart === 'Staffelmiete' ? 'Mietstaffeln und Änderungen' : v.mietart === 'Indexmiete' ? 'Indexanpassungen und Änderungen' : 'Mietänderungen'}
         table="mietanpassungen"
@@ -110,7 +112,7 @@ export function VertragDetailPage({ vertragId }: { vertragId?: number }) {
         listSql="SELECT * FROM mietanpassungen WHERE vertrag_id = $1 ORDER BY gueltig_ab"
         listParams={[id]}
         fixed={{ vertrag_id: id }}
-        onChange={reload}
+        onChange={async () => { const n = await mieteNeuStellen(id); await reload(); setHinweis(n ? `Gespeichert. Offene Posten dieses Vertrags wurden mit den neuen Beträgen neu gestellt (bezahlte bleiben unverändert).` : 'Gespeichert.'); }}
         emptyText="Keine Änderungen. Leere Felder bleiben unverändert. Ab dem Datum fordert das Programm automatisch den neuen Betrag."
       />
     </>
