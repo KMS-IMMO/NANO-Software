@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as KE, type PointerEvent as PE } from 'react';
 import { Check, Search } from 'lucide-react';
 import { db, insert, type Row } from '../db';
-import { einheitLabel } from '../db/labels';
+import { einheitLabel, einheitPerson } from '../db/labels';
 import { eur } from './EntityTable';
 import { gesperrt, sperrText } from '../logic/abschluss';
 
@@ -150,7 +150,7 @@ export function BuchenDialog({ vorlage, onClose, onSaved }: { vorlage: BuchenVor
   useEffect(() => {
     setWahl([]); setAnteile({});
     if (objekt === '') { setEinheiten([]); return; }
-    db.select(`SELECT e.id, ${einheitLabel('e')} AS label FROM einheiten e WHERE e.objekt_id = $1 ORDER BY e.lfd_nr, e.nummer`, [Number(objekt)]).then(setEinheiten);
+    db.select(`SELECT e.id, e.nummer, ${einheitPerson('e')} AS person, ${einheitLabel('e')} AS label FROM einheiten e WHERE e.objekt_id = $1 ORDER BY e.lfd_nr, e.nummer`, [Number(objekt)]).then(setEinheiten);
   }, [objekt]);
 
   // Einnahmen zeigen Einnahme- und Ertragskonten zuerst, Ausgaben die Aufwandskonten
@@ -235,15 +235,23 @@ export function BuchenDialog({ vorlage, onClose, onSaved }: { vorlage: BuchenVor
           <div className="bf-titel"><span className="bf-nr">2</span>Einheiten</div>
           {vorlage.objektId == null && <select value={objekt} onChange={(e) => setObjekt(e.target.value ? Number(e.target.value) : '')}>
             <option value="">– Liegenschaft wählen –</option>{objekte.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}</select>}
-          {objekt !== '' && <div className="bf-chips">
-            <button className={'bf-chip' + (wahl.length === 0 ? ' an' : '')} onClick={() => { setWahl([]); setAnteile({}); }}>{richtung === 'Einnahme' ? 'Gesamtes Objekt' : 'Alle Einheiten (Umlage)'}</button>
-            {einheiten.map((x) => <button key={x.id} className={'bf-chip' + (wahl.includes(String(x.id)) ? ' an' : '')} onClick={() => einheitUmschalten(String(x.id))}>{x.label}</button>)}
+          {objekt !== '' && <div className="bf-liste">
+            <button className={'bf-zeile alle' + (wahl.length === 0 ? ' an' : '')} onClick={() => { setWahl([]); setAnteile({}); }}>
+              <span className="bf-haken">{wahl.length === 0 && <Check size={13} />}</span>
+              <b>{richtung === 'Einnahme' ? 'Gesamtes Objekt' : 'Alle Einheiten'}</b><span className="bf-name muted">{richtung === 'Einnahme' ? 'ohne Einheit' : 'Umlage nach Schlüssel'}</span>
+            </button>
+            {einheiten.map((x, i) => {
+              const id = String(x.id), an = wahl.includes(id);
+              return (
+                <div key={x.id} className={'bf-zeile' + (an ? ' an' : '')} style={{ animationDelay: `${0.03 * i}s` }} onClick={() => einheitUmschalten(id)} role="checkbox" aria-checked={an}>
+                  <span className="bf-haken">{an && <Check size={13} />}</span>
+                  <b>{x.nummer}</b>
+                  <span className="bf-name">{x.person ?? <span className="muted">leer stehend</span>}</span>
+                  {an && wahl.length > 1 && <input inputMode="decimal" value={anteile[id] ?? ''} onClick={(e) => e.stopPropagation()} onChange={(e) => setAnteile({ ...anteile, [id]: e.target.value })} />}
+                </div>);
+            })}
           </div>}
-          {wahl.length > 1 && <div className="bf-anteile">
-            {wahl.map((id) => <label key={id}><span>{einheiten.find((x) => String(x.id) === id)?.label}</span>
-              <input inputMode="decimal" value={anteile[id] ?? ''} onChange={(e) => setAnteile({ ...anteile, [id]: e.target.value })} /></label>)}
-            <p className={'small ' + (Math.abs(summe - gesamt) > 0.005 ? 'warn' : 'muted')}>Summe {eur(summe)} von {eur(gesamt)}, gleichmäßig aufgeteilt und änderbar.</p>
-          </div>}
+          {wahl.length > 1 && <p className={'small ' + (Math.abs(summe - gesamt) > 0.005 ? 'warn' : 'muted')}>{wahl.length} Einheiten · Summe {eur(summe)} von {eur(gesamt)}, gleichmäßig aufgeteilt und änderbar.</p>}
         </div>
 
         <div className="bf-schritt" style={{ animationDelay: '.19s' }}>

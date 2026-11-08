@@ -789,3 +789,19 @@ table.list.gross th { padding: 12px 12px; font-size: 13.5px; }
 table.list.gross td .small, table.list.gross td.small { font-size: 14px; }
 table.list.gross td.num { font-size: 15.5px; font-variant-numeric: tabular-nums; }
 @media (prefers-reduced-motion: reduce) { .krad-trommel { transition: none; } .modal.buchen-fenster, .bf-schritt, .bf-neu { animation: none; } }
+
+/* Buchen-Fenster: Einheiten untereinander mit Namen */
+.bf-liste { display: flex; flex-direction: column; margin-top: 8px; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.bf-zeile { display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px 12px; min-height: 46px; background: var(--panel); border: none; border-bottom: 1px solid var(--line);
+  border-radius: 0; text-align: left; cursor: pointer; font-size: 14px; color: var(--text); box-shadow: none; transition: background-color .2s, padding-left .25s var(--weich); animation: bf-schritt .35s var(--weich) backwards; }
+.bf-zeile:last-child { border-bottom: none; }
+.bf-zeile:hover { background: #fbf8f2; }
+.bf-zeile.an { background: var(--accent-soft); padding-left: 16px; box-shadow: inset 3px 0 0 var(--accent); }
+.bf-zeile b { min-width: 64px; font-variant-numeric: tabular-nums; }
+.bf-zeile .bf-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bf-zeile input { width: 110px; text-align: right; padding: 5px 8px; }
+.bf-zeile.alle { background: #faf9f6; }
+.bf-zeile.alle.an { background: var(--accent-soft); }
+.bf-haken { width: 20px; height: 20px; border-radius: 6px; border: 1.5px solid #cfc6b6; display: grid; place-items: center; flex: none; background: #fff; color: #fff; transition: all .2s var(--feder); }
+.bf-zeile.an .bf-haken { background: var(--accent); border-color: var(--accent); transform: scale(1.08); }
+.bf-zeile.alle .bf-haken { border-radius: 50%; }
