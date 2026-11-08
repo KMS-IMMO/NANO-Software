@@ -12,7 +12,16 @@ const HEIZUNG = ['Gas-Zentralheizung', 'Öl-Zentralheizung', 'Fernwärme', 'Wär
 type Einheit = { nummer: string; typ: string; lage: string; flaeche: string; mea: string; personenzahl: string;
   vorname: string; nachname: string; telefon: string; email: string;
   hausgeld: string; ruecklage: string; mVorname: string; mNachname: string; mSeit: string; nkVz: string };
-const leer = (n: number): Einheit => ({ nummer: `Top ${n}`, typ: 'Wohnung', lage: '', flaeche: '', mea: '', personenzahl: '', vorname: '', nachname: '', telefon: '', email: '', hausgeld: '', ruecklage: '', mVorname: '', mNachname: '', mSeit: '', nkVz: '' });
+// Einheiten heißen nach Etage und Lage (z. B. „EG links“, „1. OG rechts“), nicht mehr „Top 1“.
+const etage = (f: number) => (f === 0 ? 'EG' : `${f}. OG`);
+const POS: Record<number, string[]> = { 1: [''], 2: ['links', 'rechts'], 3: ['links', 'Mitte', 'rechts'] };
+const position = (j: number, jeEtage: number) => (POS[jeEtage] ? POS[jeEtage][j] : `Whg. ${j + 1}`);
+/** Bezeichnung der n-ten Einheit (ab 0) bei `jeEtage` Einheiten pro Etage */
+const nachEtage = (n: number, jeEtage: number) => {
+  const f = Math.floor(n / jeEtage), j = n % jeEtage, lage = etage(f), pos = position(j, jeEtage);
+  return { lage, nummer: pos ? `${lage} ${pos}` : lage };
+};
+const leer = (n: number, jeEtage = 2): Einheit => ({ ...nachEtage(n - 1, jeEtage), typ: 'Wohnung', flaeche: '', mea: '', personenzahl: '', vorname: '', nachname: '', telefon: '', email: '', hausgeld: '', ruecklage: '', mVorname: '', mNachname: '', mSeit: '', nkVz: '' });
 const nameKey = (v: any, n: any) => `${String(v ?? '').trim().toLowerCase()}|${String(n ?? '').trim().toLowerCase()}`;
 
 export function ObjektAssistentPage() {
@@ -23,6 +32,7 @@ export function ObjektAssistentPage() {
   const [eigentuemer, setEigentuemer] = useState<Row[]>([]);
   const [fehler, setFehler] = useState('');
   const [anzahl, setAnzahl] = useState('');
+  const [jeEtage, setJeEtage] = useState('2');
   useEffect(() => { db.select(personOptions('Eigentümer')).then(setEigentuemer); }, []);
   const [eigNamen, setEigNamen] = useState<string[]>([]);
   useEffect(() => { db.select(`SELECT nachname FROM personen WHERE rolle = 'Eigentümer' AND nachname IS NOT NULL`).then((r) => setEigNamen(r.map((x) => String(x.nachname)))); }, []);
@@ -46,8 +56,8 @@ export function ObjektAssistentPage() {
     }
     if (schritt === 2) {
       const nr = einheiten.map((e) => e.nummer.trim());
-      if (nr.some((n) => !n)) { setFehler('Jede Einheit braucht eine Nummer.'); return; }
-      if (new Set(nr).size !== nr.length) { setFehler('Einheitennummern müssen eindeutig sein.'); return; }
+      if (nr.some((n) => !n)) { setFehler('Jede Einheit braucht eine Bezeichnung, z. B. „EG links“.'); return; }
+      if (new Set(nr).size !== nr.length) { setFehler('Die Bezeichnungen der Einheiten müssen eindeutig sein, z. B. „1. OG links“ und „1. OG rechts“.'); return; }
     }
     setSchritt(schritt + 1);
   }
@@ -55,7 +65,8 @@ export function ObjektAssistentPage() {
   function erzeugen() {
     const n = Math.min(500, Math.max(1, Math.round(zahl(anzahl))));
     const start = einheiten.length === 1 && !einheiten[0].flaeche ? 0 : einheiten.length;
-    const neu = Array.from({ length: n }, (_, i) => leer(start + i + 1));
+    const je = Math.min(20, Math.max(1, Math.round(zahl(jeEtage)) || 2));
+    const neu = Array.from({ length: n }, (_, i) => leer(start + i + 1, je));
     setEinheiten(start ? [...einheiten, ...neu] : neu);
     setAnzahl('');
   }
@@ -162,18 +173,20 @@ export function ObjektAssistentPage() {
             <div className="card-head" style={{ marginTop: 18 }}><h2>Einheiten der Liegenschaft</h2>
               <div className="row">
                 <input className="cell" placeholder="Anzahl" value={anzahl} onChange={(e) => setAnzahl(e.target.value)} />
+                <label className="inline small">je Etage <input className="cell" inputMode="numeric" value={jeEtage} style={{ width: 52 }} title="Einheiten pro Etage: 2 = links/rechts, 3 = links/Mitte/rechts" onChange={(e) => setJeEtage(e.target.value)} /></label>
                 <button onClick={erzeugen} disabled={!zahl(anzahl)}>Einheiten erzeugen</button>
-                <button className="primary" onClick={() => setEinheiten([...einheiten, leer(einheiten.length + 1)])}><Plus size={16} />Einheit hinzufügen</button>
+                <button className="primary" onClick={() => setEinheiten([...einheiten, leer(einheiten.length + 1, Math.max(1, Math.round(zahl(jeEtage)) || 2))])}><Plus size={16} />Einheit hinzufügen</button>
               </div></div>
             {weg && <datalist id="eig-namen">{[...new Set(eigNamen)].map((n) => <option key={n} value={n} />)}</datalist>}
             <div className="tablewrap"><table className="list">
-              <thead><tr><th>Nr.</th><th>Bezeichnung</th><th>Etage / Lage</th><th className="num">Fläche (m²)</th><th className="num">MEA</th><th className="num">Personenzahl</th>{weg && <><th>Eigentümer Vorname</th><th>Nachname / Firma</th><th>Telefon</th><th>E-Mail</th>
+              <thead><tr><th>Einheit</th><th>Bezeichnung</th><th>Etage</th><th className="num">Fläche (m²)</th><th className="num">MEA</th><th className="num">Personenzahl</th>{weg && <><th>Eigentümer Vorname</th><th>Nachname / Firma</th><th>Telefon</th><th>E-Mail</th>
                 <th className="num">Hausgeld ohne Rücklage € / Monat</th><th className="num">Erhaltungsrücklage € / Monat</th><th>Mieter Vorname</th><th>Mieter Nachname</th><th>Mieter seit</th><th className="num">NK-Vorauszahlung Mieter € / Monat</th></>}<th /></tr></thead>
               <tbody>{einheiten.map((e, i) => (
                 <tr key={i}>
                   <td><input value={e.nummer} onChange={(x) => setE(i, 'nummer', x.target.value)} style={{ width: 110 }} /></td>
                   <td><select value={e.typ} style={{ minWidth: 130 }} onChange={(x) => setE(i, 'typ', x.target.value)}>{EINHEIT_TYPEN.map((t) => <option key={t}>{t}</option>)}</select></td>
-                  <td><input value={e.lage} placeholder="EG, 1. OG …" style={{ width: 100 }} onChange={(x) => setE(i, 'lage', x.target.value)} /></td>
+                  <td><input value={e.lage} placeholder="EG, 1. OG, DG …" style={{ width: 100 }} onChange={(x) => { const l = x.target.value; setEinheiten(einheiten.map((y, j) => j !== i ? y
+                    : { ...y, lage: l, nummer: !y.nummer || y.nummer === y.lage || y.nummer.startsWith(y.lage + ' ') ? (y.lage && y.nummer.startsWith(y.lage) ? l + y.nummer.slice(y.lage.length) : l) : y.nummer })); }} /></td>
                   <td className="num"><input className="cell" inputMode="decimal" value={e.flaeche} style={{ width: 80 }} onChange={(x) => setE(i, 'flaeche', x.target.value)} /></td>
                   <td className="num"><input className="cell" inputMode="decimal" value={e.mea} style={{ width: 80 }} onChange={(x) => setE(i, 'mea', x.target.value)} /></td>
                   <td className="num"><input className="cell" inputMode="numeric" value={e.personenzahl} style={{ width: 60 }} onChange={(x) => setE(i, 'personenzahl', x.target.value)} /></td>
