@@ -10,7 +10,9 @@ export type StadtObjekt = { id: number; name: string; einheiten: number; verwalt
 const GOLD = 0xb8873a;
 const GOLD_HELL = 0xd9a441;
 const TUERKIS = 0x2e9ca1;
-const FARBE: Record<string, number> = { WEG: 0x4f78c9, Mietverwaltung: 0x2f9a9c };
+const FARBE: Record<string, number> = { WEG: 0x4f7fd6, Mietverwaltung: 0x48a85f };
+const KANTE = 0x3a3d42;   // alle Seitenlinien dunkelgrau
+const HQ_BEIGE = 0xe6d3ae;
 const hell = (farbe: number, anteil = 0.16) => new THREE.Color(0xffffff).lerp(new THREE.Color(farbe), anteil);
 const BEKANNT = 'nano-stadt-bekannt';
 
@@ -87,12 +89,12 @@ export function Stadt3D({ objekte, gewaehlt, onWahl }: { objekte: StadtObjekt[];
     const hqTeile: [number, number, number, number][] = [[3.4, 2.2, 3.4, 0], [2.6, 4.2, 2.6, 2.2], [1.8, 2.6, 1.8, 6.4]];
     for (const [w, h, d, y] of hqTeile) {
       const g = new THREE.BoxGeometry(w, h, d);
-      const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: 0xfbf7f0, metalness: 0.15, roughness: 0.55, emissive: 0xf2d9a8, emissiveIntensity: 0.12 }));
+      const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: HQ_BEIGE, metalness: 0.1, roughness: 0.6, emissive: 0xf2d9a8, emissiveIntensity: 0.08 }));
       m.position.y = y + h / 2; hq.add(m);
-      const k = new THREE.LineSegments(new THREE.EdgesGeometry(g), new THREE.LineBasicMaterial({ color: GOLD }));
+      const k = new THREE.LineSegments(new THREE.EdgesGeometry(g), new THREE.LineBasicMaterial({ color: KANTE }));
       k.position.copy(m.position); hq.add(k);
       for (let f = 0.5; f < h; f += 0.6) {   // leuchtende Etagen
-        const band = new THREE.Mesh(new THREE.BoxGeometry(w + 0.02, 0.06, d + 0.02), new THREE.MeshBasicMaterial({ color: GOLD, transparent: true, opacity: 0.45 }));
+        const band = new THREE.Mesh(new THREE.BoxGeometry(w + 0.02, 0.06, d + 0.02), new THREE.MeshBasicMaterial({ color: KANTE, transparent: true, opacity: 0.22 }));
         band.position.y = y + f; hq.add(band);
       }
     }
@@ -130,12 +132,12 @@ export function Stadt3D({ objekte, gewaehlt, onWahl }: { objekte: StadtObjekt[];
       const farbe = FARBE[o.verwaltungsart] ?? 0x9b7fd1;
       const gruppe = new THREE.Group(); gruppe.position.copy(pos);
       const geo = new THREE.BoxGeometry(breite, hoehe, breite); geo.translate(0, hoehe / 2, 0);
-      const koerper = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: hell(farbe, 0.3), emissive: farbe, emissiveIntensity: 0.04, metalness: 0.1, roughness: 0.6, transparent: true, opacity: 0.96 }));
+      const koerper = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: hell(farbe, 0.82), emissive: farbe, emissiveIntensity: 0.04, metalness: 0.1, roughness: 0.6, transparent: true, opacity: 0.96 }));
       koerper.userData.id = o.id; gruppe.add(koerper);
-      const kanten = new THREE.LineSegments(new THREE.EdgesGeometry(geo), new THREE.LineBasicMaterial({ color: farbe, transparent: true, opacity: 0.9 }));
+      const kanten = new THREE.LineSegments(new THREE.EdgesGeometry(geo), new THREE.LineBasicMaterial({ color: KANTE, transparent: true, opacity: 0.95 }));
       gruppe.add(kanten);
       for (let f = 0.55; f < hoehe - 0.2; f += 0.55) {
-        const band = new THREE.Mesh(new THREE.BoxGeometry(breite + 0.02, 0.05, breite + 0.02), new THREE.MeshBasicMaterial({ color: farbe, transparent: true, opacity: 0.35 }));
+        const band = new THREE.Mesh(new THREE.BoxGeometry(breite + 0.02, 0.05, breite + 0.02), new THREE.MeshBasicMaterial({ color: KANTE, transparent: true, opacity: 0.22 }));
         band.position.y = f; gruppe.add(band);
       }
       const s = schild(o.name); s.position.set(0, hoehe + 1.1, 0); gruppe.add(s);

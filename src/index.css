@@ -845,7 +845,7 @@ table.list.gross td.num { font-size: 15.5px; font-variant-numeric: tabular-nums;
 .leit-legende { position: absolute; left: 14px; top: 12px; display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: #5d554a; pointer-events: none; }
 .leit-legende span { display: flex; align-items: center; gap: 6px; background: rgba(255,255,255,.85); padding: 4px 10px; border-radius: 99px; border: 1px solid rgba(184,135,58,.28); box-shadow: 0 2px 8px rgba(90,70,35,.06); }
 .leit-legende i, .leit-liste i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; flex: none; }
-i.hq { background: #c89543; box-shadow: 0 0 6px rgba(200,149,67,.6); } i.mv { background: #2f9a9c; } i.weg { background: #4f78c9; }
+i.hq { background: #e6d3ae; border: 1.5px solid #3a3d42; } i.mv { background: #5bb06f; border: 1.5px solid #3a3d42; } i.weg { background: #5f89d8; border: 1.5px solid #3a3d42; }
 .leit-hinweis { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); margin: 0; font-size: 12px; color: #6f675b; background: rgba(255,255,255,.85); border: 1px solid rgba(184,135,58,.2); padding: 6px 14px; border-radius: 99px; white-space: nowrap; pointer-events: none; }
 .leit-zurueck { position: absolute; right: 14px; top: 12px; display: inline-flex; align-items: center; gap: 6px; background: rgba(255,255,255,.9); color: #5d4a2a; border: 1px solid rgba(184,135,58,.4); border-radius: 99px; padding: 6px 14px; font-size: 13px; box-shadow: 0 2px 8px rgba(90,70,35,.08); }
 .leit-zurueck:hover { background: #fbf3e4; }
@@ -912,3 +912,44 @@ i.hq { background: #c89543; box-shadow: 0 0 6px rgba(200,149,67,.6); } i.mv { ba
 .abr-gruppe.nicht .abr-gruppe-kopf td { background: #f3f1ee; }
 .abr-gruppe-kopf td .muted { font-weight: 500; }
 .abr-zwischensumme td { font-weight: 600; border-top: 1px solid #e6dccb; background: #fcfaf6; }
+
+/* Agent O.S.A: Wirtschaftsplan-Vorschlag */
+.osa-plan { background: linear-gradient(180deg, #fffdf8 0%, #fff 60%); border: 1px solid rgba(184,135,58,.28); margin-bottom: 18px; }
+.osa-kugel { width: 26px; height: 26px; border-radius: 50%; display: inline-grid; place-items: center; background: radial-gradient(circle at 35% 35%, #ffe7a8, #d9a441 60%, #b8873a); box-shadow: 0 0 0 4px rgba(217,164,65,.15), 0 0 16px rgba(217,164,65,.55); animation: osa-puls 2.4s ease-in-out infinite; }
+.osa-kugel i { width: 34px; height: 12px; border: 1.5px solid rgba(46,156,161,.75); border-radius: 50%; transform: rotate(-20deg); animation: osa-dreh 6s linear infinite; }
+@keyframes osa-puls { 50% { box-shadow: 0 0 0 7px rgba(217,164,65,.08), 0 0 24px rgba(217,164,65,.75); } }
+@keyframes osa-dreh { to { transform: rotate(340deg); } }
+.osa-schritte { list-style: none; padding: 4px 0 8px; margin: 0; display: grid; gap: 8px; }
+.osa-schritte li { display: flex; align-items: center; gap: 10px; color: #a39b8d; font-size: 14px; transition: color .3s; }
+.osa-schritte li.fertig { color: #3d7a4a; } .osa-schritte li.jetzt { color: #3b3428; font-weight: 600; }
+.osa-schritte .punkt { width: 14px; height: 14px; border-radius: 50%; border: 2px solid #ddd3c2; }
+.osa-schritte li.jetzt .punkt { border-color: #d9a441; border-top-color: transparent; animation: osa-dreh .8s linear infinite; }
+.osa-ergebnis { animation: osa-auf .5s ease both; }
+@keyframes osa-auf { from { opacity: 0; transform: translateY(8px); } }
+.osa-annahmen { background: #faf6ee; border: 1px solid #ece2cf; border-radius: 12px; padding: 14px 16px; margin-bottom: 14px; }
+.osa-annahmen-raster { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px 14px; }
+.osa-annahmen-raster label { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; color: #6f675b; }
+.osa-kpis .osa-kpi { border-color: rgba(217,164,65,.55); background: #fffaf0; }
+.osa-raster { display: grid; grid-template-columns: minmax(0, 3fr) minmax(300px, 2fr); gap: 22px; align-items: start; }
+.osa-tabelle td { vertical-align: top; }
+.osa-tabelle td.small.muted { max-width: 300px; line-height: 1.35; }
+.osa-chart { display: flex; align-items: flex-end; gap: 18px; height: 210px; padding: 26px 8px 0; border-bottom: 1px solid #e6dccb; }
+.osa-saeule { flex: 1; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 6px; animation: osa-auf .6s ease both; }
+.osa-saeule b { font-size: 13px; margin-bottom: -26px; color: #5d554a; }
+.osa-wert { font-size: 12.5px; font-weight: 700; color: #3b3428; text-align: center; line-height: 1.1; }
+.osa-wert small { display: block; font-weight: 500; color: #8a8478; font-size: 11px; }
+.osa-stapel { width: 62%; max-width: 70px; display: flex; flex-direction: column; border-radius: 8px 8px 0 0; overflow: hidden; transform-origin: bottom; animation: osa-wachs .8s cubic-bezier(.2,.9,.3,1.2) both; }
+@keyframes osa-wachs { from { transform: scaleY(0); } }
+.osa-stapel i, .osa-legende i { display: block; }
+.osa-stapel i.ko { flex: 1; background: linear-gradient(180deg, #e3bf78, #c89543); }
+.osa-stapel i.rl { background: linear-gradient(180deg, #5fb8bc, #2e9ca1); }
+.osa-legende { display: flex; gap: 16px; font-size: 12px; color: #6f675b; margin: 32px 0 10px; }
+.osa-legende span { display: flex; align-items: center; gap: 6px; } .osa-legende i { width: 12px; height: 12px; border-radius: 3px; }
+.osa-legende i.ko { background: #c89543; } .osa-legende i.rl { background: #2e9ca1; }
+.osa-balken { display: inline-block; width: 60px; height: 6px; border-radius: 3px; background: #eee6d8; margin-right: 8px; vertical-align: middle; overflow: hidden; }
+.osa-balken i { display: block; height: 100%; background: #2e9ca1; }
+.osa-hinweise ul { margin: 6px 0 0; padding-left: 20px; display: grid; gap: 6px; font-size: 14px; line-height: 1.45; }
+.osa-ki { margin-top: 12px; background: #f2f9f9; border: 1px solid #cfe7e8; border-radius: 12px; padding: 12px 16px; font-size: 14px; }
+.osa-ki p { margin: 6px 0 0; }
+.osa-aktionen { margin-top: 14px; flex-wrap: wrap; gap: 8px; }
+@media (max-width: 1200px) { .osa-raster { grid-template-columns: 1fr; } }
