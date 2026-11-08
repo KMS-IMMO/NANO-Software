@@ -731,3 +731,61 @@ tr:hover .pill { transform: scale(1.04); }
 .kopf-netz.aktiv .paket { animation-duration: 1.4s !important; opacity: 1; stroke-width: 2.4; }
 .kopf-netz.aktiv .knoten { animation-duration: 1.4s; }
 @media (prefers-reduced-motion: reduce) { .kopf-netz .paket { display: none; } }
+
+/* ===== Buchen-Fenster mit Konto-Rad ===== */
+.modal.buchen-fenster { width: min(640px, 94vw); max-height: 92vh; overflow-y: auto; animation: bf-auf .45s var(--feder) backwards; }
+@keyframes bf-auf { from { opacity: 0; transform: translateY(24px) scale(.94) rotateX(8deg); } }
+.buchen-fenster .bf-umsatz { margin: -4px 0 4px; }
+.buchen-fenster .bf-kopf { display: flex; gap: 10px; flex-wrap: wrap; }
+.buchen-fenster .bf-kopf label { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; color: var(--muted); }
+.buchen-fenster .bf-kopf label.grow { flex: 1; min-width: 180px; }
+.bf-schritt { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; margin-top: 10px; background: var(--panel); animation: bf-schritt .5s var(--weich) backwards; }
+.bf-schritt > input, .bf-schritt > select { width: 100%; }
+@keyframes bf-schritt { from { opacity: 0; transform: translateY(12px); } }
+.bf-neu { animation: bf-neu .45s var(--feder) backwards; border-color: var(--accent); background: var(--accent-soft); }
+@keyframes bf-neu { from { opacity: 0; transform: scaleY(.6) translateY(-8px); max-height: 0; } to { max-height: 200px; } }
+.bf-titel { display: flex; align-items: center; gap: 8px; font-weight: 600; margin-bottom: 8px; }
+.bf-nr { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; background: var(--accent); color: #fff; flex: none; }
+.bf-suche { margin-left: auto; display: flex; align-items: center; gap: 6px; font-weight: 400; color: var(--muted); }
+.bf-suche input { width: 190px; padding: 5px 8px; font-size: 13px; }
+.bf-gewaehlt { margin: 8px 0 0; display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--accent-dark); font-weight: 600; }
+
+.krad { position: relative; height: 230px; perspective: 700px; perspective-origin: 50% 50%; overflow: hidden; cursor: grab; outline: none; border-radius: 10px; user-select: none; touch-action: none;
+  background: linear-gradient(#f3efe7, #fff 30%, #fff 70%, #f3efe7); }
+.krad:active { cursor: grabbing; }
+.krad:focus-visible { box-shadow: var(--ring); }
+.krad::before, .krad::after { content: ''; position: absolute; left: 0; right: 0; height: 70px; z-index: 2; pointer-events: none; }
+.krad::before { top: 0; background: linear-gradient(var(--panel), transparent); }
+.krad::after { bottom: 0; background: linear-gradient(transparent, var(--panel)); }
+.krad-band { position: absolute; left: 8px; right: 8px; top: 50%; height: 40px; margin-top: -20px; border-radius: 9px; background: var(--accent-soft); border: 1px solid #e3d3b5;
+  box-shadow: 0 0 0 4px rgba(176,138,74,.08), inset 0 1px 0 #fff; }
+.krad-trommel { position: absolute; inset: 0; transform-style: preserve-3d; }
+.krad-eintrag { position: absolute; left: 16px; right: 16px; top: 50%; height: 40px; margin-top: -20px; display: flex; align-items: center; gap: 12px; padding: 0 12px;
+  backface-visibility: hidden; font-size: 14px; text-align: left; justify-content: flex-start; color: var(--muted); white-space: nowrap; overflow: hidden; }
+.krad-eintrag b { font-variant-numeric: tabular-nums; min-width: 44px; color: var(--text); font-weight: 600; }
+.krad-eintrag span { overflow: hidden; text-overflow: ellipsis; flex: 1; }
+.krad-eintrag.mitte { color: var(--text); font-size: 15px; font-weight: 600; }
+.krad-eintrag.mitte b { color: var(--accent-dark); }
+.krad-tag { font-style: normal; font-size: 10.5px; padding: 1px 6px; border-radius: 99px; background: #fff; border: 1px solid #e3d3b5; color: var(--accent-dark); flex: none; }
+
+.bf-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.bf-chip { border-radius: 99px; padding: 6px 12px; font-size: 13px; transition: all .2s var(--weich); }
+.bf-chip.an { background: var(--accent); border-color: var(--accent); color: #fff; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(176,138,74,.3); }
+.bf-anteile { display: grid; gap: 6px; margin-top: 10px; animation: bf-schritt .35s var(--weich) backwards; }
+.bf-anteile label { display: flex; align-items: center; gap: 10px; font-size: 13px; }
+.bf-anteile label span { flex: 1; }
+.bf-anteile input { width: 120px; text-align: right; }
+
+.bf-jahre { position: relative; display: inline-grid; grid-template-columns: repeat(3, 92px); background: var(--head); border-radius: 10px; padding: 3px; }
+.bf-jahre button { position: relative; z-index: 1; width: 92px; display: flex; justify-content: center; text-align: center; background: none; border: none; box-shadow: none; padding: 8px 0; font-weight: 600; color: var(--muted); transition: color .25s; }
+.bf-jahre button.an { color: #fff; }
+.bf-jahr-gleiter { position: absolute; top: 3px; bottom: 3px; left: 3px; width: 92px; border-radius: 8px; background: var(--accent); box-shadow: 0 4px 12px rgba(176,138,74,.35);
+  transform: translateX(calc(var(--i, 1) * 92px)); transition: transform .4s var(--feder); }
+.bf-buchen { min-width: 120px; justify-content: center; }
+
+/* Einnahmen & Ausgaben: größere, besser lesbare Zeilen */
+table.list.gross td { padding: 13px 12px; font-size: 15px; line-height: 1.45; }
+table.list.gross th { padding: 12px 12px; font-size: 13.5px; }
+table.list.gross td .small, table.list.gross td.small { font-size: 14px; }
+table.list.gross td.num { font-size: 15.5px; font-variant-numeric: tabular-nums; }
+@media (prefers-reduced-motion: reduce) { .krad-trommel { transition: none; } .modal.buchen-fenster, .bf-schritt, .bf-neu { animation: none; } }

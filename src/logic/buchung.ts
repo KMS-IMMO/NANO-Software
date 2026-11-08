@@ -29,3 +29,6 @@ export function loeschHinweis(b: Row, mitRechnung = false) {
   if (b.sollstellung_id) t.push('Der zugehörige offene Posten gilt danach wieder als unbezahlt.');
   return t.join(' ');
 }
+
+/** Buchungsjahr einer Buchung als SQL: das im Buchen-Fenster gewählte Jahr, sonst das Jahr des Buchungsdatums */
+export const BJ = (a = 'b') => `COALESCE(${a ? a + '.' : ''}jahr, CAST(substr(${a ? a + '.' : ''}datum, 1, 4) AS INTEGER))`;
