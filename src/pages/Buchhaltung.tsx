@@ -16,6 +16,10 @@ import { BuchenDialog } from '../components/BuchenDialog';
 import { Wiederkehrend } from '../components/Wiederkehrend';
 import { BJ, buchungLoeschen, loeschHinweis } from '../logic/buchung';
 import { gesperrt, sperrText } from '../logic/abschluss';
+import { ruecklageMonate, ruecklageZeitraum } from '../logic/ruecklage';
+
+// Konten der Erhaltungsrücklage: bei einer WEG nicht in der GuV, sondern im eigenen Rücklagen-Ausweis
+const RL_KONTEN = ['1260', '1261', '1262'];
 
 const heute = () => new Date().toISOString().slice(0, 10);
 const zahl = (s: string) => Number(String(s).replace(/\./g, '').replace(',', '.')) || 0;
@@ -401,23 +405,33 @@ export function RegelnPage() {
 
 const MON = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'];
 
-function Jahresuebersicht({ objektId }: { objektId: number }) {
+function Jahresuebersicht({ objektId, weg }: { objektId: number; weg: boolean }) {
   const [jahr, setJahr] = useState(new Date().getFullYear());
   const [d, setD] = useState<{ ist: { e: number; a: number }[]; vj: { e: number; a: number }[]; sollRest: number[]; top: Row[] } | null>(null);
   useEffect(() => {
     (async () => {
       const monate = async (j: number) => {
-        const r = await db.select(`SELECT CAST(substr(datum, 6, 2) AS INTEGER) AS m, SUM(CASE WHEN betrag > 0 THEN betrag ELSE 0 END) AS e, SUM(CASE WHEN betrag < 0 THEN -betrag ELSE 0 END) AS a
-          FROM buchungen WHERE objekt_id = $1 AND substr(datum, 1, 4) = $2 GROUP BY m`, [objektId, String(j)]);
-        return Array.from({ length: 12 }, (_, i) => { const x = r.find((y) => Number(y.m) === i + 1); return { e: Number(x?.e) || 0, a: Number(x?.a) || 0 }; });
+        const r = await db.select(`SELECT CAST(substr(b.datum, 6, 2) AS INTEGER) AS m, SUM(CASE WHEN b.betrag > 0 THEN b.betrag ELSE 0 END) AS e, SUM(CASE WHEN b.betrag < 0 THEN -b.betrag ELSE 0 END) AS a,
+          SUM(CASE WHEN k.nummer = '1010' THEN b.betrag ELSE 0 END) AS hg
+          FROM buchungen b LEFT JOIN buchungskonten k ON k.id = b.buchungskonto_id WHERE b.objekt_id = $1 AND substr(b.datum, 1, 4) = $2
+          ${weg ? `AND COALESCE(k.nummer, '') NOT IN ('1260', '1261', '1262')` : ''} GROUP BY m`, [objektId, String(j)]);
+        // WEG: Rücklagenanteil des Hausgelds ist keine Einnahme der Bewirtschaftung. Wie in der GuV wird der Jahresanteil
+        // laut Hausgeld-Soll aus den Hausgeldeingängen (Konto 1010) herausgerechnet, in der Reihenfolge der Eingänge.
+        let rest = weg ? (await ruecklageMonate(objektId, j)).reduce((a, b) => a + b, 0) : 0;
+        return Array.from({ length: 12 }, (_, i) => {
+          const x = r.find((y) => Number(y.m) === i + 1), e = Number(x?.e) || 0;
+          const ab = Math.min(rest, Math.max(0, Number(x?.hg) || 0), e); rest -= ab;
+          return { e: e - ab, a: Number(x?.a) || 0 };
+        });
       };
       const soll = await db.select(`SELECT CAST(substr(s.monat, 6, 2) AS INTEGER) AS m, SUM(s.betrag) AS b FROM sollstellungen s JOIN einheiten e ON e.id = s.einheit_id
         WHERE e.objekt_id = $1 AND substr(s.monat, 1, 4) = $2 GROUP BY m`, [objektId, String(jahr)]);
+      const rlSoll = weg ? await ruecklageMonate(objektId, jahr) : Array(12).fill(0);
       const top = await db.select(`SELECT k.nummer, k.name, -SUM(b.betrag) AS summe FROM buchungen b JOIN buchungskonten k ON k.id = b.buchungskonto_id
-        WHERE b.objekt_id = $1 AND substr(b.datum, 1, 4) = $2 AND b.betrag < 0 GROUP BY k.id ORDER BY summe DESC LIMIT 5`, [objektId, String(jahr)]);
-      setD({ ist: await monate(jahr), vj: await monate(jahr - 1), sollRest: Array.from({ length: 12 }, (_, i) => Number(soll.find((y) => Number(y.m) === i + 1)?.b) || 0), top });
+        WHERE b.objekt_id = $1 AND substr(b.datum, 1, 4) = $2 AND b.betrag < 0 ${weg ? `AND k.nummer NOT IN ('1260', '1261', '1262')` : ''} GROUP BY k.id ORDER BY summe DESC LIMIT 5`, [objektId, String(jahr)]);
+      setD({ ist: await monate(jahr), vj: await monate(jahr - 1), sollRest: Array.from({ length: 12 }, (_, i) => Math.max(0, (Number(soll.find((y) => Number(y.m) === i + 1)?.b) || 0) - rlSoll[i])), top });
     })();
-  }, [objektId, jahr]);
+  }, [objektId, jahr, weg]);
   if (!d) return null;
 
   const jetzt = new Date();
@@ -491,7 +505,19 @@ export function AuswertungPage() {
     db.select(`SELECT b.*, b.anfangssaldo + COALESCE((SELECT SUM(u.betrag) FROM bankumsaetze u WHERE u.bankkonto_id = b.id
       AND u.datum <= $2 AND (b.saldo_datum IS NULL OR u.datum > b.saldo_datum)), 0) AS saldo FROM bankkonten b WHERE b.objekt_id = $1`, [objekt, bis]).then(setBanken);
   }, [objekt, von, bis]);
-  const ertraege = rows.filter((r) => r.summe > 0), aufwand = rows.filter((r) => r.summe < 0);
+  const weg = objekte.find((o) => o.id === objekt)?.verwaltungsart === 'WEG';
+  const [rl, setRl] = useState<Awaited<ReturnType<typeof ruecklageZeitraum>> | null>(null);
+  useEffect(() => {
+    if (objekt === '' || !weg) { setRl(null); return; }
+    ruecklageZeitraum(Number(objekt), von, bis).then(setRl).catch(() => setRl(null));
+  }, [objekt, von, bis, weg]);
+  // WEG: Hausgeld und Rücklagenzahlungen getrennt. Der Rücklagenanteil (laut Hausgeld-Soll) kommt aus Konto 1010 heraus
+  // und erscheint mit Entnahmen und Zinsen nur im Ausweis der Erhaltungsrücklage.
+  const hgSumme = Number(rows.find((r) => r.nummer === '1010')?.summe) || 0;
+  const rlZahlung = weg && rl ? Math.min(Math.max(0, hgSumme), rl.zufuehrung) : 0;
+  const guvRows = !weg ? rows : rows.filter((r) => !RL_KONTEN.includes(r.nummer)).map((r) => r.nummer === '1010'
+    ? { ...r, name: 'Hausgeld ohne Rücklagenanteil', summe: r.summe - rlZahlung } : r).filter((r) => Math.abs(r.summe) > 0.004);
+  const ertraege = guvRows.filter((r) => r.summe > 0), aufwand = guvRows.filter((r) => r.summe < 0);
   const sE = ertraege.reduce((a, r) => a + r.summe, 0), sA = aufwand.reduce((a, r) => a - r.summe, 0);
   const zeile = (r: Row, wert: number) => <tr key={(r.nummer ?? 'x') + wert}><td>{r.nummer ?? '–'}</td><td>{r.name ?? 'ohne Konto (Überzahlung / Guthaben)'}</td><td className="num">{eur(wert)}</td></tr>;
   return (
@@ -502,11 +528,12 @@ export function AuswertungPage() {
         <label className="inline">von <input type="date" value={von} onChange={(e) => setVon(e.target.value)} /></label>
         <label className="inline">bis <input type="date" value={bis} onChange={(e) => setBis(e.target.value)} /></label>
       </section>
-      {objekt !== '' && <Jahresuebersicht objektId={Number(objekt)} />}
+      {objekt !== '' && <Jahresuebersicht objektId={Number(objekt)} weg={weg} />}
       <div className="kpis">
         <div className="kpi"><span>Erträge</span><b>{eur(sE)}</b></div>
         <div className="kpi"><span>Aufwendungen</span><b className="neg">{eur(sA)}</b></div>
         <div className="kpi"><span>Ergebnis (Überschuss / Fehlbetrag)</span><b className={sE - sA < 0 ? 'neg' : ''}>{eur(sE - sA)}</b></div>
+        {weg && rl && <div className="kpi"><span>Erhaltungsrücklage {datum(bis)}</span><b>{eur(rl.bestand)}</b><small>Zuführung {eur(rlZahlung)}</small></div>}
         <div className="kpi"><span>Kontostände {datum(bis)}</span><b>{eur(banken.reduce((a, b) => a + Number(b.saldo), 0))}</b><small>{banken.length} Bankkonten</small></div>
       </div>
       <section className="card">
@@ -521,8 +548,24 @@ export function AuswertungPage() {
             {aufwand.map((r) => zeile(r, -r.summe))}
             <tr className="sum"><td colSpan={2}>Summe Aufwendungen</td><td className="num">{eur(sA)}</td></tr>
           </tbody>
-          <tfoot><tr><td colSpan={2}>Ergebnis</td><td className={'num ' + (sE - sA < 0 ? 'neg' : '')}>{eur(sE - sA)}</td></tr></tfoot>
+          <tfoot><tr><td colSpan={2}>{weg ? 'Ergebnis der Bewirtschaftung (ohne Rücklage)' : 'Ergebnis'}</td><td className={'num ' + (sE - sA < 0 ? 'neg' : '')}>{eur(sE - sA)}</td></tr></tfoot>
         </table>
+        {weg && rl && <>
+          <div className="card-head" style={{ marginTop: 18 }}><h2 className="title-ico"><PiggyBank size={22} />Erhaltungsrücklage {datum(von)} – {datum(bis)}</h2></div>
+          <table className="list">
+            <thead><tr><th>Konto</th><th>Bezeichnung</th><th className="num">Betrag</th></tr></thead>
+            <tbody>
+              <tr><td>–</td><td>Bestand am {datum(rl.vorTag)}</td><td className="num">{eur(rl.anfangsbestand)}</td></tr>
+              {rl.uebernahme > 0 && <tr><td>–</td><td>+ Übernahmebestand</td><td className="num">{eur(rl.uebernahme)}</td></tr>}
+              <tr><td>1010</td><td>+ Rücklagenzahlungen aus dem Hausgeld</td><td className="num">{eur(rlZahlung)}</td></tr>
+              {rl.zufuehrung - rlZahlung > 0.004 && <tr><td>–</td><td>+ Rücklagenanteil laut Hausgeld noch offen</td><td className="num">{eur(rl.zufuehrung - rlZahlung)}</td></tr>}
+              <tr><td>1262</td><td>+ Zinsen</td><td className="num">{eur(rl.zinsen)}</td></tr>
+              <tr><td>1261</td><td>− Entnahmen</td><td className="num neg">{eur(rl.entnahme)}</td></tr>
+            </tbody>
+            <tfoot><tr><td colSpan={2}>Bestand am {datum(bis)}</td><td className="num">{eur(rl.bestand)}</td></tr></tfoot>
+          </table>
+          <p className="muted small">Die Rücklagenzahlungen gehören den Eigentümern und sind kein Ertrag der Bewirtschaftung. Der Rücklagenanteil wird nach dem Hausgeld je Einheit aus Konto 1010 herausgerechnet.</p>
+        </>}
         {banken.length > 0 && <>
           <div className="card-head" style={{ marginTop: 18 }}><h2>Bankkonten</h2></div>
           <table className="list"><tbody>{banken.map((b) => <tr key={b.id}><td>{b.name}<div className="muted small">{b.bank} · {b.iban}</div></td><td className="num">{eur(Number(b.saldo))}</td></tr>)}</tbody></table>

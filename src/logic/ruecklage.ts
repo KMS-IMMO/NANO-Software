@@ -38,3 +38,23 @@ export async function ruecklageJahr(objektId: number, jahr: number) {
   const b = await bewegungen(objektId, stichtag > start ? stichtag : start, ende);
   return { anfangsbestand, uebernahme, ...b, bestand: anfangsbestand + uebernahme + b.zufuehrung - b.entnahme + b.zinsen };
 }
+
+/** Rücklagenzuführung je Monat (1–12) eines Kalenderjahres laut Hausgeld-Soll */
+export async function ruecklageMonate(objektId: number, jahr: number): Promise<number[]> {
+  const r = await db.select(`SELECT CAST(substr(s.monat, 6, 2) AS INTEGER) AS m, COALESCE(SUM(h.davon_ruecklage), 0) AS x FROM sollstellungen s
+      JOIN hausgeld h ON h.id = (SELECT h2.id FROM hausgeld h2 WHERE h2.einheit_id = s.einheit_id AND h2.gueltig_ab <= s.monat || '-01' ORDER BY h2.gueltig_ab DESC LIMIT 1)
+      JOIN einheiten e ON e.id = s.einheit_id
+      WHERE s.art = 'Hausgeld' AND e.objekt_id = $1 AND substr(s.monat, 1, 4) = $2 GROUP BY m`, [objektId, String(jahr)]);
+  return Array.from({ length: 12 }, (_, i) => Number(r.find((y) => Number(y.m) === i + 1)?.x) || 0);
+}
+
+/** Entwicklung der Rücklage in einem beliebigen Zeitraum (von, bis inklusiv, JJJJ-MM-TT) */
+export async function ruecklageZeitraum(objektId: number, von: string, bis: string) {
+  const { anfang, stichtag } = await basis(objektId);
+  const d = new Date(von + 'T12:00:00'); d.setDate(d.getDate() - 1);
+  const vorTag = d.toISOString().slice(0, 10);
+  const anfangsbestand = await ruecklageStand(objektId, vorTag);
+  const uebernahme = stichtag > vorTag && stichtag <= bis ? anfang : 0;
+  const b = bis < stichtag ? { zufuehrung: 0, entnahme: 0, zinsen: 0 } : await bewegungen(objektId, stichtag > vorTag ? stichtag : vorTag, bis);
+  return { vorTag, anfangsbestand, uebernahme, ...b, bestand: anfangsbestand + uebernahme + b.zufuehrung - b.entnahme + b.zinsen };
+}
