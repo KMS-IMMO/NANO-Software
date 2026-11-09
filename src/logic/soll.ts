@@ -142,9 +142,12 @@ export async function stammdatenPosten(einheitIds: number[], monateListe: string
 /** Hausgeld-Posten einer Liegenschaft ab `abMonat` neu stellen, z. B. nach geändertem Hausgeld, Rücklage oder Zahlweise.
  *  Nur unbezahlte Posten werden ersetzt; bereits (teilweise) bezahlte bleiben unverändert. Gibt die Zahl neuer Posten zurück. */
 export async function hausgeldNeuStellen(objektId: number, abMonat: string): Promise<number> {
-  const bis = (await db.select(`SELECT MAX(s.monat) AS m FROM sollstellungen s JOIN einheiten e ON e.id = s.einheit_id
-    WHERE e.objekt_id = $1 AND s.art IN ('Hausgeld', 'Rücklage') AND s.monat >= $2`, [objektId, abMonat]))[0]?.m;
+  const r = (await db.select(`SELECT MIN(s.monat) AS a, MAX(s.monat) AS m FROM sollstellungen s JOIN einheiten e ON e.id = s.einheit_id
+    WHERE e.objekt_id = $1 AND s.art IN ('Hausgeld', 'Rücklage') AND s.monat >= $2`, [objektId, abMonat]))[0];
+  const bis = r?.m;
   if (!bis) return 0;
+  // Nie Monate vor dem ersten vorhandenen Posten neu anlegen (z. B. wenn die Sollstellung erst ab einem bestimmten Monat begonnen wurde)
+  if (r.a > abMonat) abMonat = r.a;
   await db.execute(`DELETE FROM sollstellungen WHERE art IN ('Hausgeld', 'Rücklage') AND monat >= $2 AND vertrag_id IS NULL
     AND einheit_id IN (SELECT id FROM einheiten WHERE objekt_id = $1)
     AND NOT EXISTS (SELECT 1 FROM buchungen b WHERE b.sollstellung_id = sollstellungen.id)`, [objektId, abMonat]);

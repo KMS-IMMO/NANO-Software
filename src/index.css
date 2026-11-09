@@ -1041,3 +1041,9 @@ i.hq { background: #e6d3ae; border: 1.5px solid #3a3d42; } i.mv { background: #5
 
 .monat-wahl { display: inline-flex; gap: 6px; align-items: center; }
 .monat-wahl select { width: auto; min-width: 0; }
+
+/* Stammdaten (Mieter- und Eigentümeransicht) */
+.stammdaten .erin-schritt { padding-left: 0; padding-right: 0; }
+.stammdaten .erin-schritt:not(:last-of-type)::before { left: 14px; }
+.stammdaten-wert { font-size: 14px; font-weight: 600; color: var(--text); min-height: 20px; overflow-wrap: anywhere; white-space: pre-wrap; }
+.stammdaten .card-head .row { gap: 8px; }
