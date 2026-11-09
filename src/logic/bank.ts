@@ -285,6 +285,11 @@ async function zahlweiseGetrennt(objektId: number, personId: number, einheitId: 
 /** Bankumsätze ganz löschen (vorher Zuordnung lösen). Beim nächsten Import desselben Auszugs kommen sie wieder.
  *  Hat ein Konto danach keine Umsätze mehr, wird sein Startsaldo zurückgesetzt, damit ein neuer Import frisch beginnt. */
 export async function umsaetzeLoeschen(ids: number[]) {
+  // Vor größeren Löschungen eine Sicherung anlegen (nur in der Mac-/Windows-App)
+  if (ids.length >= 20 && typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
+    const { invoke } = await import('@tauri-apps/api/core');
+    await invoke('db_sicherung_erstellen', { ordnerPfad: null }).catch(() => {});
+  }
   const konten = new Set<number>();
   for (const id of ids) {
     const k = (await db.select('SELECT bankkonto_id FROM bankumsaetze WHERE id = $1', [id]))[0]?.bankkonto_id;

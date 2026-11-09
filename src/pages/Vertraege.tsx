@@ -79,7 +79,7 @@ function AktuelleMiete({ v }: { v: Row }) {
   const [m, setM] = useState<ReturnType<typeof mieteImMonat> | null>(null);
   useEffect(() => {
     db.select('SELECT * FROM mietanpassungen WHERE vertrag_id = $1', [v.id]).then((a) => setM(mieteImMonat(v, a, new Date().toISOString().slice(0, 7))));
-  }, [v.id]);
+  }, [v.id, v.kaltmiete, v.nk_vorauszahlung, v.hk_vorauszahlung, v.ust_satz, v.beginn, v.ende]);
   if (!m) return null;
   return <>{eur(m.kalt + m.nk + m.hk + m.ust)}</>;
 }
