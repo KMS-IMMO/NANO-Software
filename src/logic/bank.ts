@@ -10,6 +10,7 @@ export interface Umsatz {
   verwendungszweck: string;
   gegenpartei: string;
   gegen_iban: string;
+  pruefen?: string;       // Hinweis für die Vorschau, z. B. Vorzeichen per Texterkennung unsicher
 }
 
 /* ---------------- Einlesen ---------------- */
@@ -279,11 +280,11 @@ export interface PdfAuszug { umsaetze: Umsatz[]; anfang?: number; ende?: number;
  *  Erkennt Zeilen, die mit einem Datum beginnen und mit einem Betrag enden; Folgezeilen sind Empfänger und Verwendungszweck. */
 export function parsePdfAuszug(text: string): PdfAuszug {
   const a = parseKlassisch(text), b = parseOnlineListe(text);
-  return b.umsaetze.length > a.umsaetze.length ? b : a;
+  return b.umsaetze.length && b.umsaetze.length >= a.umsaetze.length ? b : a;
 }
 
 const eurText = (n: number) => n.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €';
-function saldoHinweis(umsaetze: Umsatz[], anfang?: number, ende?: number) {
+export function saldoHinweis(umsaetze: Umsatz[], anfang?: number, ende?: number) {
   const summe = Math.round(umsaetze.reduce((a, u) => a + u.betrag, 0) * 100) / 100;
   if (anfang === undefined) return 'Kontostand nicht gefunden, bitte die Liste prüfen.';
   if (ende === undefined) return `Anfangssaldo ${eurText(anfang)}, Umsätze ${eurText(summe)}, rechnerischer Endstand ${eurText(Math.round((anfang + summe) * 100) / 100)}. Bitte mit dem Kontostand vergleichen.`;
@@ -302,38 +303,85 @@ function ocrBetrag(s: string): number {
  *  „Name  +900,00 EUR“, darunter „IBAN  02.01.2025“, danach der Verwendungszweck. */
 export function parseOnlineListe(text: string): PdfAuszug {
   const zeilen = text.split('\n').map((z) => z.replace(/\s+/g, ' ').trim()).filter(Boolean);
-  const KOPF = /^(.*?)\s*([+\-−–$]?)\s?(\d{1,3}(?:[.,]\d{3})*[.,]\d{2})\s*(?:EUR|€)$/i;
-  const DAT = /(\d{1,2})[.:,](\d{1,2})[.:,](20\d{2})/;
-  const IBAN = /\b([A-Z]{2}\d{2}[A-Z0-9]{10,30})\b/;
+  // „Name ±Betrag EUR“, wahlweise gleich dahinter „[IBAN] Datum“
+  const KOPF = /^(.*?)\s*([+\-−–$*·•]?)\s?(\d{1,3}(?:[.,]\d{3})*[.,]\d{2})\s*(?:EUR|€)\b\s*(.*)$/i;
+  const DAT = /(\d{1,2})[.:,](\d{1,2})[.:,](20\d{2})\W*$/;
+  const IBAN = /^([A-Z]{2}\d{2}[A-Z0-9]{10,30})$/;
   let anfang: number | undefined, ende: number | undefined;
   const out: Umsatz[] = [];
-  let akt: (Umsatz & { teile: string[]; offen: boolean }) | null = null;
-  const fertig = () => { if (akt?.datum) { const { teile, offen: _o, ...u } = akt; u.verwendungszweck = teile.join(' ').slice(0, 400); out.push(u); } akt = null; };
+  type Akt = Umsatz & { teile: string[]; offen: boolean; zeilen: number };
+  let akt: Akt | null = null;
+  const fertig = () => {
+    if (akt?.datum) { const { teile, offen: _o, zeilen: _z, ...u } = akt; u.verwendungszweck = teile.join(' ').slice(0, 400); out.push(u); }
+    akt = null;
+  };
+  // „[IBAN oder Name] Datum“ am Zeilenende auswerten
+  const datumZeile = (u: Akt, z: string) => {
+    const d = z.match(DAT); if (!d) return false;
+    u.datum = `${d[3]}-${d[2].padStart(2, '0')}-${d[1].padStart(2, '0')}`;
+    const vorn = z.slice(0, d.index).replace(/[|]/g, ' ').trim();
+    const i = vorn.replace(/\s/g, '').match(IBAN);
+    if (i) u.gegen_iban = i[1]; else if (vorn && !u.gegenpartei) u.gegenpartei = vorn.slice(0, 120);
+    return true;
+  };
   for (const z of zeilen) {
     const k = z.match(KOPF);
-    if (k) {
+    if (k && (!k[4] || DAT.test(k[4]))) {
       const wert = ocrBetrag(k[3]) * (/[-−–]/.test(k[2]) ? -1 : 1);
       if (/startsaldo|anfangssaldo|alter (kontostand|saldo)/i.test(z)) { anfang = wert; continue; }
       if (/endsaldo|neuer (kontostand|saldo)/i.test(z)) { fertig(); ende = wert; continue; }
       fertig();
-      akt = { datum: '', betrag: wert, gegenpartei: k[1].replace(/[|]/g, ' ').trim().slice(0, 120), gegen_iban: '', verwendungszweck: '', teile: [], offen: true };
+      const neu: Akt = { datum: '', betrag: wert, gegenpartei: k[1].replace(/[|]/g, ' ').replace(/[,:;]+$/, '').trim().slice(0, 120), gegen_iban: '',
+        verwendungszweck: '', teile: [], offen: true, zeilen: 0, ...(!k[2] ? { pruefen: 'Vorzeichen' } : {}) };
+      if (k[4]) datumZeile(neu, k[4]);
+      akt = neu;
       continue;
     }
     if (!akt) continue;
-    if (/^seite \d+ (von|\/) \d+/i.test(z)) { akt.offen = false; continue; }
-    if (!akt.datum) {
-      const d = z.match(DAT);
-      if (d) {
-        akt.datum = `${d[3]}-${d[2].padStart(2, '0')}-${d[1].padStart(2, '0')}`;
-        const i = z.slice(0, d.index).replace(/[\s|]/g, '').match(IBAN); if (i) akt.gegen_iban = i[1];
-        continue;
-      }
+    const u: Akt = akt;
+    u.zeilen++;
+    if (/^seite \d+ (von|\/) \d+/i.test(z)) { u.offen = false; continue; }
+    if (!u.datum) {
+      // das Datum muss direkt unter dem Betrag stehen, sonst war es ein Betrag im Verwendungszweck
+      if (u.zeilen === 1 && datumZeile(u, z)) continue;
+      const vorher = out[out.length - 1];
+      if (vorher && vorher.verwendungszweck.length < 300) vorher.verwendungszweck += ` ${u.gegenpartei} ${eurText(Math.abs(u.betrag))} ${z}`.replace(/\s+/g, ' ');
+      akt = null; continue;
     }
-    if (akt.offen && akt.teile.length < 4) akt.teile.push(z.replace(/[|]/g, ' ').replace(/\bTAN:?\s*\S+/i, '').replace(/\s+/g, ' ').trim());
+    if (!u.gegen_iban && u.zeilen === 1) { const i = z.replace(/[\s|]/g, '').match(IBAN); if (i) { u.gegen_iban = i[1]; continue; } }
+    if (u.offen && u.teile.length < 4) u.teile.push(z.replace(/[|]/g, ' ').replace(/\bTAN:?\s*\S+/i, 'TAN').replace(/\s+/g, ' ').trim());
   }
   fertig();
   const umsaetze = out.filter((u) => u.betrag !== 0);
+  vorzeichenKlaeren(umsaetze, anfang, ende);
   return { umsaetze, anfang, ende, hinweis: saldoHinweis(umsaetze, anfang, ende) };
+}
+
+/** Fehlt das Vorzeichen (Texterkennung), wird es aus anderen Umsätzen mit derselben IBAN oder Gegenpartei übernommen,
+ *  sonst aus dem Verwendungszweck geschätzt. Passt der Endsaldo dann nicht, werden einzelne unsichere Beträge umgedreht,
+ *  wenn genau das die Differenz erklärt. Unsichere Zeilen bleiben in der Vorschau markiert. */
+function vorzeichenKlaeren(liste: Umsatz[], anfang?: number, ende?: number) {
+  const sicher = liste.filter((u) => !u.pruefen), unsicher = liste.filter((u) => u.pruefen === 'Vorzeichen');
+  if (!unsicher.length) return;
+  const name = (u: Umsatz) => u.gegenpartei.toLowerCase().replace(/[^a-zäöüß]/g, '').slice(0, 12);
+  for (const u of unsicher) {
+    const gleich = sicher.filter((x) => (u.gegen_iban && x.gegen_iban === u.gegen_iban) || (name(u).length > 3 && name(x) === name(u)));
+    const plus = gleich.filter((x) => x.betrag > 0).length, minus = gleich.length - plus;
+    const raus = plus !== minus ? minus > plus
+      : /lastschrift|\bDA-|ext\.?\s?ref|beleg|\bTAN\b|mandat|gläubiger|abschluss|entgelt|kartenzahlung|abschlag|rechnung|kd\.?-?nr|kunden-?nr|vertrag/i.test(u.verwendungszweck + ' ' + u.gegenpartei);
+    u.betrag = raus ? -Math.abs(u.betrag) : Math.abs(u.betrag);
+    u.pruefen = 'Vorzeichen per Texterkennung unsicher';
+  }
+  if (anfang === undefined || ende === undefined) return;
+  const cent = (n: number) => Math.round(n * 100);
+  const diff = () => cent(anfang + liste.reduce((a, u) => a + u.betrag, 0) - ende);
+  if (diff() === 0) return;
+  // ein einzelner Betrag erklärt die Differenz
+  const d = diff(), eins = unsicher.find((u) => cent(2 * u.betrag) === d);
+  if (eins) { eins.betrag = -eins.betrag; return; }
+  // zwei Beträge erklären die Differenz
+  for (let i = 0; i < unsicher.length; i++) for (let j = i + 1; j < unsicher.length; j++)
+    if (cent(2 * unsicher[i].betrag) + cent(2 * unsicher[j].betrag) === d) { unsicher[i].betrag *= -1; unsicher[j].betrag *= -1; return; }
 }
 
 function parseKlassisch(text: string): PdfAuszug {
@@ -389,7 +437,7 @@ function parseKlassisch(text: string): PdfAuszug {
 }
 
 /** Eine Kontoauszug-Datei lesen: CAMT-XML, CSV, PDF oder (mit Texterkennung) eingescannte PDF */
-export async function auszugLesen(f: File, fortschritt?: (text: string) => void): Promise<{ umsaetze: Umsatz[]; hinweis?: string; anfang?: number }> {
+export async function auszugLesen(f: File, fortschritt?: (text: string) => void): Promise<{ umsaetze: Umsatz[]; hinweis?: string; anfang?: number; ende?: number }> {
   const buf = new Uint8Array(await f.arrayBuffer());
   if (/\.pdf$/i.test(f.name) || f.type === 'application/pdf') {
     const { pdfText } = await import('./rechnungLesen');

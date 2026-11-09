@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { FileUp, Landmark } from 'lucide-react';
 import { db, insert, type Row } from '../db';
-import { auszugLesen, automatischZuordnen, bilderLesen, importieren, type Umsatz } from '../logic/bank';
+import { auszugLesen, automatischZuordnen, bilderLesen, importieren, saldoHinweis, type Umsatz } from '../logic/bank';
 import { istBild } from '../logic/ocr';
 import { datum, eur } from './EntityTable';
 
@@ -16,7 +16,7 @@ export function AuszugImport({ objektId, onDone, kompakt }: { objektId: number |
   const [stand, setStand] = useState('');
   const [info, setInfo] = useState<{ text: string; offen: number } | null>(null);
   const [fehler, setFehler] = useState('');
-  const [vorschau, setVorschau] = useState<{ umsaetze: Umsatz[]; hinweise: string[]; dateien: string[] } | null>(null);
+  const [vorschau, setVorschau] = useState<{ umsaetze: Umsatz[]; hinweise: string[]; dateien: string[]; saldo?: { anfang: number; ende?: number } } | null>(null);
   const [konten, setKonten] = useState<Row[]>([]);
   const [konto, setKonto] = useState<number | ''>('');
   const [neu, setNeu] = useState({ name: 'Bankkonto', iban: '', saldo: '', datum: '' });
@@ -32,23 +32,25 @@ export function AuszugImport({ objektId, onDone, kompakt }: { objektId: number |
   async function lesen(files: FileList | File[]) {
     setFehler(''); setInfo(null); setBusy(true);
     const umsaetze: Umsatz[] = [], hinweise: string[] = [], namen: string[] = [];
-    let anfang: number | undefined;
+    let anfang: number | undefined, ende: number | undefined, mitSaldo = 0;
     try {
       const alle = Array.from(files), bilder = alle.filter(istBild);
-      const gruppen: { name: string; lesen: () => Promise<{ umsaetze: Umsatz[]; hinweis?: string; anfang?: number }> }[] = [
+      const gruppen: { name: string; lesen: () => Promise<{ umsaetze: Umsatz[]; hinweis?: string; anfang?: number; ende?: number }> }[] = [
         ...alle.filter((f) => !istBild(f)).map((f) => ({ name: f.name, lesen: () => auszugLesen(f, setStand) })),
         ...(bilder.length ? [{ name: bilder.length === 1 ? bilder[0].name : `${bilder.length} Fotos`, lesen: () => bilderLesen(bilder, setStand) }] : []),
       ];
       for (const g of gruppen) {
         const r = await g.lesen();
         umsaetze.push(...r.umsaetze); namen.push(g.name);
-        if (r.anfang !== undefined && anfang === undefined) anfang = r.anfang;
+        if (r.anfang !== undefined && anfang === undefined) { anfang = r.anfang; ende = r.ende; }
+        if (r.anfang !== undefined) mitSaldo++;
         if (r.hinweis) hinweise.push(`${g.name}: ${r.hinweis}`);
       }
       umsaetze.sort((a, b) => a.datum.localeCompare(b.datum));
       if (!umsaetze.length) setFehler('In der Datei wurden keine Umsätze gefunden.');
       else {
-        setVorschau({ umsaetze, hinweise, dateien: namen });
+        const saldo = gruppen.length === 1 && mitSaldo === 1 && anfang !== undefined ? { anfang, ende } : undefined;
+        setVorschau({ umsaetze, hinweise: saldo ? hinweise.filter((h) => !/Kontostand|Anfangssaldo/.test(h)) : hinweise, dateien: namen, saldo });
         const erstes = umsaetze[0].datum;
         setNeu((n) => ({ ...n, saldo: n.saldo || (anfang !== undefined ? String(anfang).replace('.', ',') : ''), datum: n.datum || new Date(new Date(erstes + 'T12:00:00').getTime() - 864e5).toISOString().slice(0, 10) }));
       }
@@ -102,6 +104,9 @@ export function AuszugImport({ objektId, onDone, kompakt }: { objektId: number |
                 <div className="kpi"><span>Ausgänge ({aus.length})</span><b className="neg">{eur(summe(aus))}</b></div>
                 <div className="kpi"><span>Saldo der Umsätze</span><b>{eur(summe(vorschau.umsaetze))}</b></div>
               </div>
+              {vorschau.saldo && (() => { const h = saldoHinweis(vorschau.umsaetze, vorschau.saldo.anfang, vorschau.saldo.ende);
+                return <p className={/Achtung/.test(h) ? 'warn' : 'info'}>{h}</p>; })()}
+              {vorschau.umsaetze.some((u) => u.pruefen) && <p className="muted small">Gelb markierte Zeilen bitte prüfen. Mit ± drehst du das Vorzeichen um, der Kontostand-Abgleich rechnet sofort neu.</p>}
               {vorschau.hinweise.map((h) => <p key={h} className={/Achtung|nicht gefunden/.test(h) ? 'warn' : 'info'}>{h}</p>)}
               <div className="form auszug-konto">
                 {konten.length ? <label><span>Bankkonto</span><select value={konto} onChange={(e) => setKonto(e.target.value === '' ? '' : Number(e.target.value))}>
@@ -117,8 +122,9 @@ export function AuszugImport({ objektId, onDone, kompakt }: { objektId: number |
               <div className="tablewrap auszug-liste"><table className="list">
                 <thead><tr><th>Datum</th><th>Zahler / Empfänger</th><th>Verwendungszweck</th><th className="num">Betrag</th></tr></thead>
                 <tbody>{vorschau.umsaetze.slice(0, 300).map((u, i) => (
-                  <tr key={i}><td className="nowrap">{datum(u.datum)}</td><td>{u.gegenpartei || <span className="muted">–</span>}</td><td className="small">{u.verwendungszweck}</td>
-                    <td className={'num ' + (u.betrag < 0 ? 'neg' : 'pos')}>{eur(u.betrag)}</td></tr>))}</tbody>
+                  <tr key={i} className={u.pruefen ? 'auszug-pruefen' : ''}><td className="nowrap">{datum(u.datum)}</td><td>{u.gegenpartei || <span className="muted">–</span>}</td><td className="small">{u.verwendungszweck}{u.pruefen && <div className="warn-text">⚠ {u.pruefen}</div>}</td>
+                    <td className={'num nowrap ' + (u.betrag < 0 ? 'neg' : 'pos')}>{eur(u.betrag)}{u.pruefen && <button className="link auszug-pm" title="Vorzeichen umdrehen"
+                      onClick={() => setVorschau({ ...vorschau, umsaetze: vorschau.umsaetze.map((x, j) => (j === i ? { ...x, betrag: -x.betrag } : x)) })}>±</button>}</td></tr>))}</tbody>
               </table></div>
               {vorschau.umsaetze.length > 300 && <p className="muted small">Angezeigt: die ersten 300 von {vorschau.umsaetze.length}. Übernommen werden alle.</p>}
               {fehler && <p className="error">{fehler}</p>}
