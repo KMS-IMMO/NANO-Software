@@ -8,6 +8,7 @@ import { db, type Row } from '../db';
 import { useObjektKontext } from '../logic/objektKontext';
 import { einheitLabel, personLabel, personOptions } from '../db/labels';
 import { mieteImMonat, mieteNeuStellen } from '../logic/soll';
+import { DokumentAnsicht } from '../components/DokumentAnsicht';
 
 const vertragFields: Field[] = [
   { key: 'einheit_id', label: 'Einheit', type: 'select', required: true, wide: true,
@@ -48,12 +49,29 @@ export function VertraegePage() {
       table="mietvertraege"
       fields={[...felder,
         { key: 'warm', label: 'Miete aktuell', computed: true, type: 'number', format: (_v, r) => <AktuelleMiete v={r} /> },
-        { key: 'doks', label: 'Vertrag', computed: true, format: (v) => v ? <span title={`${v} Dokument(e) hinterlegt`}><Paperclip size={15} /></span> : <span className="muted small">fehlt</span> },
-        { key: 'status', label: 'Status', computed: true, format: (v) => <span className={'pill ' + v}>{v}</span> }]}
+        { key: 'status', label: 'Status', computed: true, format: (v) => <span className={'pill ' + v}>{v}</span> },
+        { key: 'doks', label: 'Vertrag', computed: true, format: (v, r) => <VertragSymbol anzahl={Number(v) || 0} v={r} oeffnen={() => nav(fix ? `/objekte/${fix.id}/vertrag/${r.id}` : `/vertraege/${r.id}`)} /> }]}
       listSql={listSql(fix ? `o.id = ${fix.id}` : undefined)}
       onOpen={(r) => nav(fix ? `/objekte/${fix.id}/vertrag/${r.id}` : `/vertraege/${r.id}`)}
       emptyText="Noch keine Mietverträge. Lege zuerst Einheit und Mieter an."
     />
+  );
+}
+
+/** Ganz rechts in der Liste: Vertrag als PDF ansehen. Fehlt er, leuchtet das Symbol rot und führt zum Hochladen. */
+function VertragSymbol({ anzahl, v, oeffnen: zumVertrag }: { anzahl: number; v: Row; oeffnen: () => void }) {
+  const [docs, setDocs] = useState<Row[] | null>(null);
+  async function zeigen(e: React.MouseEvent) {
+    e.stopPropagation();
+    if (!anzahl) { zumVertrag(); return; }
+    setDocs(await db.select(`SELECT * FROM dokumente WHERE bezug = 'Mietvertrag' AND bezug_id = $1 ORDER BY hinzugefuegt DESC, id DESC`, [v.id]));
+  }
+  return (
+    <>
+      <button className={'vertrag-symbol' + (anzahl ? ' da' : ' fehlt')} title={anzahl ? `Mietvertrag ansehen (${anzahl} Dokument${anzahl === 1 ? '' : 'e'})` : 'Kein Mietvertrag hinterlegt. Klicken zum Hochladen'} onClick={zeigen}>
+        <FileText size={17} /></button>
+      {docs && docs.length > 0 && <span onClick={(e) => e.stopPropagation()}><DokumentAnsicht docs={docs} titel={`Mietvertrag ${v.mieter_id_label} · ${v.einheit_id_label}`} onClose={() => setDocs(null)} /></span>}
+    </>
   );
 }
 
@@ -125,6 +143,7 @@ function VertragDokumente({ vertragId }: { vertragId: number }) {
   const [over, setOver] = useState(false);
   const [info, setInfo] = useState('');
   const ref = useRef<HTMLInputElement>(null);
+  const [ansicht, setAnsicht] = useState<Row | null>(null);
   const load = () => db.select(`SELECT * FROM dokumente WHERE bezug = 'Mietvertrag' AND bezug_id = $1 ORDER BY hinzugefuegt DESC, id DESC`, [vertragId]).then(setDocs);
   useEffect(() => { load(); }, [vertragId]);
   async function hochladen(files: FileList | File[]) {
@@ -151,11 +170,12 @@ function VertragDokumente({ vertragId }: { vertragId: number }) {
       {info && <p className="info">{info}</p>}
       {docs.length > 0 && <table className="list" style={{ marginTop: 10 }}><tbody>
         {docs.map((d) => <tr key={d.id}>
-          <td><button className="link" onClick={() => oeffnen(d.pfad)}><Paperclip size={14} /> {d.dateiname}</button></td>
+          <td><button className="link" onClick={() => setAnsicht(d)}><Paperclip size={14} /> {d.dateiname}</button></td>
           <td className="muted small">{datum(d.hinzugefuegt)}</td>
           <td style={{ width: 40 }}><button className="icon-btn" title="Aus Liste entfernen" onClick={() => loeschen(d)}><Trash2 size={15} /></button></td></tr>)}
       </tbody></table>}
       {!docs.length && <p className="muted small">Noch kein Vertrag hinterlegt.</p>}
+      {ansicht && <DokumentAnsicht docs={[ansicht, ...docs.filter((d) => d.id !== ansicht.id)]} titel="Mietvertrag und Anlagen" onClose={() => setAnsicht(null)} />}
     </section>
   );
 }

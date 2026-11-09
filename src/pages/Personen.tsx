@@ -1,4 +1,4 @@
-import { User, Users, Hammer } from 'lucide-react';
+import { User, Users, Hammer, MapPinOff } from 'lucide-react';
 import { EntityTable, eur } from '../components/EntityTable';
 import { personLabel } from '../db/labels';
 
@@ -53,13 +53,14 @@ export function PersonenPage({ rolle, titel }: { rolle?: 'Eigentümer' | 'Mieter
 export function FirmenPage() {
   return (
     <EntityTable
-      title="Firmenkontakte (Handwerker und Dienstleister)"
+      title="Firmen und Lieferanten"
       icon={<Hammer size={22} />}
       newLabel="Firma hinzufügen"
       table="firmen"
       fields={[
-        { key: 'name', label: 'Firma', required: true, wide: true },
-        { key: 'gewerk', label: 'Gewerk', type: 'select', options: ['Sanitär / Heizung', 'Elektro', 'Dach', 'Maler', 'Schreiner', 'Schlüsseldienst', 'Hausmeister', 'Reinigung', 'Garten / Winterdienst', 'Aufzug', 'Messdienst', 'Schornsteinfeger', 'Versicherung', 'Versorger', 'Sonstiges'] },
+        { key: 'name', label: 'Firma', required: true, wide: true, format: (v, r) => <span className="firma-name">{v}{!(r.strasse && r.plz && r.ort) &&
+            <span className="adresse-fehlt" title="Adresse fehlt. Zeile anklicken und Straße, PLZ, Ort, Telefon, E-Mail und IBAN eintragen."><MapPinOff size={14} />Adresse eintragen</span>}</span> },
+        { key: 'gewerk', label: 'Gewerk', type: 'select', options: ['Lieferant', 'Sanitär / Heizung', 'Elektro', 'Dach', 'Maler', 'Schreiner', 'Schlüsseldienst', 'Hausmeister', 'Reinigung', 'Garten / Winterdienst', 'Aufzug', 'Messdienst', 'Schornsteinfeger', 'Versicherung', 'Versorger', 'Sonstiges'] },
         { key: 'ansprechpartner', label: 'Ansprechpartner' },
         { key: 'strasse', label: 'Straße', hideInTable: true },
         { key: 'plz', label: 'PLZ', hideInTable: true },
@@ -72,8 +73,8 @@ export function FirmenPage() {
         { key: 'ust_id', label: 'USt-ID', hideInTable: true },
         { key: 'notiz', label: 'Notiz', type: 'textarea', hideInTable: true },
       ]}
-      listSql="SELECT * FROM firmen ORDER BY gewerk, name"
-      emptyText="Noch keine Firmen. Hier stehen nur Handwerker und Dienstleister."
+      listSql="SELECT * FROM firmen ORDER BY (strasse IS NULL OR plz IS NULL OR ort IS NULL) DESC, gewerk, name"
+      emptyText="Noch keine Firmen. Lieferanten aus den Ausgaben erscheinen hier automatisch."
     />
   );
 }

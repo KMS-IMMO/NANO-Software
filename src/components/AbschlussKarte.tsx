@@ -8,12 +8,14 @@ import { oeffnen, speichern } from '../lib/dateien';
 
 const datum = (d: string) => (d ? new Date(d + 'T00:00:00').toLocaleDateString('de-DE') : '');
 
-export function AbschlussKarte({ objekt, jahr, art, extra, stand, vorschau, ablegen, buchen, buchenText, ergebnis, ordner, onStatus }: {
+export function AbschlussKarte({ objekt, jahr, art, extra, stand, vorschau, ablegen, buchen, buchenText, ergebnis, ordner, onStatus, unten }: {
   objekt: number; jahr: number; art: AbschlussArt; extra: Pruefung[]; stand: number;
   /** Alle Schreiben in einem PDF; `entwurf` = mit Schriftzug ENTWURF */
   vorschau: (entwurf: boolean) => Promise<Uint8Array>;
   ablegen: () => Promise<void>; buchen?: () => Promise<void>; buchenText?: string;
   ergebnis: () => Record<string, unknown>; ordner: string[]; onStatus: (abgeschlossen: Row | null, info?: string) => void;
+  /** Kompakte Leiste am Ende der Seite: abschließen und gleich die fertige PDF zeigen */
+  unten?: boolean;
 }) {
   const [checks, setChecks] = useState<Pruefung[]>([]);
   const [ab, setAb] = useState<Row | null>(null);
@@ -28,13 +30,16 @@ export function AbschlussKarte({ objekt, jahr, art, extra, stand, vorschau, able
     setChecks(await pruefen(objekt, jahr, art, extra));
   }
   useEffect(() => { if (objekt && jahr >= 1900) laden(); }, [objekt, jahr, art, stand, extraKey]);
+  // Oben und unten gibt es je eine Karte: nach Abschluss oder Aufheben laden beide neu
+  useEffect(() => { const f = () => laden(); window.addEventListener('nano-abschluss', f); return () => window.removeEventListener('nano-abschluss', f); }, [objekt, jahr, art, extraKey]);
+  const melden = () => window.dispatchEvent(new Event('nano-abschluss'));
 
   const blocker = checks.filter((c) => !c.ok && c.sperrt), hinweise = checks.filter((c) => !c.ok && !c.sperrt);
 
-  async function zeigen() {
+  async function zeigen(entwurf = !ab) {
     setBusy('vorschau');
     try {
-      const bytes = await vorschau(!ab);
+      const bytes = await vorschau(entwurf);
       setPdf({ url: URL.createObjectURL(new Blob([bytes as BlobPart], { type: 'application/pdf' })), bytes });
     } finally { setBusy(''); }
   }
@@ -53,14 +58,41 @@ export function AbschlussKarte({ objekt, jahr, art, extra, stand, vorschau, able
     if (hinweise.length && !window.confirm(`Trotz Hinweisen abschließen?\n\n${hinweise.map((h) => '• ' + h.text + (h.hinweis ? ': ' + h.hinweis : '')).join('\n')}`)) return;
     if (!window.confirm(`${name} ${jahr} jetzt abschließen? Danach sind Buchungen und Rechnungen des Jahres für diese Liegenschaft gesperrt.`)) return;
     await abschliessen(objekt, jahr, art, ergebnis());
-    await laden(); onStatus(await abschlussLaden(objekt, jahr, art), `${name} ${jahr} abgeschlossen. Prüfe jetzt die PDF-Vorschau, dann kannst du die PDFs ablegen, drucken oder versenden.`);
+    await laden(); melden(); onStatus(await abschlussLaden(objekt, jahr, art), `${name} ${jahr} abgeschlossen. Prüfe jetzt die PDF-Vorschau, dann kannst du die PDFs ablegen, drucken oder versenden.`);
+    // Nach dem Abschluss direkt die fertige Abrechnung (ohne ENTWURF) zeigen
+    await zeigen(false);
   }
   async function aufheben() {
     if (!window.confirm(`Abschluss der ${name} ${jahr} aufheben? Buchungen des Jahres lassen sich dann wieder ändern.`)) return;
     await abschlussAufheben(objekt, jahr, art);
-    await laden(); onStatus(null, `Abschluss der ${name} ${jahr} aufgehoben.`);
+    await laden(); melden(); onStatus(null, `Abschluss der ${name} ${jahr} aufgehoben.`);
   }
   async function los(k: string, f: () => Promise<void>) { setBusy(k); try { await f(); } finally { setBusy(''); } }
+
+  if (unten) return (
+    <section className={'card abschluss-unten' + (ab ? ' zu' : '')}>
+      <div className="abschluss-unten-text">
+        {ab ? <><Lock size={18} /><span><b>{name} {jahr} ist abgeschlossen</b> am {datum(ab.abgeschlossen_am)}.</span></>
+          : blocker.length ? <><XCircle size={18} className="neg" /><span><b>Noch nicht bereit:</b> {blocker.length} Punkt{blocker.length === 1 ? '' : 'e'} der Prüfliste oben {blocker.length === 1 ? 'ist' : 'sind'} rot.</span></>
+          : <><CheckCircle2 size={18} className="pos" /><span><b>Alles eingetragen.</b> Abschließen erstellt die {name} {jahr} als PDF.</span></>}
+      </div>
+      <div className="row">
+        {ab ? <>
+          <button onClick={() => zeigen(false)} disabled={!!busy}><Eye size={16} />{busy === 'vorschau' ? 'PDF wird erstellt …' : 'PDF ansehen'}</button>
+          <button className="primary" onClick={() => los('ablegen', ablegen)} disabled={!!busy}><FileDown size={16} />{busy === 'ablegen' ? 'Wird abgelegt …' : 'PDFs erstellen und ablegen'}</button></>
+          : <button className="primary abschluss-los" onClick={abschluss} disabled={!!blocker.length || !!busy} title={blocker.length ? 'Erst die rot markierten Punkte oben erledigen' : ''}><Lock size={16} />Abschluss: abschließen und PDF öffnen</button>}
+      </div>
+      {pdf && (
+        <div className="modal-bg" onClick={schliessen}>
+          <div className="modal pdf-vorschau" onClick={(e) => e.stopPropagation()}>
+            <div className="card-head"><h3>{ab ? '' : 'Entwurf: '}{name} {jahr}</h3>
+              <div className="row"><button onClick={drucken}><Printer size={16} />Drucken</button><button onClick={extern}><ExternalLink size={16} />Im PDF-Programm öffnen</button>
+                <button className="icon-btn" title="Schließen" onClick={schliessen}><X size={18} /></button></div></div>
+            <iframe id="abschluss-pdf" title="PDF-Vorschau" src={pdf.url} />
+          </div>
+        </div>)}
+    </section>
+  );
 
   return (
     <section className={'card abschluss' + (ab ? ' zu' : '')}>
@@ -74,7 +106,7 @@ export function AbschlussKarte({ objekt, jahr, art, extra, stand, vorschau, able
           <span>{c.text}{!c.ok && c.hinweis && <span className="muted"> · {c.hinweis}</span>}</span></li>))}
       </ul>
       <div className="row">
-        <button onClick={zeigen} disabled={!!busy}><Eye size={16} />{busy === 'vorschau' ? 'PDF wird erstellt …' : 'PDF-Vorschau'}</button>
+        <button onClick={() => zeigen()} disabled={!!busy}><Eye size={16} />{busy === 'vorschau' ? 'PDF wird erstellt …' : 'PDF-Vorschau'}</button>
         <span className="grow" />
         {!ab ? <button className="primary" onClick={abschluss} disabled={!!blocker.length} title={blocker.length ? 'Erst die rot markierten Punkte erledigen' : ''}><Lock size={16} />Abrechnung abschließen</button> : <>
           <button onClick={aufheben}><Unlock size={16} />Abschluss aufheben</button>

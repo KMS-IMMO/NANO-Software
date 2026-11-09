@@ -28,10 +28,13 @@ function Modal({ titel, children, onClose }: { titel: string; children: React.Re
 
 export function KontaktePage() {
   const [art, setArt] = useState<'Mieter' | 'Firmen' | 'Sonstige'>('Mieter');
+  // Lieferanten aus den Ausgaben ohne Adresse: Hinweis am Reiter „Firmen“
+  const [ohneAdresse, setOhneAdresse] = useState(0);
+  useEffect(() => { db.select('SELECT COUNT(*) AS n FROM firmen WHERE strasse IS NULL OR plz IS NULL OR ort IS NULL').then((r) => setOhneAdresse(Number(r[0]?.n) || 0)); }, [art]);
   return (
     <>
       <div className="row" style={{ marginBottom: 12 }}>
-        <div className="seg">{(['Mieter', 'Firmen', 'Sonstige'] as const).map((a) => <button key={a} className={art === a ? 'on' : ''} onClick={() => setArt(a)}>{a}</button>)}</div>
+        <div className="seg">{(['Mieter', 'Firmen', 'Sonstige'] as const).map((a) => <button key={a} className={art === a ? 'on' : ''} onClick={() => setArt(a)}>{a === 'Firmen' ? 'Firmen & Lieferanten' : a}{a === 'Firmen' && ohneAdresse > 0 && <span className="tab-hinweis" title={`${ohneAdresse} ohne Adresse`}>{ohneAdresse}</span>}</button>)}</div>
       </div>
       {art === 'Firmen' ? <FirmenPage /> : <PersonenPage rolle={art} titel={art === 'Sonstige' ? 'Sonstige Kontakte' : undefined} />}
     </>
@@ -143,15 +146,12 @@ export function KalenderPage() {
 export function ErinnerungenPage() {
   const objekte = useObjekte();
   const [rows, setRows] = useState<Row[]>([]);
-  const [neu, setNeu] = useState<Row>({ faellig: heute() });
+  const [neu, setNeu] = useState<Row | null>(null);
   const [zeigeErledigt, setZeigeErledigt] = useState(false);
+  const [frisch, setFrisch] = useState<number | null>(null);
   const load = () => db.select(`SELECT r.*, o.name AS objekt FROM erinnerungen r LEFT JOIN objekte o ON o.id = r.objekt_id ORDER BY r.erledigt, r.faellig, r.uhrzeit`).then(setRows);
   useEffect(() => { load(); }, []);
-  async function anlegen() {
-    if (!neu.titel?.trim() || !neu.faellig) return;
-    await insert('erinnerungen', { titel: neu.titel.trim(), faellig: neu.faellig, uhrzeit: neu.uhrzeit || null, objekt_id: neu.objekt_id ?? null });
-    setNeu({ faellig: neu.faellig }); load();
-  }
+  async function gespeichert(id: number) { setNeu(null); setFrisch(id); await load(); setTimeout(() => setFrisch(null), 2400); }
   const h = heute();
   const gruppen: [string, Row[]][] = [
     ['Überfällig', rows.filter((r) => !r.erledigt && r.faellig < h)],
@@ -161,28 +161,64 @@ export function ErinnerungenPage() {
   ];
   return (
     <>
-      <div className="page-head"><h1 className="title-ico"><AlarmClock size={26} />Erinnerungen</h1><p className="muted">Woran du denken musst, mit Datum. Fällige Erinnerungen stehen auch im Kalender.</p></div>
-      <section className="card row">
-        <input style={{ flex: 2, minWidth: 220 }} placeholder="Woran soll erinnert werden?" value={neu.titel ?? ''} onChange={(e) => setNeu({ ...neu, titel: e.target.value })} onKeyDown={(e) => e.key === 'Enter' && anlegen()} />
-        <input type="date" value={neu.faellig} onChange={(e) => setNeu({ ...neu, faellig: e.target.value })} />
-        <input type="time" value={neu.uhrzeit ?? ''} onChange={(e) => setNeu({ ...neu, uhrzeit: e.target.value })} />
-        <div style={{ width: 220 }}><ObjektWahl value={neu.objekt_id} objekte={objekte} onChange={(v) => setNeu({ ...neu, objekt_id: v })} /></div>
-        <button className="primary" onClick={anlegen}><Plus size={16} />Hinzufügen</button>
-      </section>
+      <div className="page-head row"><div className="grow"><h1 className="title-ico"><AlarmClock size={26} />Erinnerungen</h1><p className="muted">Woran du denken musst, mit Grenztermin. Fällige Erinnerungen stehen auch im Kalender.</p></div>
+        <button className="primary erin-neu-btn" onClick={() => setNeu({ faellig: '', objekt_id: null })}><Plus size={17} />Neue Erinnerung</button></div>
       {gruppen.map(([t, liste]) => liste.length > 0 && (
         <section key={t} className="card">
           <div className="card-head"><h2 className={t === 'Überfällig' ? 'neg' : ''}>{t} ({liste.length})</h2></div>
-          <ul className="checkliste">{liste.map((r) => (
-            <li key={r.id} className={r.erledigt ? 'fertig' : ''}>
+          <ul className="checkliste erin-liste">{liste.map((r) => (
+            <li key={r.id} className={(r.erledigt ? 'fertig' : '') + (frisch === r.id ? ' erin-frisch' : '')}>
               <input type="checkbox" checked={!!r.erledigt} onChange={async () => { await update('erinnerungen', r.id, { erledigt: r.erledigt ? 0 : 1 }); load(); }} />
-              <span className="grow">{r.titel}{r.objekt && <span className="muted small"> · {r.objekt}</span>}</span>
-              <span className={'small ' + (!r.erledigt && r.faellig < h ? 'neg' : 'muted')}>{datum(r.faellig)}{r.uhrzeit ? ` ${r.uhrzeit}` : ''}</span>
+              <span className="grow"><b>{r.titel}</b>{r.objekt && <span className="erin-chip">{r.objekt}</span>}
+                {r.notiz && <span className="erin-notiz">{r.notiz}</span>}
+                {r.erstellt && <span className="muted small erin-erstellt">erstellt am {datum(r.erstellt)}</span>}</span>
+              <span className={'small ' + (!r.erledigt && r.faellig < h ? 'neg' : 'muted')}>bis {datum(r.faellig)}{r.uhrzeit ? ` ${r.uhrzeit}` : ''}</span>
               <button className="icon-btn" title="Löschen" onClick={async () => { await remove('erinnerungen', r.id); load(); }}><Trash2 size={15} /></button>
             </li>))}</ul>
         </section>))}
-      {!rows.some((r) => !r.erledigt) && <p className="muted">Keine offenen Erinnerungen.</p>}
+      {!rows.some((r) => !r.erledigt) && <section className="card erin-leer"><AlarmClock size={30} /><p>Keine offenen Erinnerungen.</p><button className="primary" onClick={() => setNeu({ faellig: '', objekt_id: null })}><Plus size={16} />Neue Erinnerung</button></section>}
       <button className="link" onClick={() => setZeigeErledigt(!zeigeErledigt)}>{zeigeErledigt ? 'Erledigte ausblenden' : 'Erledigte anzeigen'}</button>
+      {neu && <ErinnerungFenster objekte={objekte} start={neu} onClose={() => setNeu(null)} onSaved={gespeichert} />}
     </>
+  );
+}
+
+/** Fenster „Neue Erinnerung“: fünf Schritte untereinander, jeder erscheint mit einer kleinen Animation. */
+function ErinnerungFenster({ objekte, start, onClose, onSaved }: { objekte: Row[]; start: Row; onClose: () => void; onSaved: (id: number) => void }) {
+  const [e, setE] = useState<Row>(start);
+  const [fehler, setFehler] = useState('');
+  const [zu, setZu] = useState(false);
+  const h = heute();
+  const fertig = [!!e.objekt_id, true, !!e.titel?.trim(), !!e.faellig, !!e.notiz?.trim()];
+  const schliessen = () => { setZu(true); setTimeout(onClose, 220); };
+  const schnell = (tage: number) => { const d = new Date(); d.setDate(d.getDate() + tage); return d.toISOString().slice(0, 10); };
+  async function speichern() {
+    if (!e.titel?.trim()) { setFehler('Bitte einen Betreff eintragen.'); return; }
+    if (!e.faellig) { setFehler('Bitte einen Grenztermin wählen.'); return; }
+    const id = await insert('erinnerungen', { titel: e.titel.trim(), faellig: e.faellig, uhrzeit: e.uhrzeit || null, objekt_id: e.objekt_id ?? null, notiz: e.notiz?.trim() || null, erstellt: h });
+    setZu(true); setTimeout(() => onSaved(id), 200);
+  }
+  const Schritt = ({ n, titel, children }: { n: number; titel: string; children: React.ReactNode }) => (
+    <div className={'erin-schritt' + (fertig[n - 1] ? ' ok' : '')} style={{ animationDelay: `${60 + n * 70}ms` }}>
+      <span className="erin-nr">{fertig[n - 1] ? '✓' : n}</span>
+      <div className="erin-feld"><span className="erin-label">{titel}</span>{children}</div>
+    </div>);
+  return (
+    <div className={'modal-bg erin-bg' + (zu ? ' zu' : '')} onClick={schliessen}>
+      <div className={'modal erin-modal' + (zu ? ' zu' : '')} onClick={(x) => x.stopPropagation()} onKeyDown={(x) => { if (x.key === 'Enter' && (x.metaKey || x.ctrlKey)) speichern(); }}>
+        <div className="erin-kopf"><span className="erin-glocke"><AlarmClock size={22} /></span><div><h3>Neue Erinnerung</h3><p className="muted small">In fünf Schritten. Speichern mit Strg + Enter.</p></div></div>
+        {Schritt({ n: 1, titel: 'Liegenschaft', children: <ObjektWahl value={e.objekt_id} objekte={objekte} onChange={(v) => setE({ ...e, objekt_id: v })} /> })}
+        {Schritt({ n: 2, titel: 'Erstellt am', children: <div className="erin-auto">{datum(h)} <span className="muted small">wird automatisch eingetragen</span></div> })}
+        {Schritt({ n: 3, titel: 'Betreff', children: <input autoFocus placeholder="Woran soll erinnert werden?" value={e.titel ?? ''} onChange={(x) => setE({ ...e, titel: x.target.value })} /> })}
+        {Schritt({ n: 4, titel: 'Grenztermin', children: <div className="erin-termin">
+          <input type="date" value={e.faellig ?? ''} min={h} onChange={(x) => setE({ ...e, faellig: x.target.value })} />
+          <input type="time" value={e.uhrzeit ?? ''} onChange={(x) => setE({ ...e, uhrzeit: x.target.value })} title="Uhrzeit (optional)" />
+          <div className="erin-schnell">{[['Morgen', 1], ['1 Woche', 7], ['2 Wochen', 14], ['1 Monat', 30]].map(([t, d]) => <button key={t} type="button" className={e.faellig === schnell(Number(d)) ? 'on' : ''} onClick={() => setE({ ...e, faellig: schnell(Number(d)) })}>{t}</button>)}</div></div> })}
+        {Schritt({ n: 5, titel: 'Notiz', children: <textarea rows={3} placeholder="Details, Ansprechpartner, was zu tun ist …" value={e.notiz ?? ''} onChange={(x) => setE({ ...e, notiz: x.target.value })} /> })}
+        {fehler && <p className="error">{fehler}</p>}
+        <div className="row end erin-fuss"><button onClick={schliessen}>Abbrechen</button><button className="primary" onClick={speichern}><AlarmClock size={16} />Erinnerung speichern</button></div>
+      </div>
+    </div>
   );
 }
 
