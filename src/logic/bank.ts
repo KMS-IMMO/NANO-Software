@@ -96,11 +96,16 @@ const hash = (k: number, u: Umsatz) => [k, u.datum, u.betrag.toFixed(2), u.gegen
 /** Speichert neue Umsätze (Doppelte werden übersprungen). */
 export async function importieren(bankkontoId: number, umsaetze: Umsatz[]) {
   let neu = 0;
+  // Gleiche Umsätze in derselben Datei (z. B. zwei gleiche Überweisungen am selben Tag) sind echte Buchungen:
+  // ab dem zweiten bekommt der Schlüssel eine laufende Nummer. Beim erneuten Einlesen derselben Datei bleiben sie trotzdem doppelt erkannt.
+  const gesehen = new Map<string, number>();
   for (const u of umsaetze) {
+    const h0 = hash(bankkontoId, u), nr = (gesehen.get(h0) ?? 0) + 1;
+    gesehen.set(h0, nr);
     const r = await db.execute(
       `INSERT OR IGNORE INTO bankumsaetze (bankkonto_id, datum, valuta, betrag, verwendungszweck, gegenpartei, gegen_iban, import_hash)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      [bankkontoId, u.datum, u.valuta ?? null, u.betrag, u.verwendungszweck, u.gegenpartei, u.gegen_iban, hash(bankkontoId, u)]);
+      [bankkontoId, u.datum, u.valuta ?? null, u.betrag, u.verwendungszweck, u.gegenpartei, u.gegen_iban, nr > 1 ? `${h0}#${nr}` : h0]);
     neu += r.rowsAffected;
   }
   return { neu, doppelt: umsaetze.length - neu };
@@ -210,9 +215,13 @@ export async function zuordnenPerson(u: Row, personId: number) {
     rest = Math.round((rest - teil) * 100) / 100;
   }
   if (rest > 0.005) {
-    // Überzahlung als Guthaben ohne offenen Posten buchen
-    await insert('buchungen', { datum: u.datum, betrag: rest, buchungskonto_id: null, objekt_id: objekt, bankumsatz_id: u.id,
-      text: `Überzahlung / Guthaben: ${u.gegenpartei}` });
+    // Überzahlung als Guthaben ohne offenen Posten buchen: auf das Einnahmekonto und die Einheit des letzten Postens der Person,
+    // damit die Buchung ein Konto hat (sonst sperrt sie den Abschluss) und im Vermögensbericht als Guthaben erscheint
+    const letzter = (await db.select(`SELECT s.art, s.einheit_id, e.objekt_id, o.verwaltungsart FROM sollstellungen s JOIN einheiten e ON e.id = s.einheit_id
+      JOIN objekte o ON o.id = e.objekt_id WHERE s.person_id = $1 ${objekt ? 'AND e.objekt_id = ' + Number(objekt) : ''} ORDER BY s.monat DESC, s.id DESC LIMIT 1`, [personId]))[0];
+    const art = letzter ? (letzter.verwaltungsart === 'WEG' && letzter.art === 'Rücklage' ? 'Hausgeld' : letzter.art) : 'Kaltmiete';
+    await insert('buchungen', { datum: u.datum, betrag: rest, buchungskonto_id: kontoId(art), objekt_id: objekt ?? letzter?.objekt_id ?? null,
+      einheit_id: letzter?.einheit_id ?? null, bankumsatz_id: u.id, text: `Überzahlung / Guthaben: ${u.gegenpartei}` });
   }
   // IBAN beim Mieter/Eigentümer merken, damit es beim nächsten Mal automatisch klappt
   if (u.gegen_iban) await db.execute(`UPDATE personen SET iban = $1 WHERE id = $2 AND (iban IS NULL OR iban = '')`, [u.gegen_iban, personId]);

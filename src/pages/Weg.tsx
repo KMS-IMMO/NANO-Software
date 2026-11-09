@@ -5,7 +5,7 @@ import { CalendarDays, ClipboardList, Gavel, PiggyBank, Wrench } from 'lucide-re
 import { EntityTable, datum, eur, num } from '../components/EntityTable';
 import { db, type Row } from '../db';
 import { kostenErmitteln, tageImJahr, verteilen, type Ergebnis, type Nutzer, type Position } from '../logic/verteilung';
-import { Brief, absender, dDatum, geld } from '../lib/pdf';
+import { Brief, absender, geld } from '../lib/pdf';
 import { oeffnen, speichern as dateiSpeichern } from '../lib/dateien';
 import { personLabel } from '../db/labels';
 import { Eye, FileDown, X } from 'lucide-react';
@@ -256,7 +256,7 @@ export function WirtschaftsplanTab({ objektId }: { objektId: number }) {
   const load = async () => {
     const k = await db.select(`SELECT k.*, s.schluessel AS objekt_schluessel FROM buchungskonten k
       LEFT JOIN objekt_schluessel s ON s.buchungskonto_id = k.id AND s.objekt_id = $1
-      WHERE k.art = 'Aufwand' AND k.nummer NOT IN ('1261', '1262') ORDER BY k.nummer = '${RUECKLAGE_KONTO}', k.nummer`, [objektId]);
+      WHERE k.art = 'Aufwand' AND k.nummer NOT IN ('1261', '1262', '1601', '1602') ORDER BY k.nummer = '${RUECKLAGE_KONTO}', k.nummer`, [objektId]);
     setKonten(k);
     const p = await db.select('SELECT * FROM wirtschaftsplan WHERE objekt_id = $1 AND jahr = $2', [objektId, jahr]);
     setPlan(Object.fromEntries(p.map((x) => [x.buchungskonto_id, String(x.betrag).replace('.', ',')])));
