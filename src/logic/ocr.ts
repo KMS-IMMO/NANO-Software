@@ -34,7 +34,7 @@ function leinwand(w: number, h: number) {
 /** Ein Foto lesen (Ausrichtung aus dem Foto wird beachtet) */
 export async function bildText(f: Blob): Promise<string> {
   const bmp = await createImageBitmap(f);
-  const s = Math.min(1, 3000 / Math.max(bmp.width, bmp.height));
+  const s = Math.min(1, 4800 / Math.max(bmp.width, bmp.height));
   const { c, ctx } = leinwand(bmp.width * s, bmp.height * s);
   ctx.drawImage(bmp, 0, 0, c.width, c.height); bmp.close();
   return leinwandText(c);
@@ -51,7 +51,7 @@ export async function pdfOcrText(daten: Uint8Array, fortschritt?: (seite: number
       fortschritt?.(i, n);
       const seite = await doc.getPage(i);
       const v1 = seite.getViewport({ scale: 1 });
-      const vp = seite.getViewport({ scale: Math.min(4, 2400 / Math.max(v1.width, v1.height)) });
+      const vp = seite.getViewport({ scale: Math.min(6, 2600 / v1.width, 4800 / v1.height) });
       const { c, ctx } = leinwand(vp.width, vp.height);
       await seite.render({ canvasContext: ctx, viewport: vp, canvas: c } as any).promise;
       seiten.push(await leinwandText(c));
