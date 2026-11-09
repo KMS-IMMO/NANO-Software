@@ -585,7 +585,7 @@ export function BerichtePage() {
   const mieterliste = async (art: 'pdf' | 'csv') => {
     const r = await db.select(`SELECT o.name AS objekt, e.nummer, ${personLabel('p')} AS mieter, p.telefon, p.email, v.beginn, v.ende, v.kaltmiete, v.nk_vorauszahlung + v.hk_vorauszahlung AS vz, v.kaution
       FROM mietvertraege v JOIN einheiten e ON e.id = v.einheit_id JOIN objekte o ON o.id = e.objekt_id JOIN personen p ON p.id = v.mieter_id
-      WHERE v.ende IS NULL OR v.ende >= date('now') ORDER BY o.name, e.nummer`);
+      WHERE v.ende IS NULL OR v.ende >= date('now') ORDER BY o.name, e.lfd_nr, e.nummer`);
     const head = ['Liegenschaft', 'Einheit', 'Mieter', 'Telefon', 'E-Mail', 'Beginn', 'Ende', 'Kaltmiete', 'Vorauszahlungen', 'Kaution'];
     if (art === 'csv') return ablegen(csv(head, r.map((x) => [x.objekt, x.nummer, x.mieter, x.telefon, x.email, datum(x.beginn), datum(x.ende), x.kaltmiete, x.vz, x.kaution])), `Mieterliste ${heute()}.csv`);
     return ablegen(await listePdf('Mieterliste', `Stand ${dDatum(heute())}`, head, r.map((x) => [x.objekt, x.nummer, x.mieter, x.telefon ?? '', x.email ?? '', dDatum(x.beginn), x.ende ? dDatum(x.ende) : 'unbefristet', geld(x.kaltmiete), geld(x.vz), geld(x.kaution ?? 0)]),
@@ -594,7 +594,7 @@ export function BerichtePage() {
   const eigentuemerliste = async (art: 'pdf' | 'csv') => {
     const r = await db.select(`SELECT o.name AS objekt, e.nummer, e.mea, o.gesamt_mea, ${personLabel('p')} AS name, p.strasse, p.plz, p.ort, p.telefon, p.email, ei.anteil
       FROM eigentum ei JOIN einheiten e ON e.id = ei.einheit_id JOIN objekte o ON o.id = e.objekt_id JOIN personen p ON p.id = ei.person_id
-      WHERE ei.bis IS NULL OR ei.bis >= date('now') ORDER BY o.name, e.nummer`);
+      WHERE ei.bis IS NULL OR ei.bis >= date('now') ORDER BY o.name, e.lfd_nr, e.nummer`);
     const head = ['Liegenschaft', 'Einheit', 'MEA', 'MEA-Anteil', 'Eigentümer', 'Anschrift', 'Telefon', 'E-Mail'];
     const anteil = (x: Row) => x.gesamt_mea ? `${num((x.mea / x.gesamt_mea) * 100)} %` : '';
     if (art === 'csv') return ablegen(csv(head, r.map((x) => [x.objekt, x.nummer, x.mea, anteil(x), x.name, [x.strasse, [x.plz, x.ort].filter(Boolean).join(' ')].filter(Boolean).join(', '), x.telefon, x.email])), `Eigentümerliste ${heute()}.csv`);

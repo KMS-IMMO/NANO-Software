@@ -12,7 +12,7 @@ import { DokumentAnsicht } from '../components/DokumentAnsicht';
 
 const vertragFields: Field[] = [
   { key: 'einheit_id', label: 'Einheit', type: 'select', required: true, wide: true,
-    optionsSql: `SELECT e.id AS value, o.name || ' – ' || ${einheitLabel('e')} || ' (' || e.typ || ')' AS label FROM einheiten e JOIN objekte o ON o.id = e.objekt_id ORDER BY o.name, e.nummer` },
+    optionsSql: `SELECT e.id AS value, o.name || ' – ' || ${einheitLabel('e')} || ' (' || e.typ || ')' AS label FROM einheiten e JOIN objekte o ON o.id = e.objekt_id ORDER BY o.name, e.lfd_nr, e.nummer` },
   { key: 'mieter_id', label: 'Mieter', type: 'select', required: true, optionsSql: personOptions('Mieter') },
   { key: 'mieter2_id', label: '2. Mieter', type: 'select', optionsSql: personOptions('Mieter'), hideInTable: true },
   { key: 'beginn', label: 'Beginn', type: 'date', required: true },
@@ -36,7 +36,7 @@ const listSql = (where = '1=1') => `SELECT v.*, o.name || ' – ' || e.nummer AS
     (SELECT COUNT(*) FROM dokumente d WHERE d.bezug = 'Mietvertrag' AND d.bezug_id = v.id) AS doks,
     CASE WHEN v.beginn > date('now') THEN 'künftig' WHEN v.ende IS NOT NULL AND v.ende < date('now') THEN 'beendet' ELSE 'aktiv' END AS status
   FROM mietvertraege v JOIN einheiten e ON e.id = v.einheit_id JOIN objekte o ON o.id = e.objekt_id
-  JOIN personen p ON p.id = v.mieter_id WHERE ${where} ORDER BY o.name, e.nummer, v.beginn DESC`;
+  JOIN personen p ON p.id = v.mieter_id WHERE ${where} ORDER BY o.name, e.lfd_nr, e.nummer, v.beginn DESC`;
 
 export function VertraegePage() {
   const nav = useNavigate();

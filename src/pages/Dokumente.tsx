@@ -12,7 +12,7 @@ const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
 
 const AUSWAHL: Record<Bezug, string> = {
   Objekt: `SELECT id AS value, name AS label FROM objekte ORDER BY name`,
-  Einheit: `SELECT e.id AS value, o.name || ' – ' || ${einheitLabel('e')} AS label FROM einheiten e JOIN objekte o ON o.id = e.objekt_id ORDER BY o.name, e.nummer`,
+  Einheit: `SELECT e.id AS value, o.name || ' – ' || ${einheitLabel('e')} AS label FROM einheiten e JOIN objekte o ON o.id = e.objekt_id ORDER BY o.name, e.lfd_nr, e.nummer`,
   Mietvertrag: `SELECT v.id AS value, o.name || ' – ' || e.nummer || ' – ' || ${personLabel('p')} AS label FROM mietvertraege v
     JOIN einheiten e ON e.id = v.einheit_id JOIN objekte o ON o.id = e.objekt_id JOIN personen p ON p.id = v.mieter_id ORDER BY label`,
   Person: `SELECT p.id AS value, ${personLabel('p')} AS label FROM personen p ORDER BY label`,
