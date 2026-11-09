@@ -1006,3 +1006,17 @@ i.hq { background: #e6d3ae; border: 1.5px solid #3a3d42; } i.mv { background: #5
 .abschluss-unten-text { display: flex; align-items: center; gap: 10px; }
 .abschluss-unten-text .pos { color: #2e7d32; } .abschluss-unten-text .neg { color: #c62828; }
 .abschluss-los:not(:disabled) { animation: nano-puls 2s ease-in-out infinite; }
+
+/* Mieter anlegen (Klick auf die Einheit) */
+.mieter-modal { width: min(760px, 95vw); }
+.mieter-inhalt { max-height: min(68vh, 720px); overflow-y: auto; }
+.mieter-raster { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px 12px; }
+.mieter-raster label { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; color: #6b5a3e; }
+.mieter-raster .breit2 { grid-column: span 2; }
+.mieter-raster .breit3 { grid-column: 1 / -1; }
+.mieter-summe { display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; border-radius: 12px; background: #fbf8f2; border: 1px solid #eadfcb; }
+.mieter-summe b { font-size: 20px; margin-left: 8px; }
+.mieter-soll { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; }
+.mieter-soll input[type=month] { width: auto; }
+.mieter-vorhanden { margin: 8px 0; }
+@media (max-width: 640px) { .mieter-raster { grid-template-columns: 1fr; } .mieter-raster .breit2 { grid-column: auto; } }
