@@ -18,6 +18,8 @@ import { ruecklageJahr } from '../logic/ruecklage';
 import { nkBerechnen } from '../logic/nebenkosten';
 
 const RUECKLAGE = ['1260', '1261', '1262'];
+// Nachzahlungen und Erstattungen aus der Abrechnung des Vorjahres sind keine Kosten des Jahres und werden nicht verteilt
+const VORJAHRESABRECHNUNG = ['1601', '1602'];
 const HEIZ_KONTO = '1200';
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -82,7 +84,7 @@ export function WegAbrechnungPage() {
     const verbrauch = Object.fromEntries(v.map((x) => [`${x.einheit_id}-${x.buchungskonto_id}`, Number(x.menge)]));
     // In der WEG gilt MEA, solange für das Objekt kein eigener Schlüssel eingestellt ist
     const p = (await kostenErmitteln(Number(objekt), jahr, false))
-      .filter((x) => !RUECKLAGE.includes(x.nummer))
+      .filter((x) => !RUECKLAGE.includes(x.nummer) && !VORJAHRESABRECHNUNG.includes(x.nummer))
       .map((x) => ({ ...x, schluessel: x.nummer === HEIZ_KONTO && h.length ? 'Messdienst' as const : eigene.has(x.konto_id) ? x.schluessel : 'MEA' as const }));
     setPos(p);
     // Für den Abschluss: Konten mit Verbrauch/manueller Verteilung, für die Werte fehlen oder nicht aufgehen
@@ -140,6 +142,19 @@ export function WegAbrechnungPage() {
       let z = konten.find((y) => y.key === k);
       if (!z) { z = { key: k, name: x.name || 'ohne Eigentümer', einheit: x.einheit, soll: 0, ist: 0, posten: [] }; konten.push(z); }
       z.soll += Number(x.betrag); z.ist += Number(x.bezahlt); z.posten.push(x);
+    }
+    // Überzahlungen ohne offenen Posten (Guthaben) dem Eigentümer der Einheit am Zahltag zurechnen
+    const ueber = await db.select(`SELECT b.betrag, b.datum, b.einheit_id, e.nummer AS einheit FROM buchungen b JOIN einheiten e ON e.id = b.einheit_id
+      WHERE b.objekt_id = $1 AND b.sollstellung_id IS NULL AND b.bankumsatz_id IS NOT NULL AND b.text LIKE 'Überzahlung%' AND b.datum <= $2`, [objekt, ende]);
+    for (const x of ueber) {
+      const ei = (await db.select(`SELECT ei.person_id, TRIM(COALESCE(p.firma, '') || CASE WHEN p.firma IS NOT NULL AND p.nachname IS NOT NULL THEN ', ' ELSE '' END ||
+          COALESCE(p.nachname, '') || CASE WHEN p.vorname IS NOT NULL THEN ', ' || p.vorname ELSE '' END) AS name
+        FROM eigentum ei JOIN personen p ON p.id = ei.person_id WHERE ei.einheit_id = $1 AND (ei.von IS NULL OR ei.von <= $2) AND (ei.bis IS NULL OR ei.bis >= $2)
+        ORDER BY ei.anteil DESC LIMIT 1`, [x.einheit_id, x.datum]))[0];
+      const k = `${ei?.person_id ?? null}|${x.einheit_id}`;
+      let z = konten.find((y) => y.key === k);
+      if (!z) { z = { key: k, name: ei?.name || 'ohne Eigentümer', einheit: x.einheit, soll: 0, ist: 0, posten: [] }; konten.push(z); }
+      z.ist += Number(x.betrag);
     }
     for (const z of konten) { z.soll = r2(z.soll); z.ist = r2(z.ist); z.saldo = r2(z.soll - z.ist); }
     const offen = konten.filter((z) => Math.abs(z.saldo) > 0.005);

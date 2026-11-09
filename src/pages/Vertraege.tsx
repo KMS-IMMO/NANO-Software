@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { FileText, FileUp, Paperclip, Trash2 } from 'lucide-react';
-import { oeffnen, speichern } from '../lib/dateien';
+import { speichern } from '../lib/dateien';
 import { basisOrdner } from './Dokumente';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { EntityTable, datum, eur, type Field } from '../components/EntityTable';

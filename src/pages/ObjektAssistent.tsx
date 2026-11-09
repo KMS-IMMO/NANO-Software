@@ -50,6 +50,7 @@ export function ObjektAssistentPage() {
   const weg = o.verwaltungsart === 'WEG';
   const meaSoll = zahl(o.gesamt_mea);
   const jahrJetzt = new Date().getFullYear();
+  const [abJahr, setAbJahr] = useState(jahrJetzt);
   const sHg = einheiten.reduce((a, e) => a + zahl(e.hausgeld), 0), sRl = einheiten.reduce((a, e) => a + zahl(e.ruecklage), 0), sNk = einheiten.reduce((a, e) => a + zahl(e.nkVz), 0);
   const nMieter = einheiten.filter((e) => e.mNachname.trim()).length;
   const nEig = new Set(einheiten.filter((e) => e.nachname.trim()).map((e) => nameKey(e.vorname, e.nachname))).size;
@@ -116,12 +117,12 @@ export function ObjektAssistentPage() {
       if (weg) for (const e of einheiten) {
         const eid = (await db.select('SELECT id FROM einheiten WHERE objekt_id = $1 AND nummer = $2', [id, e.nummer.trim()]))[0].id;
         // Hausgeld wird ohne Rücklage erfasst; gespeichert wird der Gesamtbetrag mit dem Rücklagenanteil, den die Abrechnung wieder abzieht
-        if (zahl(e.hausgeld) || zahl(e.ruecklage)) await insert('hausgeld', { einheit_id: eid, gueltig_ab: `${jahrJetzt}-01-01`,
+        if (zahl(e.hausgeld) || zahl(e.ruecklage)) await insert('hausgeld', { einheit_id: eid, gueltig_ab: `${abJahr}-01-01`,
           betrag: Math.round((zahl(e.hausgeld) + zahl(e.ruecklage)) * 100) / 100, davon_ruecklage: zahl(e.ruecklage) || null });
         // Vermietete Einheit: Mieter zahlt an den Eigentümer, wir brauchen ihn für die Nebenkostenabrechnung
         if (e.mNachname.trim()) {
           const mid = await insert('personen', { rolle: 'Mieter', vorname: e.mVorname.trim() || null, nachname: e.mNachname.trim() });
-          await insert('mietvertraege', { einheit_id: eid, mieter_id: mid, beginn: e.mSeit || `${jahrJetzt}-01-01`, kaltmiete: 0,
+          await insert('mietvertraege', { einheit_id: eid, mieter_id: mid, beginn: e.mSeit || `${abJahr}-01-01`, kaltmiete: 0,
             nk_vorauszahlung: zahl(e.nkVz), hk_vorauszahlung: 0, personenzahl: e.personenzahl ? zahl(e.personenzahl) : 1, zahlung_an: 'Eigentümer' });
         }
       }
@@ -180,6 +181,8 @@ export function ObjektAssistentPage() {
             <div className="card-head" style={{ marginTop: 18 }}><h2>Einheiten der Liegenschaft</h2>
               <div className="row">
                 <input className="cell" placeholder="Anzahl" value={anzahl} onChange={(e) => setAnzahl(e.target.value)} />
+                {weg && <label className="inline small" title="Ab wann Hausgeld und Rücklage gelten. Für ein abgelaufenes Jahr, das du nachbuchst, das Jahr der Kontoauszüge wählen.">Hausgeld ab 01.01. <select className="cell" style={{ width: 90 }} value={abJahr} onChange={(x) => setAbJahr(Number(x.target.value))}>
+                  {[jahrJetzt - 3, jahrJetzt - 2, jahrJetzt - 1, jahrJetzt, jahrJetzt + 1].map((j) => <option key={j} value={j}>{j}</option>)}</select></label>}
                 <label className="inline small">je Etage <input className="cell" inputMode="numeric" value={jeEtage} style={{ width: 52 }} title="Einheiten pro Etage: 2 = links/rechts, 3 = links/Mitte/rechts" onChange={(e) => setJeEtage(e.target.value)} /></label>
                 <button onClick={erzeugen} disabled={!zahl(anzahl)}>Einheiten erzeugen</button>
                 <button className="primary" onClick={() => setEinheiten([...einheiten, leer(einheiten.length + 1, Math.max(1, Math.round(zahl(jeEtage)) || 2))])}><Plus size={16} />Einheit hinzufügen</button>
@@ -214,7 +217,7 @@ export function ObjektAssistentPage() {
               <tfoot><tr><td>Summe</td><td>{einheiten.length} Einheiten</td><td>–</td><td className="num">{num(sFl)} m²</td><td className="num">{num(sMea, 0)}</td><td className="num">{num(sP, 0)}</td>{weg && <><td colSpan={4}>{nEig} Eigentümer</td><td className="num">{num(sHg)} €</td><td className="num">{num(sRl)} €</td><td colSpan={3}>{nMieter} vermietet</td><td className="num">{num(sNk)} €</td></>}<td /></tr></tfoot>
             </table></div>
             {weg && <p className="muted small" style={{ marginTop: 8 }}>Gleicher Name in mehreren Zeilen = ein Eigentümer mit mehreren Einheiten. Ist der Name schon als Eigentümer gespeichert, wird diese Person verwendet.
-              Hausgeld und Erhaltungsrücklage gelten ab 01.01.{jahrJetzt}. Der Eigentümer zahlt beides zusammen; in der Hausgeldabrechnung wird die Rücklage von den Vorschüssen abgezogen. Bei vermieteten Einheiten zahlt der Mieter an den Eigentümer; die Vorauszahlung brauchen wir für seine Nebenkostenabrechnung. Mieter seit leer = 01.01.{jahrJetzt}.</p>}
+              Hausgeld und Erhaltungsrücklage gelten ab 01.01.{abJahr} (oben bei „Hausgeld ab“ änderbar: für ein abgelaufenes Jahr, das du nachbuchst, das Jahr der Kontoauszüge wählen). Der Eigentümer zahlt beides zusammen; in der Hausgeldabrechnung wird die Rücklage von den Vorschüssen abgezogen. Bei vermieteten Einheiten zahlt der Mieter an den Eigentümer; die Vorauszahlung brauchen wir für seine Nebenkostenabrechnung. Mieter seit leer = 01.01.{abJahr}.</p>}
             {meaSoll > 0 && Math.abs(meaSoll - sMea) > 0.001 && <p className="warn" style={{ marginTop: 12 }}>Summe MEA {num(sMea, 0)} weicht vom Gesamt-MEA {num(meaSoll, 0)} ab. Du kannst trotzdem weiter und später korrigieren.</p>}
           </>
         )}
