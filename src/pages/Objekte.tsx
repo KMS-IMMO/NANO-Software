@@ -1,3 +1,4 @@
+import { MieterAnlegen } from '../components/MieterAnlegen';
 import { useEffect, useMemo, useState } from 'react';
 import { BJ } from '../logic/buchung';
 import { Link, useNavigate, useParams } from 'react-router-dom';
@@ -293,9 +294,21 @@ function VorauszahlungenTab({ objektId, weg }: { objektId: number; weg: boolean 
 
 function EinheitenTab({ objektId, weg, onChange }: { objektId: number; weg: boolean; onChange: () => void }) {
   const jahr = new Date().getFullYear();
+  const nav = useNavigate();
+  const [objekt, setObjekt] = useState<Row | null>(null);
+  const [neuFuer, setNeuFuer] = useState<Row | null>(null);
+  const [version, setVersion] = useState(0);
+  const [hinweis, setHinweis] = useState<{ text: string; vertrag: number } | null>(null);
+  useEffect(() => { db.select('SELECT * FROM objekte WHERE id = $1', [objektId]).then((r) => setObjekt(r[0] ?? null)); }, [objektId]);
+  // Klick auf die Einheit: ohne laufenden Mietvertrag das Fenster „Mieter anlegen“, sonst den Mietvertrag öffnen. Der Stift bearbeitet die Wohnungsdaten.
+  const oeffnen = async (r: Row) => {
+    const v = (await db.select(`SELECT id FROM mietvertraege WHERE einheit_id = $1 AND (ende IS NULL OR ende >= date('now')) ORDER BY beginn DESC LIMIT 1`, [r.id]))[0];
+    if (v) nav(`/objekte/${objektId}/vertrag/${v.id}`); else setNeuFuer(r);
+  };
   const status = (_: any, r: Row) => (Number(r.soll) || 0) === 0 ? <span className="muted">–</span>
     : r.saldo > 0.005 ? <span className={'pill ' + (r.ist > 0.005 ? 'teil' : 'offen')}>{r.ist > 0.005 ? 'Teilweise' : 'Offen'}</span> : <span className="pill bezahlt">Bezahlt</span>;
   return (
+    <>
     <EntityTable
       title={`Einheiten (${weg ? 'WEG' : 'Miete'}) · Zahlungen ${jahr}`}
       icon={<DoorOpen size={22} />}
@@ -348,7 +361,14 @@ function EinheitenTab({ objektId, weg, onChange }: { objektId: number; weg: bool
       listParams={[objektId]}
       fixed={{ objekt_id: objektId }}
       onChange={onChange}
+      onOpen={oeffnen}
+      version={version}
     />
+    <p className="muted small">Klick auf eine Einheit ohne Mieter öffnet „Mieter anlegen“, bei vermieteten Einheiten den Mietvertrag. Mit dem Stift rechts änderst du die Daten der Wohnung.</p>
+    {hinweis && <p className="tab-hinweis">{hinweis.text} <button className="link" onClick={() => nav(`/objekte/${objektId}/vertrag/${hinweis.vertrag}`)}>Mietvertrag öffnen (PDF hinterlegen)</button></p>}
+    {neuFuer && objekt && <MieterAnlegen einheit={neuFuer} objekt={objekt} onClose={() => setNeuFuer(null)}
+      onSaved={(vid, text) => { setNeuFuer(null); setHinweis({ text, vertrag: vid }); setVersion((x) => x + 1); onChange(); }} />}
+    </>
   );
 }
 
