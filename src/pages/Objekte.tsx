@@ -10,6 +10,7 @@ import { ObjektKontext } from '../logic/objektKontext';
 import { ObjektLoeschen } from '../components/ObjektLoeschen';
 import { OP_SQL, hausgeldNeuStellen, mieteImMonat } from '../logic/soll';
 import { VertragDetailPage, VertraegePage } from './Vertraege';
+import { EigentumDetailPage } from './EigentumDetail';
 import { JournalPage, AuswertungPage } from './Buchhaltung';
 import { BankPage } from './Bank';
 import { OffenePostenPage } from './OffenePosten';
@@ -174,6 +175,7 @@ function Bereich({ slug, rest, o, sum, weg, reload }: { slug: string; rest: stri
     case 'eigentuemer': return <EigentuemerTab objektId={id} />;
     case 'mieter': return <VertraegePage />;
     case 'vertrag': return <VertragDetailPage vertragId={Number(rest[1])} />;
+    case 'eigentum': return <EigentumDetailPage objektId={id} eigentumId={Number(rest[1])} />;
     case 'buchungen': return <JournalPage />;
     case 'bank': return <BankPage />;
     case 'offene-posten': return <OffenePostenPage />;
@@ -382,6 +384,7 @@ const zahlIn = (s: string) => Number(String(s).replace(/\./g, '').replace(',', '
 
 /** Eigentümer je Einheit mit Hausgeld, Erhaltungsrücklage und Zahlweise (eine Überweisung oder zwei getrennte) */
 function EigentuemerTab({ objektId, nurHausgeld }: { objektId: number; nurHausgeld?: boolean }) {
+  const nav = useNavigate();
   const [standard, setStandard] = useState('zusammen');
   const [rows, setRows] = useState<Row[]>([]);
   const [edit, setEdit] = useState<Record<number, { bew: string; rl: string; zw: string }>>({});
@@ -496,6 +499,7 @@ function EigentuemerTab({ objektId, nurHausgeld }: { objektId: number; nurHausge
           WHERE e.objekt_id = $1 ORDER BY e.lfd_nr, e.nummer, ei.von DESC`}
         listParams={[objektId]}
         onChange={load}
+        onOpen={(r) => nav(`/objekte/${objektId}/eigentum/${r.id}`)}
         emptyText="Noch keine Eigentümer zugeordnet. Eigentümer legst du zuerst unter „Personen“ an."
       />}
     </>

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { FileText, FileUp, Paperclip, Trash2 } from 'lucide-react';
+import { FileText, FileUp, Paperclip, Trash2, IdCard } from 'lucide-react';
+import { StammdatenKarte, personFelder, personWerte, personAenderungen, type SGruppe } from '../components/Stammdaten';
 import { speichern } from '../lib/dateien';
 import { basisOrdner } from './Dokumente';
 import { Link, useNavigate, useParams } from 'react-router-dom';
@@ -34,7 +35,7 @@ const vertragFields: Field[] = [
   { key: 'notiz', label: 'Notiz', type: 'textarea', hideInTable: true },
 ];
 
-const listSql = (where = '1=1') => `SELECT v.*, o.name || ' – ' || e.nummer AS einheit_id_label, o.miete_zahlweise AS objekt_zahlweise, ${personLabel('p')} AS mieter_id_label,
+const listSql = (where = '1=1') => `SELECT v.*, o.name || ' – ' || e.nummer AS einheit_id_label, o.miete_zahlweise AS objekt_zahlweise, o.verwaltungsart, ${personLabel('p')} AS mieter_id_label,
     (SELECT COUNT(*) FROM dokumente d WHERE d.bezug = 'Mietvertrag' AND d.bezug_id = v.id) AS doks,
     CASE WHEN v.beginn > date('now') THEN 'künftig' WHEN v.ende IS NOT NULL AND v.ende < date('now') THEN 'beendet' ELSE 'aktiv' END AS status
   FROM mietvertraege v JOIN einheiten e ON e.id = v.einheit_id JOIN objekte o ON o.id = e.objekt_id
@@ -86,6 +87,82 @@ function AktuelleMiete({ v }: { v: Row }) {
   return <>{eur(m.kalt + m.nk + m.hk + m.ust)}</>;
 }
 
+const V_SPALTEN = ['beginn', 'ende', 'kaltmiete', 'nk_vorauszahlung', 'hk_vorauszahlung', 'kaution', 'personenzahl', 'faellig_tag', 'ust_satz',
+  'zahlung_an', 'zahlweise', 'mietart', 'index_basis', 'index_basis_monat', 'notiz'];
+const vertragWerte = (v: Row): Row => Object.fromEntries(V_SPALTEN.map((k) => [`v_${k}`, k === 'ust_satz' ? String(Number(v[k]) || 0) : k === 'zahlung_an' ? v[k] || 'Verwaltung' : v[k] ?? null]));
+
+function vertragGruppen(v: Row, wo: string): SGruppe[] {
+  const [g1, g2] = personFelder('Mieter', [
+    { key: 'm2_vorname', label: '2. Mieter Vorname' },
+    { key: 'm2_nachname', label: '2. Mieter Nachname' },
+    { key: 'wo', label: 'Hinterlegt bei', breit: 3, anzeige: wo || '–' },
+  ]);
+  const index = v.mietart === 'Indexmiete';
+  return [g1, g2, { titel: 'Mietvertrag', felder: [
+    { key: 'v_beginn', label: 'Mietbeginn / Einzug', typ: 'datum', pflicht: true },
+    { key: 'v_ende', label: 'Mietende / Auszug', typ: 'datum' },
+    { key: 'v_mietart', label: 'Mietart', typ: 'auswahl', optionen: ['Standard', 'Staffelmiete', 'Indexmiete'].map((x) => ({ value: x, label: x })) },
+    { key: 'v_kaltmiete', label: 'Kaltmiete € / Monat (Start)', typ: 'geld' },
+    { key: 'v_nk_vorauszahlung', label: 'NK-Vorauszahlung € (Start)', typ: 'geld' },
+    { key: 'v_hk_vorauszahlung', label: 'HK-Vorauszahlung € (Start)', typ: 'geld' },
+    { key: 'v_kaution', label: 'Kaution €', typ: 'geld' },
+    { key: 'v_personenzahl', label: 'Personen im Haushalt', typ: 'zahl' },
+    { key: 'v_faellig_tag', label: 'Fällig am (Tag)', typ: 'zahl' },
+    { key: 'v_ust_satz', label: 'Umsatzsteuer', typ: 'auswahl', optionen: [{ value: '0', label: 'keine (Wohnung)' }, { value: '7', label: '7 %' }, { value: '19', label: '19 % (Gewerbe mit Option)' }] },
+    { key: 'v_zahlweise', label: 'Zahlweise Miete + NK', typ: 'auswahl', optionen: [
+      { value: '', label: `wie Liegenschaft (${v.objekt_zahlweise === 'getrennt' ? 'getrennt' : 'zusammen'})` },
+      { value: 'zusammen', label: 'zusammen (eine Zahlung)' }, { value: 'getrennt', label: 'getrennt überwiesen' }] },
+    { key: 'v_zahlung_an', label: 'Mieter zahlt an', typ: 'auswahl', optionen: [
+      { value: 'Verwaltung', label: 'Verwaltung (Soll-Stellung bei uns)' }, { value: 'Eigentümer', label: 'Eigentümer (vermietete WEG-Einheit)' }] },
+    ...(index ? [{ key: 'v_index_basis', label: 'Index-Basiswert (VPI)', typ: 'zahl' as const }, { key: 'v_index_basis_monat', label: 'Index-Basismonat' }] : []),
+    { key: 'v_notiz', label: 'Notiz zum Vertrag', typ: 'lang', breit: 3 },
+  ] }];
+}
+
+/** Speichert geänderte Angaben von Mieter und Vertrag. Ändern sich Beträge oder Zeitraum, werden offene Posten neu gestellt. */
+async function vertragSpeichern(v: Row, neu: Row): Promise<string> {
+  const p = personAenderungen(neu);
+  if ('p_nachname' in neu || 'p_firma' in neu) {
+    const alt = (await db.select('SELECT nachname, firma FROM personen WHERE id = $1', [v.mieter_id]))[0] ?? {};
+    const nn = 'p_nachname' in neu ? neu.p_nachname : alt.nachname, fi = 'p_firma' in neu ? neu.p_firma : alt.firma;
+    if (!nn && !fi) throw new Error('Bitte Nachname oder Firma angeben.');
+  }
+  const beginn = neu.v_beginn ?? v.beginn, ende = 'v_ende' in neu ? neu.v_ende : v.ende;
+  if (ende && ende < beginn) throw new Error('Das Mietende liegt vor dem Mietbeginn.');
+  if (p) await db.execute(`UPDATE personen SET ${p.sql} WHERE id = $${p.werte.length + 1}`, [...p.werte, v.mieter_id]);
+  // 2. Mieter: ändern, neu anlegen oder (beide Felder leer) vom Vertrag lösen
+  if ('m2_vorname' in neu || 'm2_nachname' in neu) {
+    const alt = v.mieter2_id ? (await db.select('SELECT vorname, nachname FROM personen WHERE id = $1', [v.mieter2_id]))[0] : null;
+    const vn = 'm2_vorname' in neu ? neu.m2_vorname : alt?.vorname ?? null, nn = 'm2_nachname' in neu ? neu.m2_nachname : alt?.nachname ?? null;
+    if (!vn && !nn) { if (v.mieter2_id) await db.execute('UPDATE mietvertraege SET mieter2_id = NULL WHERE id = $1', [v.id]); }
+    else if (v.mieter2_id) await db.execute('UPDATE personen SET vorname = $1, nachname = $2 WHERE id = $3', [vn, nn, v.mieter2_id]);
+    else {
+      const r = await db.execute(`INSERT INTO personen (rolle, vorname, nachname, strasse, plz, ort) SELECT 'Mieter', $1, $2, strasse, plz, ort FROM personen WHERE id = $3`, [vn, nn, v.mieter_id]);
+      await db.execute('UPDATE mietvertraege SET mieter2_id = $1 WHERE id = $2', [r.lastInsertId, v.id]);
+    }
+  }
+  const vk = Object.keys(neu).filter((k) => k.startsWith('v_') && V_SPALTEN.includes(k.slice(2)));
+  if (vk.length) {
+    const wert = (k: string) => {
+      const x = neu[k];
+      if (['v_kaltmiete', 'v_nk_vorauszahlung', 'v_hk_vorauszahlung'].includes(k)) return x ?? 0;
+      if (k === 'v_ust_satz') return Number(x) || 0;
+      if (k === 'v_faellig_tag') return x == null ? 3 : Math.min(28, Math.max(1, Math.round(Number(x))));
+      if (k === 'v_personenzahl') return x == null ? null : Math.max(0, Math.round(Number(x)));
+      if (k === 'v_zahlung_an') return x ?? 'Verwaltung';
+      if (k === 'v_mietart') return x ?? 'Standard';
+      return x;
+    };
+    await db.execute(`UPDATE mietvertraege SET ${vk.map((k, i) => `${k.slice(2)} = $${i + 1}`).join(', ')} WHERE id = $${vk.length + 1}`, [...vk.map(wert), v.id]);
+  }
+  const betrifftSoll = ['v_beginn', 'v_ende', 'v_kaltmiete', 'v_nk_vorauszahlung', 'v_hk_vorauszahlung', 'v_ust_satz', 'v_faellig_tag', 'v_zahlung_an'].some((k) => k in neu);
+  if (betrifftSoll) {
+    const n = await mieteNeuStellen(v.id);
+    return n ? `Gespeichert. ${n} offene Posten dieses Vertrags wurden mit den neuen Angaben neu gestellt (bezahlte bleiben unverändert).` : 'Gespeichert.';
+  }
+  return 'Gespeichert.';
+}
+
 export function VertragDetailPage({ vertragId }: { vertragId?: number }) {
   const p = useParams();
   const id = vertragId ?? Number(p.id);
@@ -93,9 +170,22 @@ export function VertragDetailPage({ vertragId }: { vertragId?: number }) {
   const [v, setV] = useState<Row | null>(null);
   const [anp, setAnp] = useState<Row[]>([]);
   const [hinweis, setHinweis] = useState('');
+  const [p1, setP1] = useState<Row | undefined>();
+  const [p2, setP2] = useState<Row | undefined>();
+  const [wo, setWo] = useState('');
   const reload = async () => {
-    setV((await db.select(listSql('v.id = $1'), [id]))[0] ?? null);
+    const vv = (await db.select(listSql('v.id = $1'), [id]))[0] ?? null;
+    setV(vv);
     setAnp(await db.select('SELECT * FROM mietanpassungen WHERE vertrag_id = $1', [id]));
+    if (vv) {
+      setP1((await db.select('SELECT * FROM personen WHERE id = $1', [vv.mieter_id]))[0]);
+      setP2(vv.mieter2_id ? (await db.select('SELECT * FROM personen WHERE id = $1', [vv.mieter2_id]))[0] : undefined);
+      setWo((await db.select(`SELECT GROUP_CONCAT(x, '; ') AS wo FROM (
+          SELECT o.name || ' ' || e.nummer || ' (Mieter)' AS x FROM mietvertraege m JOIN einheiten e ON e.id = m.einheit_id JOIN objekte o ON o.id = e.objekt_id
+            WHERE (m.mieter_id = $1 OR m.mieter2_id = $1) AND (m.ende IS NULL OR m.ende >= date('now'))
+          UNION ALL SELECT o.name || ' ' || e.nummer || ' (Eigentümer)' FROM eigentum ei JOIN einheiten e ON e.id = ei.einheit_id JOIN objekte o ON o.id = e.objekt_id
+            WHERE ei.person_id = $1 AND (ei.bis IS NULL OR ei.bis >= date('now')))`, [vv.mieter_id]))[0]?.wo ?? '');
+    }
   };
   useEffect(() => { reload(); }, [id]);
   if (!v) return <p>Vertrag wird geladen…</p>;
@@ -105,15 +195,8 @@ export function VertragDetailPage({ vertragId }: { vertragId?: number }) {
       <div className="page-head">
         <p className="muted small"><Link to={fix ? `/objekte/${fix.id}/mieter` : '/vertraege'}>{fix ? 'Mieter und Mietverträge' : 'Mietverträge'}</Link> ›</p>
         <h1>{v.mieter_id_label} <span className={'pill ' + v.status}>{v.status}</span></h1>
-        <p className="muted">{v.einheit_id_label} · seit {datum(v.beginn)}{v.ende ? ` bis ${datum(v.ende)}` : ''} · {v.mietart}
+        <p className="muted">{v.einheit_id_label} · Einzug {datum(v.beginn)}{v.ende ? ` · Auszug ${datum(v.ende)}` : ''} · {v.mietart}
           {v.personenzahl != null ? ` · ${v.personenzahl} Pers.` : ''}</p>
-        <label className="muted small" style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>Zahlweise Miete + NK:
-          <select style={{ width: 'auto' }} value={v.zahlweise ?? ''} onChange={async (e) => { await db.execute('UPDATE mietvertraege SET zahlweise = $1 WHERE id = $2', [e.target.value || null, id]); await reload(); }}>
-            <option value="">wie Liegenschaft ({v.objekt_zahlweise === 'getrennt' ? 'getrennt' : 'zusammen'})</option>
-            <option value="zusammen">zusammen (eine Zahlung)</option>
-            <option value="getrennt">getrennt überwiesen</option>
-          </select>
-        </label>
       </div>
       <div className="kpis">
         <div className="kpi"><span>Kaltmiete aktuell</span><b>{eur(jetzt.kalt)}</b></div>
@@ -122,6 +205,10 @@ export function VertragDetailPage({ vertragId }: { vertragId?: number }) {
         <div className="kpi"><span>Gesamt / Monat</span><b>{eur(jetzt.kalt + jetzt.nk + jetzt.hk + jetzt.ust)}</b></div>
         <div className="kpi"><span>Kaution</span><b>{eur(v.kaution ?? 0)}</b></div>
       </div>
+      <StammdatenKarte key={id} titel="Mieter und Mietvertrag" icon={<IdCard size={22} />}
+        gruppen={vertragGruppen(v, wo)}
+        werte={{ ...personWerte(p1), m2_vorname: p2?.vorname ?? null, m2_nachname: p2?.nachname ?? null, ...vertragWerte(v) }}
+        onSpeichern={async (neu) => { const t = await vertragSpeichern(v, neu); await reload(); return t; }} />
       <VertragDokumente vertragId={id} />
       {hinweis && <p className="info">{hinweis}</p>}
       <EntityTable
