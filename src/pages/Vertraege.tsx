@@ -26,6 +26,8 @@ const vertragFields: Field[] = [
   { key: 'ust_satz', label: 'Umsatzsteuer %', type: 'select', options: [{ value: 0, label: 'keine' }, { value: 19, label: '19 %' }, { value: 7, label: '7 %' }], hideInTable: true },
   { key: 'kaution', label: 'Kaution', type: 'number', format: eur, hideInTable: true },
   { key: 'personenzahl', label: 'Personen', type: 'number', format: (v) => v ?? '' },
+  { key: 'zahlweise', label: 'Zahlweise Miete + NK', type: 'select', hideInTable: true,
+    options: [{ value: '', label: 'wie bei der Liegenschaft eingestellt' }, { value: 'zusammen', label: 'zusammen (eine Zahlung)' }, { value: 'getrennt', label: 'getrennt überwiesen' }] },
   { key: 'faellig_tag', label: 'Fällig am (Tag im Monat)', type: 'number', hideInTable: true, format: (v) => v },
   { key: 'index_basis', label: 'Index-Basiswert (VPI)', type: 'number', hideInTable: true },
   { key: 'index_basis_monat', label: 'Index-Basismonat', hideInTable: true },
