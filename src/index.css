@@ -1020,3 +1020,14 @@ i.hq { background: #e6d3ae; border: 1.5px solid #3a3d42; } i.mv { background: #5
 .mieter-soll input[type=month] { width: auto; }
 .mieter-vorhanden { margin: 8px 0; }
 @media (max-width: 640px) { .mieter-raster { grid-template-columns: 1fr; } .mieter-raster .breit2 { grid-column: auto; } }
+
+/* Kontoauszug per Drag & Drop (Einnahmen & Ausgaben) */
+.auszug-drop.kompakt { padding: 14px 18px; border: 2px dashed #e2d3b6; background: #fcfaf6; transition: border-color .2s, background-color .2s, transform .2s; }
+.auszug-drop.over { border-color: #b08a4a; background: #f6eedd; transform: scale(1.005); }
+.auszug-zeile { display: flex; gap: 14px; align-items: center; }
+.auszug-ico { width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center; background: #f6eedd; color: #8a6a34; flex: none; }
+.auszug-modal { width: min(980px, 96vw); }
+.auszug-inhalt { padding: 6px 22px 8px; max-height: 70vh; overflow-y: auto; }
+.auszug-kpis { margin-bottom: 10px; }
+.auszug-konto { margin: 8px 0 12px; }
+.auszug-liste { max-height: 38vh; overflow-y: auto; }

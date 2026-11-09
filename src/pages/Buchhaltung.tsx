@@ -1,4 +1,5 @@
 // Buchhaltung: Buchungsjournal mit manueller Buchung, Buchungsregeln, Kontenübersicht (GuV) und Berichte.
+import { AuszugImport } from '../components/AuszugImport';
 import { useEffect, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { BarChart3, BookOpen, Download, FileSpreadsheet, FileText, Gavel, Paperclip, Pencil, PiggyBank, Plus, Receipt, Sparkles, Trash2, Users, User } from 'lucide-react';
@@ -195,6 +196,7 @@ export function JournalPage() {
         <button className="primary" onClick={() => setBuchen(true)}><Plus size={16} />Buchen</button>
       </section>
       {info && <p className="info">{info}</p>}
+      <AuszugImport objektId={objekt === '' ? null : Number(objekt)} kompakt onDone={load} />
       <div className="seg">
         <button className={ansicht === 'buchungen' ? 'on' : ''} onClick={() => setAnsicht('buchungen')}>Buchungen ({rows.length})</button>
         <button className={ansicht === 'rechnungen' ? 'on' : ''} onClick={() => setAnsicht('rechnungen')}>Offene Rechnungen ({offeneRechnungen.length})</button>

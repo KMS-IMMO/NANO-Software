@@ -10,7 +10,7 @@ import { BuchungBelege } from '../components/BuchungBelege';
 import { BuchenDialog } from '../components/BuchenDialog';
 import { Paperclip } from 'lucide-react';
 import {
-  automatischZuordnen, importieren, parseDatei, vorschlag, zuordnenKonto, zuordnenPerson, zuordnenRechnung, zuordnungLoesen, type Vorschlag,
+  auszugLesen, automatischZuordnen, importieren, vorschlag, zuordnenKonto, zuordnenPerson, zuordnenRechnung, zuordnungLoesen, type Vorschlag,
 } from '../logic/bank';
 
 type Opt = { value: number; label: string };
@@ -68,11 +68,8 @@ export function BankPage() {
     let neu = 0, doppelt = 0;
     try {
       for (const f of Array.from(files)) {
-        const buf = await f.arrayBuffer();
-        // Viele Banken liefern CSV in Windows-1252 (ANSI); XML ist UTF-8
-        let text = new TextDecoder('utf-8').decode(buf);
-        if (text.includes('�')) text = new TextDecoder('windows-1252').decode(buf);
-        const r = await importieren(Number(konto), parseDatei(f.name, text));
+        // CSV (auch Windows-1252), CAMT-XML oder PDF-Kontoauszug
+        const r = await importieren(Number(konto), (await auszugLesen(f)).umsaetze);
         neu += r.neu; doppelt += r.doppelt;
       }
       const a = await automatischZuordnen();
@@ -125,8 +122,8 @@ export function BankPage() {
         onDrop={(e) => { e.preventDefault(); setDrag(false); dateien(e.dataTransfer.files); }}
       >
         <p><b>Kontoauszug hierher ziehen</b> oder <button className="link" onClick={() => fileRef.current?.click()}>Datei auswählen</button></p>
-        <p className="muted small">Im Online-Banking unter „Umsätze exportieren“ bzw. „Kontoauszug als CAMT/XML“ herunterladen. Doppelte Umsätze werden automatisch erkannt.</p>
-        <input ref={fileRef} type="file" accept=".xml,.csv,.txt" multiple hidden onChange={(e) => { if (e.target.files) dateien(Array.from(e.target.files)); e.target.value = ''; }} />
+        <p className="muted small">Im Online-Banking unter „Umsätze exportieren“ bzw. „Kontoauszug als CAMT/XML“ herunterladen, oder den PDF-Kontoauszug hineinziehen. Doppelte Umsätze werden automatisch erkannt.</p>
+        <input ref={fileRef} type="file" accept=".xml,.csv,.txt,.pdf" multiple hidden onChange={(e) => { if (e.target.files) dateien(Array.from(e.target.files)); e.target.value = ''; }} />
         {info && <p className="info">{info}</p>}
       </section>
 
