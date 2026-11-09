@@ -1035,3 +1035,6 @@ i.hq { background: #e6d3ae; border: 1.5px solid #3a3d42; } i.mv { background: #5
 .auszug-pruefen td { background: color-mix(in srgb, #f5c542 14%, transparent); }
 .warn-text { color: #a8710b; font-size: 12px; margin-top: 2px; }
 .auszug-pm { margin-left: 6px; font-weight: 700; }
+
+.auswahl-leiste { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 12px; margin-bottom: 10px; border-radius: 10px; background: color-mix(in srgb, var(--accent, #a8803a) 10%, transparent); }
+.list th.wahl, .list td.wahl { width: 28px; padding-right: 0; }

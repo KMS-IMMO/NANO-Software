@@ -253,6 +253,14 @@ export async function zuordnungLoesen(u: Row) {
   await db.execute(`UPDATE bankumsaetze SET status = 'offen' WHERE id = $1`, [u.id]);
 }
 
+/** Bankumsätze ganz löschen (vorher Zuordnung lösen). Beim nächsten Import desselben Auszugs kommen sie wieder. */
+export async function umsaetzeLoeschen(ids: number[]) {
+  for (const id of ids) {
+    await zuordnungLoesen({ id });
+    await db.execute('DELETE FROM bankumsaetze WHERE id = $1', [id]);
+  }
+}
+
 /** Ordnet alle offenen Umsätze zu, bei denen der Vorschlag sicher ist. */
 export async function automatischZuordnen(): Promise<{ zugeordnet: number; pruefen: number }> {
   const offen = await db.select(`SELECT * FROM bankumsaetze WHERE status = 'offen' ORDER BY datum, id`);
