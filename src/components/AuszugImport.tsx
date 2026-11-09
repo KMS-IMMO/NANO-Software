@@ -4,7 +4,8 @@ import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { FileUp, Landmark } from 'lucide-react';
 import { db, insert, type Row } from '../db';
-import { auszugLesen, automatischZuordnen, importieren, type Umsatz } from '../logic/bank';
+import { auszugLesen, automatischZuordnen, bilderLesen, importieren, type Umsatz } from '../logic/bank';
+import { istBild } from '../logic/ocr';
 import { datum, eur } from './EntityTable';
 
 const zahl = (s: string) => Number(String(s ?? '').replace(/\./g, '').replace(',', '.')) || 0;
@@ -12,6 +13,7 @@ const zahl = (s: string) => Number(String(s ?? '').replace(/\./g, '').replace(',
 export function AuszugImport({ objektId, onDone, kompakt }: { objektId: number | null; onDone: () => void; kompakt?: boolean }) {
   const [drag, setDrag] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [stand, setStand] = useState('');
   const [info, setInfo] = useState<{ text: string; offen: number } | null>(null);
   const [fehler, setFehler] = useState('');
   const [vorschau, setVorschau] = useState<{ umsaetze: Umsatz[]; hinweise: string[]; dateien: string[] } | null>(null);
@@ -32,11 +34,16 @@ export function AuszugImport({ objektId, onDone, kompakt }: { objektId: number |
     const umsaetze: Umsatz[] = [], hinweise: string[] = [], namen: string[] = [];
     let anfang: number | undefined;
     try {
-      for (const f of Array.from(files)) {
-        const r = await auszugLesen(f);
-        umsaetze.push(...r.umsaetze); namen.push(f.name);
+      const alle = Array.from(files), bilder = alle.filter(istBild);
+      const gruppen: { name: string; lesen: () => Promise<{ umsaetze: Umsatz[]; hinweis?: string; anfang?: number }> }[] = [
+        ...alle.filter((f) => !istBild(f)).map((f) => ({ name: f.name, lesen: () => auszugLesen(f, setStand) })),
+        ...(bilder.length ? [{ name: bilder.length === 1 ? bilder[0].name : `${bilder.length} Fotos`, lesen: () => bilderLesen(bilder, setStand) }] : []),
+      ];
+      for (const g of gruppen) {
+        const r = await g.lesen();
+        umsaetze.push(...r.umsaetze); namen.push(g.name);
         if (r.anfang !== undefined && anfang === undefined) anfang = r.anfang;
-        if (r.hinweis) hinweise.push(`${f.name}: ${r.hinweis}`);
+        if (r.hinweis) hinweise.push(`${g.name}: ${r.hinweis}`);
       }
       umsaetze.sort((a, b) => a.datum.localeCompare(b.datum));
       if (!umsaetze.length) setFehler('In der Datei wurden keine Umsätze gefunden.');
@@ -46,7 +53,7 @@ export function AuszugImport({ objektId, onDone, kompakt }: { objektId: number |
         setNeu((n) => ({ ...n, saldo: n.saldo || (anfang !== undefined ? String(anfang).replace('.', ',') : ''), datum: n.datum || new Date(new Date(erstes + 'T12:00:00').getTime() - 864e5).toISOString().slice(0, 10) }));
       }
     } catch (e: any) { setFehler(String(e?.message ?? e)); }
-    finally { setBusy(false); }
+    finally { setBusy(false); setStand(''); }
   }
 
   async function uebernehmen() {
@@ -77,9 +84,9 @@ export function AuszugImport({ objektId, onDone, kompakt }: { objektId: number |
         onDragOver={(e) => { e.preventDefault(); setDrag(true); }} onDragLeave={() => setDrag(false)}
         onDrop={(e) => { e.preventDefault(); setDrag(false); if (e.dataTransfer.files.length) lesen(e.dataTransfer.files); }}>
         <div className="auszug-zeile"><span className="auszug-ico"><FileUp size={22} /></span>
-          <div className="grow"><b>{busy ? 'Lese Kontoauszug …' : 'Kontoauszug hierher ziehen'}</b> oder <button className="link" onClick={() => ref.current?.click()}>Datei auswählen</button>
-            <div className="muted small">CSV, PDF oder CAMT-XML aus dem Online-Banking. Daraus entstehen die Einnahmen und Ausgaben, bekannte Zahlungen werden automatisch gebucht.</div></div></div>
-        <input ref={ref} type="file" accept=".xml,.csv,.txt,.pdf" multiple hidden onChange={(e) => { if (e.target.files?.length) lesen(Array.from(e.target.files)); e.target.value = ''; }} />
+          <div className="grow"><b>{busy ? (stand || 'Lese Kontoauszug …') : 'Kontoauszug hierher ziehen'}</b> oder <button className="link" onClick={() => ref.current?.click()}>Datei auswählen</button>
+            <div className="muted small">CSV, PDF oder CAMT-XML aus dem Online-Banking, auch eingescannte PDFs und Fotos (JPG). Daraus entstehen die Einnahmen und Ausgaben, bekannte Zahlungen werden automatisch gebucht.</div></div></div>
+        <input ref={ref} type="file" accept=".xml,.csv,.txt,.pdf,.jpg,.jpeg,.png,.heic" multiple hidden onChange={(e) => { if (e.target.files?.length) lesen(Array.from(e.target.files)); e.target.value = ''; }} />
         {fehler && <p className="error">{fehler}</p>}
         {info && <p className="info">{info.text} {info.offen ? <>{info.offen} Umsätze brauchen noch eine Zuordnung: <Link to={objektId ? `/objekte/${objektId}/bank` : '/bank'}>Bank & Zuordnung öffnen</Link></> : 'Alles zugeordnet.'}</p>}
       </section>

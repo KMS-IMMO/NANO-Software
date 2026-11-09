@@ -329,18 +329,44 @@ export function parsePdfAuszug(text: string): PdfAuszug {
   return { umsaetze: out.filter((u) => u.betrag !== 0), anfang, ende, hinweis };
 }
 
-/** Eine Kontoauszug-Datei lesen: CAMT-XML, CSV oder PDF */
-export async function auszugLesen(f: File): Promise<{ umsaetze: Umsatz[]; hinweis?: string; anfang?: number }> {
+/** Eine Kontoauszug-Datei lesen: CAMT-XML, CSV, PDF oder (mit Texterkennung) eingescannte PDF */
+export async function auszugLesen(f: File, fortschritt?: (text: string) => void): Promise<{ umsaetze: Umsatz[]; hinweis?: string; anfang?: number }> {
   const buf = new Uint8Array(await f.arrayBuffer());
   if (/\.pdf$/i.test(f.name) || f.type === 'application/pdf') {
     const { pdfText } = await import('./rechnungLesen');
-    const text = await pdfText(buf, 40);
-    if (!text.trim()) throw new Error(`${f.name}: Die PDF enthält keinen Text (eingescannt). Bitte den Auszug als CSV oder CAMT-XML aus dem Online-Banking laden.`);
-    const r = parsePdfAuszug(text);
-    if (!r.umsaetze.length) throw new Error(`${f.name}: In der PDF wurden keine Umsätze erkannt. Bitte den Auszug als CSV oder CAMT-XML laden.`);
-    return r;
+    let text = await pdfText(buf, 60), ocr = false;
+    if (!text.trim()) {
+      const { ocrVerfuegbar, pdfOcrText } = await import('./ocr');
+      if (!ocrVerfuegbar()) throw new Error(`${f.name}: Die PDF enthält keinen Text (eingescannt). Die Texterkennung gibt es nur in der Mac-App. Sonst bitte den Auszug als CSV oder CAMT-XML laden.`);
+      text = await pdfOcrText(buf, (s, n) => fortschritt?.(`Texterkennung ${f.name}: Seite ${s} von ${n} …`)); ocr = true;
+    }
+    return auszugAusText(f.name, text, ocr);
   }
+  const { istBild } = await import('./ocr');
+  if (istBild(f)) return bilderLesen([f], fortschritt);
   let text = new TextDecoder('utf-8').decode(buf);
-  if (text.includes('�')) text = new TextDecoder('windows-1252').decode(buf);
+  if (text.includes('\uFFFD')) text = new TextDecoder('windows-1252').decode(buf);
   return { umsaetze: parseDatei(f.name, text) };
+}
+
+function auszugAusText(name: string, text: string, ocr: boolean) {
+  const r = parsePdfAuszug(text);
+  if (!r.umsaetze.length) throw new Error(ocr
+    ? `${name}: Die Texterkennung hat keine Umsätze gefunden. Bitte schärfere Fotos verwenden oder den Auszug als CSV laden.`
+    : `${name}: In der PDF wurden keine Umsätze erkannt. Bitte den Auszug als CSV oder CAMT-XML laden.`);
+  if (ocr) r.hinweis = `Per Texterkennung gelesen, bitte Beträge prüfen. ${r.hinweis ?? ''}`.trim();
+  return r;
+}
+
+/** Mehrere Fotos eines Auszugs (in Reihenfolge der Dateinamen) zusammen lesen */
+export async function bilderLesen(files: File[], fortschritt?: (text: string) => void) {
+  const { ocrVerfuegbar, bildText } = await import('./ocr');
+  if (!ocrVerfuegbar()) throw new Error('Fotos von Kontoauszügen kann nur die Mac-App lesen (Texterkennung).');
+  const liste = [...files].sort((a, b) => a.name.localeCompare(b.name, 'de', { numeric: true }));
+  const texte: string[] = [];
+  for (let i = 0; i < liste.length; i++) {
+    fortschritt?.(`Texterkennung: Bild ${i + 1} von ${liste.length} …`);
+    texte.push(await bildText(liste[i]));
+  }
+  return auszugAusText(liste.length === 1 ? liste[0].name : `${liste.length} Fotos`, texte.join('\n'), true);
 }
