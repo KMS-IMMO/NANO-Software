@@ -21,6 +21,13 @@ const nachEtage = (n: number, jeEtage: number) => {
   const f = Math.floor(n / jeEtage), j = n % jeEtage, lage = etage(f), pos = position(j, jeEtage);
   return { lage, nummer: pos ? `${lage} ${pos}` : lage };
 };
+/** Etage ändern: ein automatisch vergebener Name („EG links“) folgt der Etage. Steht die Lage schon in der Etage („EG links“), wird sie nicht doppelt angehängt. */
+const mitEtage = (y: Einheit, l: string): Einheit => {
+  const auto = !y.nummer || y.nummer === y.lage || (!!y.lage && y.nummer.startsWith(y.lage + ' '));
+  if (!auto) return { ...y, lage: l };
+  const rest = y.lage && y.nummer.startsWith(y.lage) ? y.nummer.slice(y.lage.length).trim() : '';
+  return { ...y, lage: l, nummer: rest && !l.trim().endsWith(rest) ? `${l.trim()} ${rest}` : l.trim() };
+};
 const leer = (n: number, jeEtage = 2): Einheit => ({ ...nachEtage(n - 1, jeEtage), typ: 'Wohnung', flaeche: '', mea: '', personenzahl: '', vorname: '', nachname: '', telefon: '', email: '', hausgeld: '', ruecklage: '', mVorname: '', mNachname: '', mSeit: '', nkVz: '' });
 const nameKey = (v: any, n: any) => `${String(v ?? '').trim().toLowerCase()}|${String(n ?? '').trim().toLowerCase()}`;
 
@@ -185,8 +192,7 @@ export function ObjektAssistentPage() {
                 <tr key={i}>
                   <td><input value={e.nummer} onChange={(x) => setE(i, 'nummer', x.target.value)} style={{ width: 110 }} /></td>
                   <td><select value={e.typ} style={{ minWidth: 130 }} onChange={(x) => setE(i, 'typ', x.target.value)}>{EINHEIT_TYPEN.map((t) => <option key={t}>{t}</option>)}</select></td>
-                  <td><input value={e.lage} placeholder="EG, 1. OG, DG …" style={{ width: 100 }} onChange={(x) => { const l = x.target.value; setEinheiten(einheiten.map((y, j) => j !== i ? y
-                    : { ...y, lage: l, nummer: !y.nummer || y.nummer === y.lage || y.nummer.startsWith(y.lage + ' ') ? (y.lage && y.nummer.startsWith(y.lage) ? l + y.nummer.slice(y.lage.length) : l) : y.nummer })); }} /></td>
+                  <td><input value={e.lage} placeholder="EG, 1. OG, DG …" style={{ width: 100 }} onChange={(x) => setEinheiten(einheiten.map((y, j) => (j === i ? mitEtage(y, x.target.value) : y)))} /></td>
                   <td className="num"><input className="cell" inputMode="decimal" value={e.flaeche} style={{ width: 80 }} onChange={(x) => setE(i, 'flaeche', x.target.value)} /></td>
                   <td className="num"><input className="cell" inputMode="decimal" value={e.mea} style={{ width: 80 }} onChange={(x) => setE(i, 'mea', x.target.value)} /></td>
                   <td className="num"><input className="cell" inputMode="numeric" value={e.personenzahl} style={{ width: 60 }} onChange={(x) => setE(i, 'personenzahl', x.target.value)} /></td>
