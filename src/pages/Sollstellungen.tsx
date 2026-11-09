@@ -1,3 +1,4 @@
+import { MonatWahl } from '../components/MonatWahl';
 // Sollstellungen: monatlich zu zahlende Beträge (Miete, Vorauszahlungen, Hausgeld) je Einheit auflisten,
 // für einen Zeitraum aus den Stammdaten erzeugen, einzeln bearbeiten, löschen oder von Hand anlegen.
 import { useEffect, useMemo, useState } from 'react';
@@ -80,8 +81,8 @@ export function SollstellungenPage() {
       <section className="card row">
         {!fix && <select style={{ width: 240 }} value={objekt} onChange={(e) => setObjekt(e.target.value ? Number(e.target.value) : '')}>
           <option value="">Alle Liegenschaften</option>{objekte.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}</select>}
-        <label className="inline">Zeitraum von <input type="month" value={von} onChange={(e) => setVon(e.target.value)} /></label>
-        <label className="inline">bis <input type="month" value={bis} onChange={(e) => setBis(e.target.value)} /></label>
+        <label className="inline">Zeitraum von <MonatWahl value={von} onChange={setVon} /></label>
+        <label className="inline">bis <MonatWahl value={bis} onChange={setBis} /></label>
         <button className="primary" onClick={erzeugen}>Aus Stammdaten erzeugen</button>
         <span className="grow" />
         <button onClick={() => setNeu({ monat: heute().slice(0, 7), art: 'Kaltmiete' })} disabled={objekt === ''} title={objekt === '' ? 'Bitte zuerst eine Liegenschaft wählen' : ''}><Plus size={16} />Posten hinzufügen</button>

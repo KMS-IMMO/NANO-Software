@@ -1,3 +1,4 @@
+import { MonatWahl } from './MonatWahl';
 // „Mieter anlegen“ direkt aus der Einheit: Mieter (Person), optional zweiter Mieter, Mietvertrag mit Miete und Vorauszahlungen,
 // auf Wunsch gleich die Sollstellungen. Alles wird im System gespeichert (Kontakte, Mietverträge, Offene Posten).
 import { useEffect, useState } from 'react';
@@ -133,8 +134,8 @@ export function MieterAnlegen({ einheit, objekt, onClose, onSaved }: { einheit: 
             <div><span>Warmmiete</span><b>{eur(warm + ust)}</b>{ust ? <span className="muted small"> inkl. {eur(ust)} USt</span> : null}</div>
             {d.zahlung_an !== 'Eigentümer'
               ? <div className="mieter-soll"><label className="inline"><input type="checkbox" checked={soll} onChange={(x) => setSoll(x.target.checked)} /> Sollstellungen gleich anlegen</label>
-                  {soll && <><label className="inline">von <input type="month" value={von} onChange={(x) => setSollVon(x.target.value)} /></label>
-                    <label className="inline">bis <input type="month" value={bis} onChange={(x) => setSollBis(x.target.value)} /></label></>}</div>
+                  {soll && <><label className="inline">von <MonatWahl value={von} onChange={setSollVon} /></label>
+                    <label className="inline">bis <MonatWahl value={bis} onChange={setSollBis} /></label></>}</div>
               : <span className="muted small">Der Mieter zahlt an den Eigentümer, darum entstehen bei uns keine Sollstellungen.</span>}
           </div> })}
         </div>
