@@ -183,9 +183,14 @@ async function migrate(d: Driver) {
   await d.execute('CREATE TABLE IF NOT EXISTS _schema (version INTEGER NOT NULL)', []);
   const rows = await d.select('SELECT MAX(version) AS v FROM _schema', []);
   const current = Number(rows[0]?.v ?? 0);
+  // Jede Migration mit ihrem Versionseintrag in einer Transaktion: scheitert sie, bleibt die Datenbank wie vorher
   for (let i = current; i < MIGRATIONS.length; i++) {
-    await d.execute(MIGRATIONS[i], []);
-    await d.execute('INSERT INTO _schema (version) VALUES ($1)', [i + 1]);
+    try {
+      await d.execute(`BEGIN;\n${MIGRATIONS[i]}\nINSERT INTO _schema (version) VALUES (${i + 1});\nCOMMIT;`, []);
+    } catch (e) {
+      await d.execute('ROLLBACK', []).catch(() => {});
+      throw e;
+    }
   }
   if (!isTauri && !serverAdresse() && current === 0) await seedDemo(d);
 }
@@ -206,6 +211,11 @@ export const sicherheit = {
   async entsperren(passwort: string, neu: boolean) {
     await invoke(neu ? 'db_einrichten' : 'db_oeffnen', { passwort });
     const d = tauriDriver();
+    // Vor einer Datenbank-Aktualisierung (neue NANO-Version) immer zuerst eine Sicherung anlegen
+    if (!neu) {
+      const v = await d.select('SELECT MAX(version) AS v FROM _schema', []).then((r) => Number(r[0]?.v ?? 0)).catch(() => 0);
+      if (v > 0 && v < MIGRATIONS.length) await invoke('db_sicherung_erstellen', { ordnerPfad: null });
+    }
     ready = migrate(d).then(() => d);
     await ready;
     // Ablageordner aus den Einstellungen für Dateizugriff freigeben, tägliche Sicherung anlegen
