@@ -349,9 +349,9 @@ export function saldoHinweis(umsaetze: Umsatz[], anfang?: number, ende?: number)
 
 /** Betrag aus OCR-Text: das letzte Trennzeichen vor zwei Ziffern ist das Komma, alle anderen sind Tausenderpunkte */
 function ocrBetrag(s: string): number {
-  const t = s.replace(/[^\d.,]/g, '');
-  const m = t.match(/^(.*)[.,](\d{2})$/);
-  return m ? Number(m[1].replace(/[.,]/g, '') + '.' + m[2]) : Number(t.replace(/[.,]/g, ''));
+  const t = s.replace(/[^\d.,;:]/g, '');
+  const m = t.match(/^(.*)[.,;:](\d{2})$/);
+  return m ? Number(m[1].replace(/[.,;:]/g, '') + '.' + m[2]) : Number(t.replace(/[.,;:]/g, ''));
 }
 
 /** Umsatzliste aus dem Online-Banking (z. B. Volksbank „Umsätze“ als PDF gedruckt):
@@ -360,7 +360,11 @@ const VIER = new WeakMap<Umsatz, number>();
 export function parseOnlineListe(text: string): PdfAuszug {
   const zeilen = text.split('\n').map((z) => z.replace(/\s+/g, ' ').trim()).filter(Boolean);
   // „Name ±Betrag EUR“, wahlweise gleich dahinter „[IBAN] Datum“
-  const KOPF = /^(.*?)\s*([+\-−–$*·•]?)\s?(\d{1,3}(?:[.,]\d{3})*[.,]\d{2})\s*(?:EUR|€)\b\s*(.*)$/i;
+  // Dezimaltrenner: Komma, oder von der Texterkennung als Punkt, Semikolon oder Doppelpunkt gelesen
+  const KOPF = /^(.*?)\s*([+\-−–$*·•]?)\s?(\d{1,3}(?:[.,]\d{3})*[.,;:]\d{2})\s*(?:EUR|€)\b\s*(.*)$/i;
+  const DAT_IRGENDWO = /(\d{1,2})[.:,](\d{1,2})[.:,](20\d{2})/;
+  const BETRAGZEILE = /\d[.,;:]\d{2}\s*(?:EUR|€)/i;
+  const unerkannt: string[] = [];
   const DAT = /(\d{1,2})[.:,](\d{1,2})[.:,](20\d{2})\W*$/;
   const IBAN = /^([A-Z]{2}\d{2}[A-Z0-9]{10,30})$/;
   let anfang: number | undefined, ende: number | undefined;
@@ -388,7 +392,11 @@ export function parseOnlineListe(text: string): PdfAuszug {
       if (/startsaldo|anfangssaldo|alter (kontostand|saldo)/i.test(z)) { anfang = wert; continue; }
       if (/endsaldo|neuer (kontostand|saldo)/i.test(z)) { fertig(); ende = wert; continue; }
       fertig();
-      const neu: Akt = { datum: '', betrag: wert, gegenpartei: k[1].replace(/[|]/g, ' ').replace(/[,:;]+$/, '').trim().slice(0, 120), gegen_iban: '',
+      // Datum vor dem Betrag in der Namenszeile („Volksbank … 27.05.2025 +3,97 EUR“)
+      let name = k[1], datumVorn = '';
+      const dv = name.match(DAT_IRGENDWO);
+      if (dv) { datumVorn = `${dv[3]}-${dv[2].padStart(2, '0')}-${dv[1].padStart(2, '0')}`; name = name.replace(dv[0], ' '); }
+      const neu: Akt = { datum: datumVorn, betrag: wert, gegenpartei: name.replace(/[|]/g, ' ').replace(/\s+/g, ' ').replace(/[,:;]+$/, '').trim().slice(0, 120), gegen_iban: '',
         verwendungszweck: '', teile: [], offen: true, zeilen: 0, ...(!k[2] ? { pruefen: 'Vorzeichen' } : {}) };
       // ohne Vorzeichen und mit führender 4: oft ist die 4 ein falsch gelesenes „+“
       if (!k[2] && /^4\d/.test(k[3]) && !/^4[.,]/.test(k[3])) VIER.set(neu, ocrBetrag(k[3].slice(1)));
@@ -396,6 +404,7 @@ export function parseOnlineListe(text: string): PdfAuszug {
       akt = neu;
       continue;
     }
+    if (BETRAGZEILE.test(z)) unerkannt.push(z);
     if (!akt) continue;
     const u: Akt = akt;
     u.zeilen++;
@@ -403,6 +412,7 @@ export function parseOnlineListe(text: string): PdfAuszug {
     if (!u.datum) {
       // das Datum muss direkt unter dem Betrag stehen, sonst war es ein Betrag im Verwendungszweck
       if (u.zeilen === 1 && datumZeile(u, z)) continue;
+      unerkannt.push(`${u.gegenpartei} ${eurText(u.betrag)}`.trim());
       const vorher = out[out.length - 1];
       if (vorher && vorher.verwendungszweck.length < 300) vorher.verwendungszweck += ` ${u.gegenpartei} ${eurText(Math.abs(u.betrag))} ${z}`.replace(/\s+/g, ' ');
       akt = null; continue;
@@ -414,7 +424,10 @@ export function parseOnlineListe(text: string): PdfAuszug {
   const umsaetze = out.filter((u) => u.betrag !== 0);
   vorzeichenKlaeren(umsaetze, anfang, ende);
   ziffernPruefen(umsaetze, anfang, ende);
-  return { umsaetze, anfang, ende, hinweis: saldoHinweis(umsaetze, anfang, ende) };
+  let hinweis = saldoHinweis(umsaetze, anfang, ende);
+  if (/^Achtung/.test(hinweis) && unerkannt.length)
+    hinweis += ` Diese Zeilen mit Betrag wurden nicht als Umsatz erkannt, bitte mit dem Auszug vergleichen: ${unerkannt.slice(0, 6).map((z) => `„${z.slice(0, 70)}“`).join(', ')}${unerkannt.length > 6 ? ` und ${unerkannt.length - 6} weitere` : ''}.`;
+  return { umsaetze, anfang, ende, hinweis };
 }
 
 /** Bleibt eine Differenz zum Endsaldo, die Umsätze markieren, bei denen eine einzige falsch gelesene Ziffer genau diese Differenz erklärt */
