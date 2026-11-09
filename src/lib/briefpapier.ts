@@ -1,3 +1,4 @@
+import { pdfjsLaden } from './pdfjs';
 // Briefpapier: eigene Vorlage (PDF oder Bild) als Hintergrund für alle Briefe und Abrechnungen.
 // Die Vorlage wird beim Hochladen in ein A4-Bild umgewandelt (Seite 1 = erste Seite, Seite 2 = Folgeseiten)
 // und in den Einstellungen gespeichert. Die PDFs legen das Bild auf jeder Seite unter den Text.
@@ -14,12 +15,6 @@ export interface Briefpapier {
 
 const BREITE = 1240, HOEHE = 1754; // A4 bei 150 dpi
 
-async function pdfjsLaden() {
-  const pdfjs = await import('pdfjs-dist');
-  const worker = (await import('pdfjs-dist/build/pdf.worker.min.mjs?url')).default;
-  pdfjs.GlobalWorkerOptions.workerSrc = worker;
-  return pdfjs;
-}
 
 /** Seiten einer PDF als Bilder (data-URL), z. B. für Vorschauen */
 export async function pdfSeitenAlsBilder(daten: Uint8Array, maxSeiten = 2, breite = BREITE, typ = 'image/jpeg'): Promise<string[]> {
