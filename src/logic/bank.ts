@@ -278,6 +278,65 @@ export interface PdfAuszug { umsaetze: Umsatz[]; anfang?: number; ende?: number;
 /** Liest die Umsätze aus dem Text eines PDF-Kontoauszugs (Sparkasse, Volksbank, Commerzbank, Deutsche Bank, ING u. a.).
  *  Erkennt Zeilen, die mit einem Datum beginnen und mit einem Betrag enden; Folgezeilen sind Empfänger und Verwendungszweck. */
 export function parsePdfAuszug(text: string): PdfAuszug {
+  const a = parseKlassisch(text), b = parseOnlineListe(text);
+  return b.umsaetze.length > a.umsaetze.length ? b : a;
+}
+
+const eurText = (n: number) => n.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €';
+function saldoHinweis(umsaetze: Umsatz[], anfang?: number, ende?: number) {
+  const summe = Math.round(umsaetze.reduce((a, u) => a + u.betrag, 0) * 100) / 100;
+  if (anfang === undefined) return 'Kontostand nicht gefunden, bitte die Liste prüfen.';
+  if (ende === undefined) return `Anfangssaldo ${eurText(anfang)}, Umsätze ${eurText(summe)}, rechnerischer Endstand ${eurText(Math.round((anfang + summe) * 100) / 100)}. Bitte mit dem Kontostand vergleichen.`;
+  return Math.abs(anfang + summe - ende) < 0.01 ? `Kontostand passt: ${eurText(anfang)} + Umsätze ${eurText(summe)} = ${eurText(ende)}.`
+    : `Achtung: Alter Kontostand ${eurText(anfang)} + Umsätze ${eurText(summe)} ergibt nicht den neuen Kontostand ${eurText(ende)}. Bitte die Liste prüfen.`;
+}
+
+/** Betrag aus OCR-Text: das letzte Trennzeichen vor zwei Ziffern ist das Komma, alle anderen sind Tausenderpunkte */
+function ocrBetrag(s: string): number {
+  const t = s.replace(/[^\d.,]/g, '');
+  const m = t.match(/^(.*)[.,](\d{2})$/);
+  return m ? Number(m[1].replace(/[.,]/g, '') + '.' + m[2]) : Number(t.replace(/[.,]/g, ''));
+}
+
+/** Umsatzliste aus dem Online-Banking (z. B. Volksbank „Umsätze“ als PDF gedruckt):
+ *  „Name  +900,00 EUR“, darunter „IBAN  02.01.2025“, danach der Verwendungszweck. */
+export function parseOnlineListe(text: string): PdfAuszug {
+  const zeilen = text.split('\n').map((z) => z.replace(/\s+/g, ' ').trim()).filter(Boolean);
+  const KOPF = /^(.*?)\s*([+\-−–$]?)\s?(\d{1,3}(?:[.,]\d{3})*[.,]\d{2})\s*(?:EUR|€)$/i;
+  const DAT = /(\d{1,2})[.:,](\d{1,2})[.:,](20\d{2})/;
+  const IBAN = /\b([A-Z]{2}\d{2}[A-Z0-9]{10,30})\b/;
+  let anfang: number | undefined, ende: number | undefined;
+  const out: Umsatz[] = [];
+  let akt: (Umsatz & { teile: string[]; offen: boolean }) | null = null;
+  const fertig = () => { if (akt?.datum) { const { teile, offen: _o, ...u } = akt; u.verwendungszweck = teile.join(' ').slice(0, 400); out.push(u); } akt = null; };
+  for (const z of zeilen) {
+    const k = z.match(KOPF);
+    if (k) {
+      const wert = ocrBetrag(k[3]) * (/[-−–]/.test(k[2]) ? -1 : 1);
+      if (/startsaldo|anfangssaldo|alter (kontostand|saldo)/i.test(z)) { anfang = wert; continue; }
+      if (/endsaldo|neuer (kontostand|saldo)/i.test(z)) { fertig(); ende = wert; continue; }
+      fertig();
+      akt = { datum: '', betrag: wert, gegenpartei: k[1].replace(/[|]/g, ' ').trim().slice(0, 120), gegen_iban: '', verwendungszweck: '', teile: [], offen: true };
+      continue;
+    }
+    if (!akt) continue;
+    if (/^seite \d+ (von|\/) \d+/i.test(z)) { akt.offen = false; continue; }
+    if (!akt.datum) {
+      const d = z.match(DAT);
+      if (d) {
+        akt.datum = `${d[3]}-${d[2].padStart(2, '0')}-${d[1].padStart(2, '0')}`;
+        const i = z.slice(0, d.index).replace(/[\s|]/g, '').match(IBAN); if (i) akt.gegen_iban = i[1];
+        continue;
+      }
+    }
+    if (akt.offen && akt.teile.length < 4) akt.teile.push(z.replace(/[|]/g, ' ').replace(/\bTAN:?\s*\S+/i, '').replace(/\s+/g, ' ').trim());
+  }
+  fertig();
+  const umsaetze = out.filter((u) => u.betrag !== 0);
+  return { umsaetze, anfang, ende, hinweis: saldoHinweis(umsaetze, anfang, ende) };
+}
+
+function parseKlassisch(text: string): PdfAuszug {
   const zeilen = text.split('\n').map((z) => z.replace(/\s+/g, ' ').trim()).filter(Boolean);
   const jahrText = text.match(/\b\d{1,2}\.\d{1,2}\.(20\d{2})\b/)?.[1] ?? text.match(/\b(20\d{2})\b/)?.[1] ?? String(new Date().getFullYear());
   const saldo = (re: RegExp) => { const z = zeilen.find((x) => re.test(x)); const m = z?.match(GELD); if (!m) return undefined;
