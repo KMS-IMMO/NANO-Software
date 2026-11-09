@@ -196,15 +196,33 @@ export async function vorschlag(u: Row): Promise<Vorschlag | null> {
 /** Verteilt einen Zahlungseingang auf die offenen Posten einer Person (älteste zuerst). */
 export async function zuordnenPerson(u: Row, personId: number) {
   const objekt = (await db.select('SELECT objekt_id FROM bankkonten WHERE id = $1', [u.bankkonto_id]))[0]?.objekt_id ?? null;
-  const ops = (await db.select(`SELECT * FROM (${OP_SQL}) WHERE person_id = $1 AND betrag - bezahlt > 0.005 ORDER BY faellig, id`, [personId]))
+  let ops = (await db.select(`SELECT * FROM (${OP_SQL}) WHERE person_id = $1 AND betrag - bezahlt > 0.005 ORDER BY faellig, einheit_lfd, id`, [personId]))
     .filter((o) => !objekt || o.objekt_id === objekt);
-  // Hausgeld und Rücklage getrennt überwiesen: Verwendungszweck „Rücklage“ oder genau passender Betrag bestimmt,
-  // welcher Posten zuerst bezahlt wird. Sonst gilt die Reihenfolge nach Fälligkeit.
   const offen = (o: Row) => Math.round((o.betrag - o.bezahlt) * 100) / 100;
   const betragU = Math.round(u.betrag * 100) / 100;
-  const zweckRl = /r(ü|ue)cklage/i.test(`${u.verwendungszweck ?? ''}`);
-  const rang = (o: Row) => (zweckRl && o.art === 'Rücklage' ? 0 : !zweckRl && offen(o) === betragU ? 1 : 2);
-  ops.sort((a, b) => rang(a) - rang(b));
+  const text = norm(`${u.verwendungszweck ?? ''} ${u.gegenpartei ?? ''}`);
+  // Mieter/Eigentümer mehrerer Einheiten: die Einheit aus dem Verwendungszweck (z. B. „2.OG“, „Anbau“) oder mit genau passendem Monatsbetrag
+  const einheiten = [...new Set(ops.map((o) => o.einheit_id))];
+  if (einheiten.length > 1) {
+    const imText = einheiten.filter((eid) => {
+      const n = norm(String(ops.find((o) => o.einheit_id === eid)?.einheit ?? '')).replace(/\s+/g, ' ').trim();
+      return n.length >= 2 && new RegExp(`(^|\\s)${n.replace(/ /g, '\\s*')}(\\s|$)`).test(text);
+    });
+    const monatSumme = (eid: number) => { const e = ops.filter((o) => o.einheit_id === eid); const m = e[0]?.monat;
+      return Math.round(e.filter((o) => o.monat === m).reduce((a, o) => a + offen(o), 0) * 100) / 100; };
+    const passend = einheiten.filter((eid) => monatSumme(eid) === betragU || ops.some((o) => o.einheit_id === eid && offen(o) === betragU));
+    const wahl = imText.length === 1 ? imText[0] : passend.length === 1 ? passend[0] : null;
+    if (wahl !== null) ops = ops.filter((o) => o.einheit_id === wahl);
+  }
+  // Zahlweise der Liegenschaft: „zusammen“ = eine Überweisung je Monat (Miete + Nebenkosten bzw. Hausgeld + Rücklage),
+  // „getrennt“ = einzelne Überweisungen; dann bestimmen Verwendungszweck und genau passender Betrag den Posten.
+  const getrennt = ops.length ? await zahlweiseGetrennt(ops[0].objekt_id, personId, ops[0].einheit_id) : false;
+  if (getrennt) {
+    const art = /r(ü|ue)cklage/i.test(text) ? 'Rücklage' : /\b(nk|nebenkosten|betriebskosten|bk)\b/.test(text) ? 'NK'
+      : /\b(hk|heizkosten|heizung)\b/.test(text) ? 'HK' : null;
+    const rang = (o: Row) => (art && o.art === art ? 0 : offen(o) === betragU ? 1 : 2);
+    ops.sort((a, b) => rang(a) - rang(b));
+  }
   const konten = await db.select('SELECT id, nummer FROM buchungskonten');
   const kontoId = (art: string) => konten.find((k) => k.nummer === (KONTO_FUER_ART[art] ?? '1000'))?.id ?? null;
   let rest = Math.round(u.betrag * 100) / 100;
@@ -253,12 +271,41 @@ export async function zuordnungLoesen(u: Row) {
   await db.execute(`UPDATE bankumsaetze SET status = 'offen' WHERE id = $1`, [u.id]);
 }
 
-/** Bankumsätze ganz löschen (vorher Zuordnung lösen). Beim nächsten Import desselben Auszugs kommen sie wieder. */
+/** Zahlweise einer Liegenschaft (Einstellung in den Stammdaten; bei WEG mit Ausnahme je Eigentümer) */
+async function zahlweiseGetrennt(objektId: number, personId: number, einheitId: number): Promise<boolean> {
+  const o = (await db.select('SELECT verwaltungsart, miete_zahlweise, ruecklage_zahlweise FROM objekte WHERE id = $1', [objektId]))[0];
+  if (!o) return false;
+  if (o.verwaltungsart === 'WEG') {
+    const ei = (await db.select('SELECT zahlweise FROM eigentum WHERE einheit_id = $1 AND person_id = $2 ORDER BY id DESC LIMIT 1', [einheitId, personId]))[0];
+    return (ei?.zahlweise || o.ruecklage_zahlweise) === 'getrennt';
+  }
+  return o.miete_zahlweise === 'getrennt';
+}
+
+/** Bankumsätze ganz löschen (vorher Zuordnung lösen). Beim nächsten Import desselben Auszugs kommen sie wieder.
+ *  Hat ein Konto danach keine Umsätze mehr, wird sein Startsaldo zurückgesetzt, damit ein neuer Import frisch beginnt. */
 export async function umsaetzeLoeschen(ids: number[]) {
+  const konten = new Set<number>();
   for (const id of ids) {
+    const k = (await db.select('SELECT bankkonto_id FROM bankumsaetze WHERE id = $1', [id]))[0]?.bankkonto_id;
+    if (k) konten.add(k);
     await zuordnungLoesen({ id });
     await db.execute('DELETE FROM bankumsaetze WHERE id = $1', [id]);
   }
+  for (const k of konten) {
+    const rest = await db.select('SELECT 1 FROM bankumsaetze WHERE bankkonto_id = $1 LIMIT 1', [k]);
+    if (!rest.length) await db.execute('UPDATE bankkonten SET anfangssaldo = 0, saldo_datum = NULL WHERE id = $1', [k]);
+  }
+}
+
+/** Startsaldo aus dem Kontoauszug übernehmen, wenn das Konto noch keine Umsätze hat (erster Import oder nach dem Löschen) */
+export async function startsaldoUebernehmen(kontoId: number, anfang: number | undefined, ersterTag: string | undefined) {
+  if (anfang === undefined || !ersterTag) return false;
+  const da = await db.select('SELECT 1 FROM bankumsaetze WHERE bankkonto_id = $1 LIMIT 1', [kontoId]);
+  if (da.length) return false;
+  const vortag = new Date(new Date(ersterTag + 'T12:00:00').getTime() - 864e5).toISOString().slice(0, 10);
+  await db.execute('UPDATE bankkonten SET anfangssaldo = $1, saldo_datum = $2 WHERE id = $3', [anfang, vortag, kontoId]);
+  return true;
 }
 
 /** Ordnet alle offenen Umsätze zu, bei denen der Vorschlag sicher ist. */

@@ -4,19 +4,19 @@ import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { FileUp, Landmark } from 'lucide-react';
 import { db, insert, type Row } from '../db';
-import { auszugLesen, automatischZuordnen, bilderLesen, importieren, saldoHinweis, type Umsatz } from '../logic/bank';
+import { auszugLesen, automatischZuordnen, bilderLesen, importieren, saldoHinweis, startsaldoUebernehmen, type Umsatz } from '../logic/bank';
 import { istBild } from '../logic/ocr';
 import { datum, eur } from './EntityTable';
 
 const zahl = (s: string) => Number(String(s ?? '').replace(/\./g, '').replace(',', '.')) || 0;
 
-export function AuszugImport({ objektId, onDone, kompakt }: { objektId: number | null; onDone: () => void; kompakt?: boolean }) {
+export function AuszugImport({ objektId, onDone, kompakt, kontoId }: { objektId: number | null; onDone: () => void; kompakt?: boolean; kontoId?: number }) {
   const [drag, setDrag] = useState(false);
   const [busy, setBusy] = useState(false);
   const [stand, setStand] = useState('');
   const [info, setInfo] = useState<{ text: string; offen: number } | null>(null);
   const [fehler, setFehler] = useState('');
-  const [vorschau, setVorschau] = useState<{ umsaetze: Umsatz[]; hinweise: string[]; dateien: string[]; saldo?: { anfang: number; ende?: number } } | null>(null);
+  const [vorschau, setVorschau] = useState<{ umsaetze: Umsatz[]; hinweise: string[]; dateien: string[]; saldo?: { anfang: number; ende?: number }; anfang?: number } | null>(null);
   const [konten, setKonten] = useState<Row[]>([]);
   const [konto, setKonto] = useState<number | ''>('');
   const [neu, setNeu] = useState({ name: 'Bankkonto', iban: '', saldo: '', datum: '' });
@@ -25,9 +25,9 @@ export function AuszugImport({ objektId, onDone, kompakt }: { objektId: number |
   const kontenLaden = async () => {
     const k = await db.select(`SELECT b.*, o.name AS objekt FROM bankkonten b LEFT JOIN objekte o ON o.id = b.objekt_id
       ${objektId ? 'WHERE b.objekt_id = ' + Number(objektId) : ''} ORDER BY o.name, b.name`);
-    setKonten(k); if (k.length === 1) setKonto(k[0].id);
+    setKonten(k); if (kontoId && k.some((x) => x.id === kontoId)) setKonto(kontoId); else if (k.length === 1) setKonto(k[0].id);
   };
-  useEffect(() => { kontenLaden(); }, [objektId]);
+  useEffect(() => { kontenLaden(); }, [objektId, kontoId]);
 
   async function lesen(files: FileList | File[]) {
     setFehler(''); setInfo(null); setBusy(true);
@@ -50,7 +50,7 @@ export function AuszugImport({ objektId, onDone, kompakt }: { objektId: number |
       if (!umsaetze.length) setFehler('In der Datei wurden keine Umsätze gefunden.');
       else {
         const saldo = gruppen.length === 1 && mitSaldo === 1 && anfang !== undefined ? { anfang, ende } : undefined;
-        setVorschau({ umsaetze, hinweise: saldo ? hinweise.filter((h) => !/Kontostand|Anfangssaldo/.test(h)) : hinweise, dateien: namen, saldo });
+        setVorschau({ umsaetze, hinweise: saldo ? hinweise.filter((h) => !/Kontostand|Anfangssaldo/.test(h)) : hinweise, dateien: namen, saldo, anfang });
         const erstes = umsaetze[0].datum;
         setNeu((n) => ({ ...n, saldo: n.saldo || (anfang !== undefined ? String(anfang).replace('.', ',') : ''), datum: n.datum || new Date(new Date(erstes + 'T12:00:00').getTime() - 864e5).toISOString().slice(0, 10) }));
       }
@@ -62,7 +62,8 @@ export function AuszugImport({ objektId, onDone, kompakt }: { objektId: number |
     if (!vorschau) return;
     setBusy(true); setFehler('');
     try {
-      let kid = konto;
+      let kid = konto, start = false;
+      if (kid !== '') start = await startsaldoUebernehmen(Number(kid), vorschau.anfang, vorschau.umsaetze[0]?.datum);
       if (kid === '') {
         if (!objektId) { setFehler('Bitte ein Bankkonto wählen.'); setBusy(false); return; }
         kid = await insert('bankkonten', { objekt_id: objektId, name: neu.name.trim() || 'Bankkonto', iban: neu.iban.replace(/\s/g, '').toUpperCase() || null,
@@ -71,7 +72,7 @@ export function AuszugImport({ objektId, onDone, kompakt }: { objektId: number |
       const r = await importieren(Number(kid), vorschau.umsaetze);
       const a = await automatischZuordnen();
       const offen = Number((await db.select(`SELECT COUNT(*) AS n FROM bankumsaetze WHERE bankkonto_id = $1 AND status = 'offen'`, [kid]))[0]?.n ?? 0);
-      setInfo({ text: `${r.neu} Umsätze übernommen${r.doppelt ? `, ${r.doppelt} waren schon vorhanden` : ''}. ${a.zugeordnet} automatisch gebucht.`, offen });
+      setInfo({ text: `${r.neu} Umsätze übernommen${r.doppelt ? `, ${r.doppelt} waren schon vorhanden` : ''}. ${a.zugeordnet} automatisch gebucht.${start ? ` Startsaldo ${eur(vorschau.anfang!)} aus dem Auszug übernommen.` : ''}`, offen });
       setVorschau(null); kontenLaden(); onDone();
     } catch (e: any) { setFehler(String(e?.message ?? e)); }
     finally { setBusy(false); }

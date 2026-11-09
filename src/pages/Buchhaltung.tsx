@@ -1,4 +1,5 @@
 // Buchhaltung: Buchungsjournal mit manueller Buchung, Buchungsregeln, Kontenübersicht (GuV) und Berichte.
+import { OffeneUmsaetze } from '../components/OffeneUmsaetze';
 import { AuszugImport } from '../components/AuszugImport';
 import { useEffect, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -59,8 +60,27 @@ export function JournalPage() {
   const [belegFuer, setBelegFuer] = useState<Row | null>(null);
   const [datev, setDatev] = useState(false);
   const [buchen, setBuchen] = useState(false);
+  const [bankVersion, setBankVersion] = useState(0);
+  const [wahl, setWahl] = useState<Set<number>>(new Set());
 
   useEffect(() => { db.select(kontoOptions).then(setKonten); }, []);
+  // Jahr mit Buchungen zeigen: hat das gewählte Jahr keine, das neueste Jahr mit Buchungen wählen
+  const jahrPruefen = async () => {
+    const wo = objekt !== '' ? `WHERE b.objekt_id = ${Number(objekt)}` : '';
+    const r = (await db.select(`SELECT MAX(${BJ('b')}) AS j, SUM(CASE WHEN ${BJ('b')} = ${Number(jahr)} THEN 1 ELSE 0 END) AS n FROM buchungen b ${wo}`))[0];
+    if (r?.j && !Number(r.n) && Number(r.j) !== jahr) setJahr(Number(r.j));
+  };
+  useEffect(() => { jahrPruefen(); }, [objekt]);
+  useEffect(() => { setWahl(new Set()); }, [objekt, jahr, monat, kontoWahl.join(',')]);
+  const nachBank = (t?: string) => { if (t) setInfo(t); load(); jahrPruefen(); };
+  async function auswahlLoeschen() {
+    const liste = rows.filter((r) => wahl.has(r.id));
+    for (const r of liste) { const sp = await gesperrt(Number(r.objekt_id), r.datum); if (sp) { setInfo(sperrText(sp)); return; } }
+    const bank = liste.filter((r) => r.bankumsatz_id).length;
+    if (!window.confirm(`${liste.length} Buchung(en) über zusammen ${eur(liste.reduce((a, r) => a + Math.abs(Number(r.betrag)), 0))} löschen?${bank ? `\n\n${bank} davon stammen aus dem Kontoauszug. Die Bankumsätze stehen danach wieder oben unter „Aus dem Kontoauszug“ zum Buchen bereit.` : ''}`)) return;
+    for (const r of liste) await buchungLoeschen(Number(r.id));
+    setWahl(new Set()); setInfo(`${liste.length} Buchung(en) gelöscht.`); load(); setBankVersion((v) => v + 1);
+  }
   const load = async () => {
     const w = [`${BJ('b')} = ${Number(jahr)}`];
     if (monat) w.push(`substr(b.datum, 6, 2) = '${monat}'`);
@@ -130,7 +150,7 @@ export function JournalPage() {
     if (sp) { setEdit(null); setInfo(sperrText(sp)); return; }
     const h = loeschHinweis(r);
     if (!window.confirm(`Buchung ${r.id} über ${eur(Math.abs(Number(r.alt_betrag ?? r.betrag)))} löschen?${h ? '\n\n' + h : ''}`)) return;
-    await buchungLoeschen(Number(r.id)); setEdit(null); setInfo(`Buchung ${r.id} gelöscht.`); load();
+    await buchungLoeschen(Number(r.id)); setEdit(null); setInfo(`Buchung ${r.id} gelöscht.`); load(); setBankVersion((v) => v + 1);
   }
   const bearbeiten = (r: Row) => { setFehler(''); setModus('buchung'); setEdit({ ...r, firma: r.firma ?? '', alt_betrag: r.betrag, alt_datum: r.datum, alt_objekt: r.objekt_id, anteil_35a: r.anteil_35a == null ? '' : String(r.anteil_35a).replace('.', ','), richtung: r.betrag > 0 ? 'Einnahme' : 'Ausgabe', betrag: String(Math.abs(r.betrag)).replace('.', ',') }); };
   async function rechnungLoeschen(r: Row) {
@@ -196,7 +216,8 @@ export function JournalPage() {
         <button className="primary" onClick={() => setBuchen(true)}><Plus size={16} />Buchen</button>
       </section>
       {info && <p className="info">{info}</p>}
-      <AuszugImport objektId={objekt === '' ? null : Number(objekt)} kompakt onDone={load} />
+      <AuszugImport objektId={objekt === '' ? null : Number(objekt)} kompakt onDone={() => { setBankVersion((v) => v + 1); nachBank(); }} />
+      <OffeneUmsaetze objektId={objekt === '' ? null : Number(objekt)} version={bankVersion} onChange={nachBank} />
       <div className="seg">
         <button className={ansicht === 'buchungen' ? 'on' : ''} onClick={() => setAnsicht('buchungen')}>Buchungen ({rows.length})</button>
         <button className={ansicht === 'rechnungen' ? 'on' : ''} onClick={() => setAnsicht('rechnungen')}>Offene Rechnungen ({offeneRechnungen.length})</button>
@@ -224,11 +245,19 @@ export function JournalPage() {
       ) : (
       <section className="card">
         <div className="card-head"><h2 className="title-ico"><BookOpen size={22} />Buchungen ({rows.length})</h2></div>
+        {wahl.size > 0 && (
+          <div className="auswahl-leiste">
+            <b>{wahl.size} ausgewählt</b>
+            <button className="danger" onClick={auswahlLoeschen}><Trash2 size={14} /> Buchungen löschen</button>
+            <button className="link" onClick={() => setWahl(new Set())}>Auswahl aufheben</button>
+          </div>)}
         {rows.length === 0 ? <p className="muted">Keine Buchungen im Zeitraum.</p> : (
           <div className="tablewrap"><table className="list gross">
-            <thead><tr><th>Bu.-Nr.</th><th>Datum</th><th>{fix ? 'Einheit' : 'Liegenschaft'}</th><th>Konto</th><th>Unternehmen</th><th>Buchungstext</th><th className="num">Soll</th><th className="num">Haben</th><th /></tr></thead>
+            <thead><tr><th className="wahl"><input type="checkbox" title="Alle auswählen" checked={rows.length > 0 && rows.every((r) => wahl.has(r.id))}
+              onChange={(e) => setWahl(e.target.checked ? new Set(rows.map((r) => r.id)) : new Set())} /></th><th>Bu.-Nr.</th><th>Datum</th><th>{fix ? 'Einheit' : 'Liegenschaft'}</th><th>Konto</th><th>Unternehmen</th><th>Buchungstext</th><th className="num">Soll</th><th className="num">Haben</th><th /></tr></thead>
             <tbody>{rows.map((r) => (
               <tr key={r.id}>
+                <td className="wahl"><input type="checkbox" checked={wahl.has(r.id)} onChange={() => setWahl((w) => { const n = new Set(w); if (n.has(r.id)) n.delete(r.id); else n.add(r.id); return n; })} /></td>
                 <td>{r.id}</td><td>{datum(r.datum)}</td><td>{!fix && r.objekt}<div className={fix ? '' : 'muted small'}>{r.einheit ?? (r.betrag < 0 ? 'alle Einheiten' : fix ? 'gesamtes Objekt' : '')}</div></td>
                 <td>{r.nummer ? `${r.nummer} ${r.konto}` : <span className="tag">ohne Konto</span>}</td>
                 <td>{r.firma ?? <span className="muted">–</span>}</td>
@@ -239,10 +268,10 @@ export function JournalPage() {
                   <button className="icon-btn" title="Buchung löschen" onClick={() => loeschen(r)}><Trash2 size={15} /></button></td>
               </tr>))}
             </tbody>
-            <tfoot><tr><td colSpan={6}>Summe</td><td className="num neg">{eur(soll)}</td><td className="num">{eur(haben)}</td><td /></tr></tfoot>
+            <tfoot><tr><td colSpan={7}>Summe</td><td className="num neg">{eur(soll)}</td><td className="num">{eur(haben)}</td><td /></tr></tfoot>
           </table></div>)}
         <p className="muted small">Mit dem Stift änderst du eine Buchung, mit dem Papierkorb löschst du sie. Neue Einnahmen und Ausgaben buchst du über „Buchen“, Rechnungen mit Beleg über „Rechnung erfassen“.
-          Gelöschte Bankbuchungen erscheinen wieder als offener Umsatz unter „Bank &amp; Zuordnung“.</p>
+          Mit den Häkchen wählst du mehrere Buchungen zum Löschen aus. Gelöschte Bankbuchungen stehen danach wieder oben unter „Aus dem Kontoauszug“ zum Buchen bereit.</p>
       </section>)}
       {edit && (
         <div className="modal-bg" onClick={() => setEdit(null)}>

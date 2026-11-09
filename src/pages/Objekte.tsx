@@ -40,6 +40,8 @@ const objektFields: Field[] = [
   { key: 'heizungsart', label: 'Heizungsart', type: 'select', hideInTable: true,
     options: ['Gas-Zentralheizung', 'Öl-Zentralheizung', 'Fernwärme', 'Wärmepumpe', 'Pellets', 'Gasetagenheizung', 'Nachtspeicher', 'Sonstige'] },
   { key: 'warmwasser', label: 'Warmwasserversorgung', type: 'select', hideInTable: true, options: WARMWASSER },
+  { key: 'miete_zahlweise', label: 'Mieter zahlen Miete und Nebenkosten (nur Mietverwaltung)', type: 'select', hideInTable: true, wide: true,
+    options: [{ value: 'zusammen', label: 'zusammen in einer Überweisung' }, { value: 'getrennt', label: 'getrennt in einzelnen Überweisungen' }] },
   { key: 'eigentuemer_id', label: 'Eigentümer (nur Mietverwaltung)', type: 'select', optionsSql: personOptions('Eigentümer'), hideInTable: true, wide: true },
   { key: 'notiz', label: 'Notiz', type: 'textarea', hideInTable: true },
 ];

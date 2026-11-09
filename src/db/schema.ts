@@ -647,4 +647,8 @@ UPDATE buchungskonten SET rechnung_pflicht = 1 WHERE art = 'Aufwand' AND (hdl = 
   `
 ALTER TABLE erinnerungen ADD COLUMN erstellt TEXT;
 `,
+  // Migration 22: Zahlweise der Mieter (Miete und Nebenkosten in einer Überweisung oder getrennt)
+  `
+ALTER TABLE objekte ADD COLUMN miete_zahlweise TEXT NOT NULL DEFAULT 'zusammen';  -- zusammen | getrennt
+`,
 ];
