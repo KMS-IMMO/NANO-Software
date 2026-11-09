@@ -171,7 +171,7 @@ export const KONTO_FUER_ART: Record<string, string> = {
 /** Offene Posten mit bezahltem Betrag, Objekt, Einheit und Schuldner */
 export const OP_SQL = `
   SELECT s.*, COALESCE((SELECT SUM(b.betrag) FROM buchungen b WHERE b.sollstellung_id = s.id), 0) AS bezahlt,
-    o.id AS objekt_id, o.name AS objekt, o.verwaltungsart, e.nummer AS einheit,
+    o.id AS objekt_id, o.name AS objekt, o.verwaltungsart, e.nummer AS einheit, e.lfd_nr AS einheit_lfd,
     TRIM(COALESCE(p.firma, '') || CASE WHEN p.firma IS NOT NULL AND p.nachname IS NOT NULL THEN ', ' ELSE '' END ||
       COALESCE(p.nachname, '') || CASE WHEN p.vorname IS NOT NULL THEN ', ' || p.vorname ELSE '' END) AS schuldner
   FROM sollstellungen s

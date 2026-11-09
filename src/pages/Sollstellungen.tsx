@@ -31,7 +31,7 @@ export function SollstellungenPage() {
   const load = async () => {
     const w = [`substr(s.monat, 1, 7) BETWEEN $1 AND $2`];
     if (objekt !== '') w.push(`o.id = ${Number(objekt)}`);
-    const r = await db.select(`SELECT * FROM (${OP_SQL} WHERE ${w.join(' AND ')}) ORDER BY monat, objekt, einheit, art`, [von, bis]);
+    const r = await db.select(`SELECT * FROM (${OP_SQL} WHERE ${w.join(' AND ')}) ORDER BY monat, objekt, einheit_lfd, einheit, art`, [von, bis]);
     setRows(r);
     const da = new Set(r.map((x) => Number(x.id)));
     setWahl((alt) => new Set([...alt].filter((id) => da.has(id))));

@@ -135,7 +135,7 @@ export function WegAbrechnungPage() {
         TRIM(COALESCE(p.firma, '') || CASE WHEN p.firma IS NOT NULL AND p.nachname IS NOT NULL THEN ', ' ELSE '' END ||
           COALESCE(p.nachname, '') || CASE WHEN p.vorname IS NOT NULL THEN ', ' || p.vorname ELSE '' END) AS name
       FROM sollstellungen s JOIN einheiten e ON e.id = s.einheit_id LEFT JOIN personen p ON p.id = s.person_id
-      WHERE e.objekt_id = $1 AND s.faellig <= $2 AND s.vertrag_id IS NULL ORDER BY e.nummer, s.faellig, s.id`, [objekt, ende]);
+      WHERE e.objekt_id = $1 AND s.faellig <= $2 AND s.vertrag_id IS NULL ORDER BY e.lfd_nr, e.nummer, s.faellig, s.id`, [objekt, ende]);
     const konten: Row[] = [];
     for (const x of posten) {
       const k = `${x.person_id}|${x.einheit_id}`;

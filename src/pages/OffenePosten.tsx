@@ -21,7 +21,7 @@ export function OffenePostenPage() {
   const [objekt, setObjekt] = useState(fix ? String(fix.id) : '');
   const [gruppe, setGruppe] = useState<Gruppierung>(fix ? 'Schuldner' : 'Objekt');
 
-  const load = async () => setRows(await db.select(`${OP_SQL} ORDER BY s.faellig DESC, o.name, e.nummer`));
+  const load = async () => setRows(await db.select(`${OP_SQL} ORDER BY s.faellig DESC, o.name, e.lfd_nr, e.nummer`));
   useEffect(() => { load(); }, []);
 
   async function zahlung(r: Row) { await zahlungBuchen(r); load(); }

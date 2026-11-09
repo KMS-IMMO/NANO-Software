@@ -111,7 +111,7 @@ export function verteilen(jahr: number, einheiten: Row[], nutzer: Nutzer[], posi
 
 /** Nutzer der Einheiten eines Objekts im Jahr: Mietverträge, Leerstand (Mietverwaltung) bzw. Eigentümer (WEG) */
 export async function nutzerErmitteln(objektId: number, jahr: number, modus: 'Mieter' | 'Eigentümer'): Promise<{ einheiten: Row[]; nutzer: Nutzer[] }> {
-  const einheiten = await db.select('SELECT * FROM einheiten WHERE objekt_id = $1 ORDER BY nummer', [objektId]);
+  const einheiten = await db.select('SELECT * FROM einheiten WHERE objekt_id = $1 ORDER BY lfd_nr, nummer', [objektId]);
   const nutzer: Nutzer[] = [];
   const name = (p: Row) => [p.firma, [p.nachname, p.vorname].filter(Boolean).join(', ')].filter(Boolean).join(', ');
   const T = tageImJahr(jahr);
