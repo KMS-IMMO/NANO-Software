@@ -1031,3 +1031,7 @@ i.hq { background: #e6d3ae; border: 1.5px solid #3a3d42; } i.mv { background: #5
 .auszug-kpis { margin-bottom: 10px; }
 .auszug-konto { margin: 8px 0 12px; }
 .auszug-liste { max-height: 38vh; overflow-y: auto; }
+
+.auszug-pruefen td { background: color-mix(in srgb, #f5c542 14%, transparent); }
+.warn-text { color: #a8710b; font-size: 12px; margin-top: 2px; }
+.auszug-pm { margin-left: 6px; font-weight: 700; }
