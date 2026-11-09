@@ -107,7 +107,7 @@ export function VorgaengeTab({ objektId }: { objektId?: number }) {
           ...(objektId ? [] : [{ key: 'objekt_id', label: 'Liegenschaft', type: 'select' as const, optionsSql: objektOptions, required: true }]),
           { key: 'einheit_id', label: 'Einheit', type: 'select', hideInTable: true, leer: 'Gesamtes Objekt',
             optionsSql: `SELECT e.id AS value, ${objektId ? '' : "o.name || ' – ' || "}${einheitLabel('e')} AS label FROM einheiten e JOIN objekte o ON o.id = e.objekt_id
-              ${objektId ? `WHERE e.objekt_id = ${Number(objektId)}` : ''} ORDER BY o.name, e.nummer` },
+              ${objektId ? `WHERE e.objekt_id = ${Number(objektId)}` : ''} ORDER BY o.name, e.lfd_nr, e.nummer` },
           { key: 'betreff', label: 'Betreff', required: true, wide: true, format: (v, r) => <>{v}{r.einheit_id_label && <div className="muted small">{r.einheit_id_label}</div>}</> },
           { key: 'art', label: 'Art', type: 'select', options: ['Instandhaltung', 'Wartung', 'Schaden', 'Versicherungsschaden', 'Anfrage', 'Sonstiges'] },
           { key: 'prioritaet', label: 'Priorität', type: 'select', options: ['Niedrig', 'Mittel', 'Hoch'], required: true, format: (v) => pill(v, PRIO) },
