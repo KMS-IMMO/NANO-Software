@@ -216,7 +216,7 @@ export async function zuordnenPerson(u: Row, personId: number) {
   }
   // Zahlweise der Liegenschaft: „zusammen“ = eine Überweisung je Monat (Miete + Nebenkosten bzw. Hausgeld + Rücklage),
   // „getrennt“ = einzelne Überweisungen; dann bestimmen Verwendungszweck und genau passender Betrag den Posten.
-  const getrennt = ops.length ? await zahlweiseGetrennt(ops[0].objekt_id, personId, ops[0].einheit_id) : false;
+  const getrennt = ops.length ? await zahlweiseGetrennt(ops[0].objekt_id, personId, ops[0].einheit_id, ops[0].vertrag_id) : false;
   if (getrennt) {
     const art = /r(ü|ue)cklage/i.test(text) ? 'Rücklage' : /\b(nk|nebenkosten|betriebskosten|bk)\b/.test(text) ? 'NK'
       : /\b(hk|heizkosten|heizung)\b/.test(text) ? 'HK' : null;
@@ -271,15 +271,16 @@ export async function zuordnungLoesen(u: Row) {
   await db.execute(`UPDATE bankumsaetze SET status = 'offen' WHERE id = $1`, [u.id]);
 }
 
-/** Zahlweise einer Liegenschaft (Einstellung in den Stammdaten; bei WEG mit Ausnahme je Eigentümer) */
-async function zahlweiseGetrennt(objektId: number, personId: number, einheitId: number): Promise<boolean> {
+/** Zahlweise einer Liegenschaft (Einstellung in den Stammdaten; Ausnahme je Mietvertrag bzw. je Eigentümer) */
+async function zahlweiseGetrennt(objektId: number, personId: number, einheitId: number, vertragId?: number | null): Promise<boolean> {
   const o = (await db.select('SELECT verwaltungsart, miete_zahlweise, ruecklage_zahlweise FROM objekte WHERE id = $1', [objektId]))[0];
   if (!o) return false;
   if (o.verwaltungsart === 'WEG') {
     const ei = (await db.select('SELECT zahlweise FROM eigentum WHERE einheit_id = $1 AND person_id = $2 ORDER BY id DESC LIMIT 1', [einheitId, personId]))[0];
     return (ei?.zahlweise || o.ruecklage_zahlweise) === 'getrennt';
   }
-  return o.miete_zahlweise === 'getrennt';
+  const v = vertragId ? (await db.select('SELECT zahlweise FROM mietvertraege WHERE id = $1', [vertragId]))[0] : null;
+  return (v?.zahlweise || o.miete_zahlweise) === 'getrennt';
 }
 
 /** Bankumsätze ganz löschen (vorher Zuordnung lösen). Beim nächsten Import desselben Auszugs kommen sie wieder.

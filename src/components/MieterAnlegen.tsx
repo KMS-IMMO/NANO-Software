@@ -20,7 +20,7 @@ export function MieterAnlegen({ einheit, objekt, onClose, onSaved }: { einheit: 
     strasse: objekt.strasse ?? '', plz: objekt.plz ?? '', ort: objekt.ort ?? '',
     m2_vorname: '', m2_nachname: '',
     beginn: `${new Date().getFullYear()}-01-01`, kalt: '', nk: '', hk: '', kaution: '', personen: String(einheit.personenzahl ?? 1), tag: '3',
-    ust: gewerbe ? '19' : '0', zahlung_an: weg ? 'Eigentümer' : 'Verwaltung', notiz: '',
+    ust: gewerbe ? '19' : '0', zahlung_an: weg ? 'Eigentümer' : 'Verwaltung', zahlweise: '', notiz: '',
   });
   const [soll, setSoll] = useState(!weg);
   const vorjahr = new Date().getFullYear() - 1;
@@ -83,7 +83,7 @@ export function MieterAnlegen({ einheit, objekt, onClose, onSaved }: { einheit: 
       if (zweiter && d.m2_nachname.trim()) m2 = await insert('personen', { rolle: 'Mieter', vorname: leer(d.m2_vorname), nachname: d.m2_nachname.trim(), strasse: leer(d.strasse), plz: leer(d.plz), ort: leer(d.ort) });
       const vid = await insert('mietvertraege', { einheit_id: einheit.id, mieter_id: mid, mieter2_id: m2, beginn: d.beginn, kaltmiete: zahl(d.kalt), nk_vorauszahlung: zahl(d.nk),
         hk_vorauszahlung: zahl(d.hk), kaution: zahl(d.kaution), personenzahl: Math.max(0, Math.round(zahl(d.personen))), faellig_tag: Math.min(28, Math.max(1, Math.round(zahl(d.tag)) || 3)),
-        ust_satz: zahl(d.ust), zahlung_an: d.zahlung_an, notiz: leer(d.notiz) });
+        ust_satz: zahl(d.ust), zahlung_an: d.zahlung_an, zahlweise: d.zahlweise || null, notiz: leer(d.notiz) });
       let n = 0;
       if (soll && d.zahlung_an !== 'Eigentümer' && von <= bis) n = await sollStellen(bis, { von, vertragId: vid });
       const name = [d.firma.trim(), [d.vorname.trim(), d.nachname.trim()].filter(Boolean).join(' ')].filter(Boolean).join(', ');
@@ -139,6 +139,9 @@ export function MieterAnlegen({ einheit, objekt, onClose, onSaved }: { einheit: 
             <label><span>Personen im Haushalt</span><input inputMode="numeric" value={d.personen} onChange={s('personen')} /></label>
             <label><span>Fällig am (Tag)</span><input inputMode="numeric" value={d.tag} onChange={s('tag')} /></label>
             <label><span>Umsatzsteuer</span><select value={d.ust} onChange={s('ust')}><option value="0">keine (Wohnung)</option><option value="19">19 % (Gewerbe mit Option)</option></select></label>
+            <label><span>Zahlweise Miete + NK</span><select value={d.zahlweise} onChange={s('zahlweise')}>
+              <option value="">wie Liegenschaft ({objekt.miete_zahlweise === 'getrennt' ? 'getrennt' : 'zusammen'})</option>
+              <option value="zusammen">zusammen (eine Zahlung)</option><option value="getrennt">getrennt überwiesen</option></select></label>
             {weg && <label><span>Mieter zahlt an</span><select value={d.zahlung_an} onChange={s('zahlung_an')}><option>Eigentümer</option><option>Verwaltung</option></select></label>}
             <label className="breit3"><span>Notiz</span><input value={d.notiz} onChange={s('notiz')} /></label>
           </div> })}

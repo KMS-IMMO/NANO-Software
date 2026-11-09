@@ -651,4 +651,8 @@ ALTER TABLE erinnerungen ADD COLUMN erstellt TEXT;
   `
 ALTER TABLE objekte ADD COLUMN miete_zahlweise TEXT NOT NULL DEFAULT 'zusammen';  -- zusammen | getrennt
 `,
+  // Migration 23: Zahlweise je Mietvertrag (leer = wie Liegenschaft)
+  `
+ALTER TABLE mietvertraege ADD COLUMN zahlweise TEXT;  -- zusammen | getrennt | leer
+`,
 ];
