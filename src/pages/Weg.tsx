@@ -262,7 +262,7 @@ export function WirtschaftsplanTab({ objektId }: { objektId: number }) {
     setPlan(Object.fromEntries(p.map((x) => [x.buchungskonto_id, String(x.betrag).replace('.', ',')])));
     const ist = await kostenErmitteln(objektId, jahr - 1, false);
     setVorjahr(Object.fromEntries(ist.map((x) => [x.konto_id, x.betrag])));
-    setEinheiten(await db.select('SELECT * FROM einheiten WHERE objekt_id = $1 ORDER BY nummer', [objektId]));
+    setEinheiten(await db.select('SELECT * FROM einheiten WHERE objekt_id = $1 ORDER BY lfd_nr, nummer', [objektId]));
     setObjName((await db.select('SELECT name FROM objekte WHERE id = $1', [objektId]))[0]?.name ?? '');
     setInfo('');
   };

@@ -42,7 +42,7 @@ export function VertraegePage() {
   const nav = useNavigate();
   const fix = useObjektKontext();
   const felder = fix ? vertragFields.map((f) => f.key === 'einheit_id'
-    ? { ...f, optionsSql: `SELECT e.id AS value, ${einheitLabel('e')} || ' (' || e.typ || ')' AS label FROM einheiten e WHERE e.objekt_id = ${fix.id} ORDER BY e.nummer` } : f) : vertragFields;
+    ? { ...f, optionsSql: `SELECT e.id AS value, ${einheitLabel('e')} || ' (' || e.typ || ')' AS label FROM einheiten e WHERE e.objekt_id = ${fix.id} ORDER BY e.lfd_nr, e.nummer` } : f) : vertragFields;
   return (
     <EntityTable
       title={fix ? 'Mieter und Mietverträge' : 'Mietverträge'}

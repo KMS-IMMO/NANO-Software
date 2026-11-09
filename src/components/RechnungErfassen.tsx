@@ -99,7 +99,7 @@ export function RechnungErfassen({ objektFest, onSaved, vorlage }: { objektFest?
   }, [firmenDa]);
   useEffect(() => {
     if (objekt === '') { setEinheiten([]); return; }
-    db.select(`SELECT e.id, e.nummer, e.typ, ${einheitPerson('e')} AS person FROM einheiten e WHERE e.objekt_id = $1 ORDER BY e.nummer`, [objekt]).then(setEinheiten);
+    db.select(`SELECT e.id, e.nummer, e.typ, ${einheitPerson('e')} AS person FROM einheiten e WHERE e.objekt_id = $1 ORDER BY e.lfd_nr, e.nummer`, [objekt]).then(setEinheiten);
     setAnteile({});
   }, [objekt]);
 

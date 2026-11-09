@@ -266,7 +266,7 @@ function VorauszahlungenTab({ objektId, weg }: { objektId: number; weg: boolean 
   useEffect(() => {
     (async () => {
       const v = await db.select(`SELECT v.*, e.nummer AS einheit, ${personLabel('p')} AS mieter FROM mietvertraege v JOIN einheiten e ON e.id = v.einheit_id
-        JOIN personen p ON p.id = v.mieter_id WHERE e.objekt_id = $1 AND ${AKTIV()} ORDER BY e.nummer`, [objektId]);
+        JOIN personen p ON p.id = v.mieter_id WHERE e.objekt_id = $1 AND ${AKTIV()} ORDER BY e.lfd_nr, e.nummer`, [objektId]);
       const a = await db.select(`SELECT a.* FROM mietanpassungen a JOIN mietvertraege v ON v.id = a.vertrag_id JOIN einheiten e ON e.id = v.einheit_id WHERE e.objekt_id = $1`, [objektId]);
       const m = new Date().toISOString().slice(0, 7);
       setRows(v.map((x) => ({ ...x, jetzt: mieteImMonat(x, a.filter((y) => y.vertrag_id === x.id), m) })));
@@ -372,7 +372,7 @@ function EinheitenTab({ objektId, weg, onChange }: { objektId: number; weg: bool
   );
 }
 
-const einheitOptions = (objektId: number) => `SELECT e.id AS value, ${einheitLabel('e')} AS label FROM einheiten e WHERE e.objekt_id = ${objektId} ORDER BY e.nummer`;
+const einheitOptions = (objektId: number) => `SELECT e.id AS value, ${einheitLabel('e')} AS label FROM einheiten e WHERE e.objekt_id = ${objektId} ORDER BY e.lfd_nr, e.nummer`;
 
 const ZAHLWEISE: Record<string, string> = { zusammen: 'Hausgeld und Rücklage in einer Summe', getrennt: 'Hausgeld und Rücklage getrennt' };
 const zahlStr = (n: number) => (n ? n.toFixed(2).replace('.', ',') : '');
@@ -517,7 +517,7 @@ function HausgeldTab({ objektId, version, onChange }: { objektId: number; versio
         { key: 'davon_ruecklage', label: 'davon Erhaltungsrücklage', type: 'number', format: eur },
       ]}
       listSql={`SELECT h.*, e.nummer AS einheit_id_label FROM hausgeld h JOIN einheiten e ON e.id = h.einheit_id
-        WHERE e.objekt_id = $1 ORDER BY e.nummer, h.gueltig_ab DESC`}
+        WHERE e.objekt_id = $1 ORDER BY e.lfd_nr, e.nummer, h.gueltig_ab DESC`}
       listParams={[objektId]}
       emptyText="Noch kein Hausgeld eingetragen. Trage die Beträge oben mit „Beträge gültig ab“ ein."
     />

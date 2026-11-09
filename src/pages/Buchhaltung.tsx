@@ -323,7 +323,7 @@ function BuchungForm({ edit, setEdit, objekte, konten, fest }: { edit: Row; setE
   const [einheiten, setEinheiten] = useState<Row[]>([]);
   const [firmen, setFirmen] = useState<Row[]>([]);
   useEffect(() => { db.select('SELECT id, name FROM firmen ORDER BY name').then(setFirmen); }, []);
-  useEffect(() => { if (edit.objekt_id) db.select(`SELECT e.id, ${einheitLabel('e')} AS nummer FROM einheiten e WHERE e.objekt_id = $1 ORDER BY e.nummer`, [Number(edit.objekt_id)]).then(setEinheiten); }, [edit.objekt_id]);
+  useEffect(() => { if (edit.objekt_id) db.select(`SELECT e.id, ${einheitLabel('e')} AS nummer FROM einheiten e WHERE e.objekt_id = $1 ORDER BY e.lfd_nr, e.nummer`, [Number(edit.objekt_id)]).then(setEinheiten); }, [edit.objekt_id]);
   const set = (k: string, v: any) => setEdit({ ...edit, [k]: v });
   const anteile: Record<string, string> = edit.anteile ?? {};
   const gesamt = Math.abs(zahl(String(edit.betrag ?? '')));
@@ -601,7 +601,7 @@ export function BerichtePage() {
     return ablegen(await listePdf('Eigentümerliste', `Stand ${dDatum(heute())}`, head, r.map((x) => [x.objekt, x.nummer, num(x.mea, 0), anteil(x), x.name, [x.strasse, [x.plz, x.ort].filter(Boolean).join(' ')].filter(Boolean).join(', '), x.telefon ?? '', x.email ?? ''])), `Eigentümerliste ${heute()}.pdf`);
   };
   const opListe = async () => {
-    const r = await db.select(`SELECT objekt, einheit, schuldner, art, monat, faellig, betrag, bezahlt, mahnstufe FROM (${OP_SQL}) WHERE betrag - bezahlt > 0.005 AND faellig <= date('now') ORDER BY objekt, einheit, faellig`);
+    const r = await db.select(`SELECT objekt, einheit, schuldner, art, monat, faellig, betrag, bezahlt, mahnstufe FROM (${OP_SQL}) WHERE betrag - bezahlt > 0.005 AND faellig <= date('now') ORDER BY objekt, einheit_lfd, einheit, faellig`);
     const offen = r.reduce((a, x) => a + x.betrag - x.bezahlt, 0);
     return ablegen(await listePdf('Offene Posten', `Fällig bis ${dDatum(heute())}`, ['Liegenschaft', 'Einheit', 'Schuldner', 'Posten', 'Monat', 'Fällig', 'Soll', 'Gezahlt', 'Offen', 'Mahnstufe'],
       r.map((x) => [x.objekt, x.einheit, x.schuldner, x.art, x.monat, dDatum(x.faellig), geld(x.betrag), geld(x.bezahlt), geld(x.betrag - x.bezahlt), x.mahnstufe ? String(x.mahnstufe) : '']),
