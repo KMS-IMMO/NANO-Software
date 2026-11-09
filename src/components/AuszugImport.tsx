@@ -60,6 +60,8 @@ export function AuszugImport({ objektId, onDone, kompakt, kontoId }: { objektId:
 
   async function uebernehmen() {
     if (!vorschau) return;
+    if (vorschau.saldo?.ende !== undefined && /^Achtung/.test(saldoHinweis(vorschau.umsaetze, vorschau.saldo.anfang, vorschau.saldo.ende))
+      && !window.confirm('Der Kontostand passt nicht: Anfangsstand plus Umsätze ergibt nicht den Endstand des Auszugs. Wahrscheinlich fehlt ein Umsatz oder ein Betrag ist falsch gelesen.\n\nTrotzdem übernehmen? Fehlende Umsätze kannst du danach unter „Buchen“ von Hand ergänzen.')) return;
     setBusy(true); setFehler('');
     try {
       let kid = konto, start = false;

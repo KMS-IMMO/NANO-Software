@@ -19,7 +19,7 @@ export function zeilenAusWoertern(woerter: Wort[]): string {
 }
 
 async function leinwandText(c: HTMLCanvasElement): Promise<string> {
-  const blob = await new Promise<Blob>((ok, fehler) => c.toBlob((b) => (b ? ok(b) : fehler(new Error('Bild konnte nicht erstellt werden.'))), 'image/jpeg', 0.92));
+  const blob = await new Promise<Blob>((ok, fehler) => c.toBlob((b) => (b ? ok(b) : fehler(new Error('Bild konnte nicht erstellt werden.'))), 'image/jpeg', 0.95));
   const { invoke } = await import('@tauri-apps/api/core');
   const woerter = await invoke<Wort[]>('ocr_bild', new Uint8Array(await blob.arrayBuffer()));
   return zeilenAusWoertern(woerter);
@@ -40,9 +40,35 @@ export async function bildText(f: Blob): Promise<string> {
   return leinwandText(c);
 }
 
+/** Das größte eingebettete Foto einer PDF-Seite in Originalauflösung holen (bei Auszügen aus Fotos besser als die Seite neu zu zeichnen) */
+async function seitenFoto(pdfjs: any, seite: any): Promise<HTMLCanvasElement | null> {
+  const ops = await seite.getOperatorList();
+  const ids: string[] = [];
+  ops.fnArray.forEach((fn: number, i: number) => { if (fn === pdfjs.OPS.paintImageXObject) ids.push(ops.argsArray[i][0]); });
+  let best: any = null;
+  for (const id of ids) {
+    const img: any = await new Promise((ok) => { try { seite.objs.get(id, ok); } catch { ok(null); } });
+    if (img && (!best || img.width * img.height > best.width * best.height)) best = img;
+  }
+  if (!best || Math.max(best.width, best.height) < 1200) return null;
+  const s = Math.min(1, 4800 / Math.max(best.width, best.height));
+  const { c, ctx } = leinwand(best.width * s, best.height * s);
+  if (best.bitmap) ctx.drawImage(best.bitmap, 0, 0, c.width, c.height);
+  else if (best.data) {
+    const roh = document.createElement('canvas'); roh.width = best.width; roh.height = best.height;
+    const r = roh.getContext('2d')!, bild = r.createImageData(best.width, best.height), d = best.data as Uint8ClampedArray, n = best.width * best.height;
+    const proPixel = d.length / n;
+    if (proPixel >= 4) bild.data.set(d.subarray(0, n * 4));
+    else if (proPixel >= 3) for (let i = 0; i < n; i++) { bild.data[i * 4] = d[i * 3]; bild.data[i * 4 + 1] = d[i * 3 + 1]; bild.data[i * 4 + 2] = d[i * 3 + 2]; bild.data[i * 4 + 3] = 255; }
+    else return null;
+    r.putImageData(bild, 0, 0); ctx.drawImage(roh, 0, 0, c.width, c.height);
+  } else return null;
+  return c;
+}
+
 /** Alle Seiten einer PDF als Bild lesen */
 export async function pdfOcrText(daten: Uint8Array, fortschritt?: (seite: number, von: number) => void, maxSeiten = 60): Promise<string> {
-  const pdfjs = await pdfjsLaden();
+  const pdfjs: any = await pdfjsLaden();
   const task = pdfjs.getDocument({ data: daten.slice() });
   const doc = await task.promise;
   const n = Math.min(doc.numPages, maxSeiten), seiten: string[] = [];
@@ -50,10 +76,14 @@ export async function pdfOcrText(daten: Uint8Array, fortschritt?: (seite: number
     for (let i = 1; i <= n; i++) {
       fortschritt?.(i, n);
       const seite = await doc.getPage(i);
-      const v1 = seite.getViewport({ scale: 1 });
-      const vp = seite.getViewport({ scale: Math.min(6, 2600 / v1.width, 4800 / v1.height) });
-      const { c, ctx } = leinwand(vp.width, vp.height);
-      await seite.render({ canvasContext: ctx, viewport: vp, canvas: c } as any).promise;
+      let c = await seitenFoto(pdfjs, seite).catch(() => null);
+      if (!c) {
+        const v1 = seite.getViewport({ scale: 1 });
+        const vp = seite.getViewport({ scale: Math.min(6, 2600 / v1.width, 4800 / v1.height) });
+        const l = leinwand(vp.width, vp.height);
+        await seite.render({ canvasContext: l.ctx, viewport: vp, canvas: l.c } as any).promise;
+        c = l.c;
+      }
       seiten.push(await leinwandText(c));
       seite.cleanup();
     }
