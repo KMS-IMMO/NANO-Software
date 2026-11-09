@@ -34,7 +34,7 @@ const vertragFields: Field[] = [
   { key: 'notiz', label: 'Notiz', type: 'textarea', hideInTable: true },
 ];
 
-const listSql = (where = '1=1') => `SELECT v.*, o.name || ' – ' || e.nummer AS einheit_id_label, ${personLabel('p')} AS mieter_id_label,
+const listSql = (where = '1=1') => `SELECT v.*, o.name || ' – ' || e.nummer AS einheit_id_label, o.miete_zahlweise AS objekt_zahlweise, ${personLabel('p')} AS mieter_id_label,
     (SELECT COUNT(*) FROM dokumente d WHERE d.bezug = 'Mietvertrag' AND d.bezug_id = v.id) AS doks,
     CASE WHEN v.beginn > date('now') THEN 'künftig' WHEN v.ende IS NOT NULL AND v.ende < date('now') THEN 'beendet' ELSE 'aktiv' END AS status
   FROM mietvertraege v JOIN einheiten e ON e.id = v.einheit_id JOIN objekte o ON o.id = e.objekt_id
@@ -107,6 +107,13 @@ export function VertragDetailPage({ vertragId }: { vertragId?: number }) {
         <h1>{v.mieter_id_label} <span className={'pill ' + v.status}>{v.status}</span></h1>
         <p className="muted">{v.einheit_id_label} · seit {datum(v.beginn)}{v.ende ? ` bis ${datum(v.ende)}` : ''} · {v.mietart}
           {v.personenzahl != null ? ` · ${v.personenzahl} Pers.` : ''}</p>
+        <label className="muted small" style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>Zahlweise Miete + NK:
+          <select style={{ width: 'auto' }} value={v.zahlweise ?? ''} onChange={async (e) => { await db.execute('UPDATE mietvertraege SET zahlweise = $1 WHERE id = $2', [e.target.value || null, id]); await reload(); }}>
+            <option value="">wie Liegenschaft ({v.objekt_zahlweise === 'getrennt' ? 'getrennt' : 'zusammen'})</option>
+            <option value="zusammen">zusammen (eine Zahlung)</option>
+            <option value="getrennt">getrennt überwiesen</option>
+          </select>
+        </label>
       </div>
       <div className="kpis">
         <div className="kpi"><span>Kaltmiete aktuell</span><b>{eur(jetzt.kalt)}</b></div>
