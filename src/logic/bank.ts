@@ -354,7 +354,31 @@ export function parseOnlineListe(text: string): PdfAuszug {
   fertig();
   const umsaetze = out.filter((u) => u.betrag !== 0);
   vorzeichenKlaeren(umsaetze, anfang, ende);
+  ziffernPruefen(umsaetze, anfang, ende);
   return { umsaetze, anfang, ende, hinweis: saldoHinweis(umsaetze, anfang, ende) };
+}
+
+/** Bleibt eine Differenz zum Endsaldo, die Umsätze markieren, bei denen eine einzige falsch gelesene Ziffer genau diese Differenz erklärt */
+// Ziffern, die die Texterkennung leicht verwechselt
+const VERWECHSELBAR = new Set(['17', '38', '08', '68', '56', '06', '89', '09', '14', '49', '35', '27', '04'].flatMap((p) => [p, p[1] + p[0]]));
+function ziffernPruefen(liste: Umsatz[], anfang?: number, ende?: number) {
+  if (anfang === undefined || ende === undefined) return;
+  const d = Math.round((anfang + liste.reduce((a, u) => a + u.betrag, 0) - ende) * 100);
+  if (d === 0) return;
+  const treffer: Umsatz[] = [];
+  for (const u of liste) {
+    const c = String(Math.round(Math.abs(u.betrag) * 100)), vz = u.betrag < 0 ? -1 : 1;
+    let passt = false;
+    for (let i = 0; i < c.length && !passt; i++) for (let z = 0; z <= 9 && !passt; z++) {
+      if (!VERWECHSELBAR.has(c[i] + z)) continue;
+      const neu = Number(c.slice(0, i) + z + c.slice(i + 1));
+      if (vz * neu - vz * Number(c) === -d) passt = true;
+    }
+    if (passt) treffer.push(u);
+  }
+  if (!treffer.length || treffer.length > 8) return;
+  const diff = (Math.abs(d) / 100).toLocaleString('de-DE', { minimumFractionDigits: 2 });
+  for (const u of treffer) u.pruefen = [u.pruefen, `Betrag mit dem Auszug vergleichen: eine falsch gelesene Ziffer hier würde die Differenz von ${diff} € erklären`].filter(Boolean).join(' · ');
 }
 
 /** Fehlt das Vorzeichen (Texterkennung), wird es aus anderen Umsätzen mit derselben IBAN oder Gegenpartei übernommen,
