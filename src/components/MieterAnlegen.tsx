@@ -31,6 +31,7 @@ export function MieterAnlegen({ einheit, objekt, onClose, onSaved }: { einheit: 
   const [busy, setBusy] = useState(false);
   const [zu, setZu] = useState(false);
   const [vorhanden, setVorhanden] = useState<Row | null>(null);
+  const [neuerKontakt, setNeuerKontakt] = useState(false);
   const s = (k: string) => (x: { target: { value: string } }) => setD({ ...d, [k]: x.target.value });
 
   // Gibt es diese Person schon (z. B. aus einem anderen Vertrag)? Dann wird sie verwendet statt doppelt angelegt.
@@ -40,7 +41,14 @@ export function MieterAnlegen({ einheit, objekt, onClose, onSaved }: { einheit: 
     const t = setTimeout(async () => {
       const r = await db.select(`SELECT * FROM personen WHERE ${n ? `LOWER(nachname) = LOWER($1) AND LOWER(COALESCE(vorname, '')) = LOWER($2)` : `LOWER(firma) = LOWER($1) AND $2 = $2`} LIMIT 1`,
         [n || f, v]);
-      setVorhanden(r[0] ?? null);
+      const p = r[0];
+      if (p) p.wo = (await db.select(`SELECT GROUP_CONCAT(x, '; ') AS wo FROM (
+          SELECT o.name || ' ' || e.nummer || ' (Mieter)' AS x FROM mietvertraege v JOIN einheiten e ON e.id = v.einheit_id JOIN objekte o ON o.id = e.objekt_id
+            WHERE (v.mieter_id = $1 OR v.mieter2_id = $1) AND (v.ende IS NULL OR v.ende >= date('now'))
+          UNION ALL SELECT o.name || ' ' || e.nummer || ' (Eigentümer)' FROM eigentum ei JOIN einheiten e ON e.id = ei.einheit_id JOIN objekte o ON o.id = e.objekt_id
+            WHERE ei.person_id = $1 AND (ei.bis IS NULL OR ei.bis >= date('now'))
+          UNION ALL SELECT o.name || ' (Eigentümer)' FROM objekte o WHERE o.eigentuemer_id = $1)`, [p.id]))[0]?.wo ?? '';
+      setVorhanden(p ?? null);
     }, 250);
     return () => clearTimeout(t);
   }, [d.vorname, d.nachname, d.firma]);
@@ -63,7 +71,7 @@ export function MieterAnlegen({ einheit, objekt, onClose, onSaved }: { einheit: 
     setBusy(true);
     try {
       const leer = (x: string) => x.trim() || null;
-      let mid = vorhanden?.id as number | undefined;
+      let mid = neuerKontakt ? undefined : vorhanden?.id as number | undefined;
       const person = { anrede: leer(d.anrede), vorname: leer(d.vorname), nachname: leer(d.nachname), firma: leer(d.firma), geburtsdatum: leer(d.geburtsdatum),
         telefon: leer(d.telefon), mobil: leer(d.mobil), email: leer(d.email), iban: leer(d.iban.replace(/\s/g, '').toUpperCase()), strasse: leer(d.strasse), plz: leer(d.plz), ort: leer(d.ort) };
       if (mid) {
@@ -79,7 +87,7 @@ export function MieterAnlegen({ einheit, objekt, onClose, onSaved }: { einheit: 
       let n = 0;
       if (soll && d.zahlung_an !== 'Eigentümer' && von <= bis) n = await sollStellen(bis, { von, vertragId: vid });
       const name = [d.firma.trim(), [d.vorname.trim(), d.nachname.trim()].filter(Boolean).join(' ')].filter(Boolean).join(', ');
-      onSaved(vid, `${name} ist als Mieter von ${einheit.nummer} ab ${d.beginn.split('-').reverse().join('.')} angelegt${vorhanden ? ' (vorhandener Kontakt verwendet)' : ''}`
+      onSaved(vid, `${name} ist als Mieter von ${einheit.nummer} ab ${d.beginn.split('-').reverse().join('.')} angelegt${vorhanden && !neuerKontakt ? ' (vorhandener Kontakt verwendet)' : ''}`
         + (n ? `, ${n} Sollstellungen ${von.slice(5)}/${von.slice(0, 4)} bis ${bis.slice(5)}/${bis.slice(0, 4)} erzeugt.` : '.'));
     } catch (e: any) { setFehler(String(e?.message ?? e)); setBusy(false); }
   }
@@ -104,7 +112,11 @@ export function MieterAnlegen({ einheit, objekt, onClose, onSaved }: { einheit: 
               <label className="breit2"><span>Firma (bei Gewerbe)</span><input value={d.firma} onChange={s('firma')} /></label>
               <label><span>Geburtsdatum</span><input type="date" value={d.geburtsdatum} onChange={s('geburtsdatum')} /></label>
             </div>
-            {vorhanden && <p className="tab-hinweis mieter-vorhanden">Diesen Kontakt gibt es schon. Er wird verwendet und nur um fehlende Angaben ergänzt.</p>}
+            {vorhanden && <div className="tab-hinweis mieter-vorhanden">
+              {neuerKontakt ? <>Es wird ein <b>neuer, eigener Kontakt</b> mit diesem Namen angelegt.</>
+                : <>Diesen Kontakt gibt es schon{vorhanden.wo ? <> ({vorhanden.wo})</> : ''}. Der neue Mietvertrag kommt zum selben Kontakt dazu, so steht er bei allen seinen Objekten. Leere Angaben werden ergänzt, nichts wird überschrieben.</>}
+              <label className="check small"><input type="checkbox" checked={neuerKontakt} onChange={(e) => setNeuerKontakt(e.target.checked)} /> Ist eine andere Person mit gleichem Namen: neuen Kontakt anlegen</label>
+            </div>}
             {!zweiter ? <button type="button" className="link" onClick={() => setZweiter(true)}>+ zweiten Mieter hinzufügen</button>
               : <div className="mieter-raster"><label><span>2. Mieter Vorname</span><input value={d.m2_vorname} onChange={s('m2_vorname')} /></label>
                   <label><span>2. Mieter Nachname</span><input value={d.m2_nachname} onChange={s('m2_nachname')} /></label></div>}

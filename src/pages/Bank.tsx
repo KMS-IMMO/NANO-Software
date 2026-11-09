@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { db, type Row } from '../db';
 import { useObjektKontext } from '../logic/objektKontext';
@@ -8,9 +8,11 @@ import { BankAbruf, BankVerbindungen } from '../components/BankAbruf';
 import { RechnungErfassen } from '../components/RechnungErfassen';
 import { BuchungBelege } from '../components/BuchungBelege';
 import { BuchenDialog } from '../components/BuchenDialog';
+import { AuszugImport } from '../components/AuszugImport';
+import { Zuordnen } from '../components/OffeneUmsaetze';
 import { Paperclip, Trash2 } from 'lucide-react';
 import {
-  auszugLesen, automatischZuordnen, importieren, umsaetzeLoeschen, vorschlag, zuordnenKonto, zuordnenPerson, zuordnenRechnung, zuordnungLoesen, type Vorschlag,
+  automatischZuordnen, umsaetzeLoeschen, vorschlag, zuordnungLoesen, type Vorschlag,
 } from '../logic/bank';
 
 type Opt = { value: number; label: string };
@@ -23,9 +25,7 @@ export function BankPage() {
   const [filter, setFilter] = useState<'offen' | 'zugeordnet' | 'ignoriert' | 'alle'>('offen');
   const [vorschlaege, setVorschlaege] = useState<Record<number, Vorschlag | null>>({});
   const [info, setInfo] = useState('');
-  const [drag, setDrag] = useState(false);
   const [personen, setPersonen] = useState<Opt[]>([]);
-  const fileRef = useRef<HTMLInputElement>(null);
   const [belegUmsatz, setBelegUmsatz] = useState<{ u: Row; datei?: File; objekt?: number } | null>(null);
   const [belegBuchung, setBelegBuchung] = useState<Row | null>(null);
   const [rowOver, setRowOver] = useState<number | null>(null);
@@ -82,23 +82,6 @@ export function BankPage() {
     setInfo(`${ids.length} Umsatz/Umsätze gelöscht.`); setWahl(new Set()); load();
   }
 
-  async function dateien(files: FileList | File[]) {
-    if (konto === '') { setInfo('Bitte zuerst ein Bankkonto anlegen und auswählen.'); return; }
-    let neu = 0, doppelt = 0;
-    try {
-      for (const f of Array.from(files)) {
-        // CSV (auch Windows-1252), CAMT-XML oder PDF-Kontoauszug
-        const r = await importieren(Number(konto), (await auszugLesen(f)).umsaetze);
-        neu += r.neu; doppelt += r.doppelt;
-      }
-      const a = await automatischZuordnen();
-      setInfo(`${neu} neue Umsätze importiert${doppelt ? `, ${doppelt} waren schon vorhanden` : ''}. ${a.zugeordnet} automatisch zugeordnet, ${a.pruefen} zum Prüfen.`);
-    } catch (e: any) {
-      setInfo('Fehler beim Import: ' + (e?.message ?? e));
-    }
-    load();
-  }
-
   async function auto() {
     const a = await automatischZuordnen();
     setInfo(`${a.zugeordnet} automatisch zugeordnet, ${a.pruefen} zum Prüfen.`);
@@ -119,7 +102,7 @@ export function BankPage() {
 
   return (
     <>
-      <div className="page-head"><h1>Bank & Zuordnung</h1><p className="muted">Umsätze direkt bei der Bank abrufen (Freigabe in der Banking-App) oder Kontoauszug importieren (CAMT-XML oder CSV)</p></div>
+      <div className="page-head"><h1>Bank & Zuordnung</h1><p className="muted">Umsätze direkt bei der Bank abrufen (Freigabe in der Banking-App) oder Kontoauszug importieren (CSV, CAMT-XML, PDF oder Fotos)</p></div>
       <div className="row">
         <select style={{ width: 360 }} value={konto} onChange={(e) => setKonto(Number(e.target.value))}>
           {konten.map((x) => <option key={x.id} value={x.id}>{x.objekt} – {x.name}{x.iban ? ` (${x.iban})` : ''}</option>)}
@@ -134,17 +117,8 @@ export function BankPage() {
         <div className="kpi"><span>Zugeordnet</span><b className="pos">{anzahl('zugeordnet')}</b></div>
       </div>
 
-      <section
-        className={'card drop' + (drag ? ' over' : '')}
-        onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
-        onDragLeave={() => setDrag(false)}
-        onDrop={(e) => { e.preventDefault(); setDrag(false); dateien(e.dataTransfer.files); }}
-      >
-        <p><b>Kontoauszug hierher ziehen</b> oder <button className="link" onClick={() => fileRef.current?.click()}>Datei auswählen</button></p>
-        <p className="muted small">Im Online-Banking unter „Umsätze exportieren“ bzw. „Kontoauszug als CAMT/XML“ herunterladen, oder den PDF-Kontoauszug hineinziehen. Doppelte Umsätze werden automatisch erkannt.</p>
-        <input ref={fileRef} type="file" accept=".xml,.csv,.txt,.pdf" multiple hidden onChange={(e) => { if (e.target.files) dateien(Array.from(e.target.files)); e.target.value = ''; }} />
-        {info && <p className="info">{info}</p>}
-      </section>
+      <AuszugImport objektId={k?.objekt_id ?? null} kontoId={k?.id} onDone={() => { load(); ladeKonten(); }} />
+      {info && <p className="info">{info}</p>}
 
       <section className="card">
         <div className="card-head">
@@ -212,35 +186,5 @@ export function BankPage() {
           </div>
         </div>)}
     </>
-  );
-}
-
-function Zuordnen({ u, v, personen, done, buchen }: { u: Row; v?: Vorschlag | null; personen: Opt[]; done: () => void; buchen: () => void }) {
-  const [wahl, setWahl] = useState('');
-  async function ok() {
-    if (!wahl) return;
-    await zuordnenPerson(u, Number(wahl.split(':')[1]));
-    done();
-  }
-  return (
-    <div className="zuordnen">
-      {v && (
-        <div className="row">
-          <span className="vorschlag">Vorschlag: <b>{v.label}</b> <span className="muted small">({v.grund})</span></span>
-          <button className="primary small-btn" onClick={async () => { if (v.art === 'person') await zuordnenPerson(u, v.id); else if (v.art === 'konto') await zuordnenKonto(u, v.id); else await zuordnenRechnung(u, v.id); done(); }}>Übernehmen</button>
-        </div>
-      )}
-      <div className="row">
-        <button className="primary small-btn" onClick={buchen} title="Konto, Einheiten, Buchungsjahr und mehr im Buchen-Fenster wählen">Buchen</button>
-        {u.betrag > 0 && <>
-          <select value={wahl} onChange={(e) => setWahl(e.target.value)} style={{ flex: 1, minWidth: 0 }}>
-            <option value="">Mieter / Eigentümer …</option>
-            {personen.map((p) => <option key={'p' + p.value} value={'p:' + p.value}>{p.label}</option>)}
-          </select>
-          <button className="small-btn" disabled={!wahl} onClick={ok}>OK</button></>}
-        <span className="grow" />
-        <button className="link small" onClick={async () => { await db.execute(`UPDATE bankumsaetze SET status='ignoriert' WHERE id=$1`, [u.id]); done(); }}>Ignorieren</button>
-      </div>
-    </div>
   );
 }
