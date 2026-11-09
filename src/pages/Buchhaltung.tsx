@@ -96,7 +96,7 @@ export function JournalPage() {
     const fname = String(edit.firma ?? '').trim();
     if (fname) {
       const da = (await db.select('SELECT id FROM firmen WHERE lower(name) = lower($1)', [fname]))[0];
-      firma_id = da ? da.id : await insert('firmen', { name: fname });
+      firma_id = da ? da.id : await insert('firmen', { name: fname, gewerk: 'Lieferant' });
     }
     const basis = { datum: edit.datum, objekt_id: Number(edit.objekt_id), buchungskonto_id: Number(edit.buchungskonto_id), text: edit.text || null, firma_id };
     // § 35a-Anteil nur bei Konten mit HDL/HWL und nur für Ausgaben
@@ -146,7 +146,7 @@ export function JournalPage() {
     if (sp) { setFehler(sperrText(sp)); return; }
     let firma_id: number | null = rEdit.firma_id ?? null;
     const fname = String(rEdit.firma ?? '').trim();
-    if (fname) { const da = (await db.select('SELECT id FROM firmen WHERE lower(name) = lower($1)', [fname]))[0]; firma_id = da ? da.id : await insert('firmen', { name: fname }); }
+    if (fname) { const da = (await db.select('SELECT id FROM firmen WHERE lower(name) = lower($1)', [fname]))[0]; firma_id = da ? da.id : await insert('firmen', { name: fname, gewerk: 'Lieferant' }); }
     else firma_id = null;
     const lohn = String(rEdit.anteil_lohn ?? '').trim() === '' ? null : Math.abs(zahl(String(rEdit.anteil_lohn)));
     if (lohn !== null && lohn > betrag + 0.005) { setFehler('Der § 35a-Anteil kann nicht größer sein als der Betrag.'); return; }

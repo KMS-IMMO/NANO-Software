@@ -30,6 +30,7 @@ export interface Ablage { bezug: 'Objekt' | 'Einheit' | 'Person' | 'Mietvertrag'
 export async function speichern(daten: Uint8Array, dateiname: string, ablage: Ablage): Promise<string> {
   const name = sicher(dateiname);
   if (!isTauri) {
+    vorschauSpeicher.set(name, daten);
     const blob = new Blob([daten], { type: name.endsWith('.pdf') ? 'application/pdf' : 'application/octet-stream' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob); a.download = name; a.click();
@@ -63,6 +64,18 @@ export async function aufloesen(pfad: string): Promise<string> {
   if (!pfad.startsWith('ablage:') || !isTauri) return pfad;
   const { join } = await import('@tauri-apps/api/path');
   return join(await ablagePfad(), ...pfad.slice(7).split('/'));
+}
+
+// Browser-Vorschau: gespeicherte Dateien bleiben für diese Sitzung im Speicher, damit sie angezeigt werden können
+const vorschauSpeicher = new Map<string, Uint8Array>();
+
+/** Inhalt einer abgelegten Datei lesen (für die Ansicht im Programm). null, wenn sie nicht gefunden wird. */
+export async function lesen(pfad: string): Promise<Uint8Array | null> {
+  if (!isTauri) return vorschauSpeicher.get(pfad) ?? null;
+  try {
+    const { readFile } = await import('@tauri-apps/plugin-fs');
+    return await readFile(await aufloesen(pfad));
+  } catch { return null; }
 }
 
 export async function oeffnen(pfad: string) {

@@ -144,7 +144,7 @@ export function RechnungErfassen({ objektFest, onSaved, vorlage }: { objektFest?
       const name = lieferant.trim();
       if (!fid && name) {
         const da = firmen.find((f) => String(f.name).toLowerCase() === name.toLowerCase());
-        fid = da ? da.id : await insert('firmen', { name });
+        fid = da ? da.id : await insert('firmen', { name, gewerk: 'Lieferant' });
       }
       // Beleg in die Ablage der Liegenschaft
       let dokId: number | null = null;

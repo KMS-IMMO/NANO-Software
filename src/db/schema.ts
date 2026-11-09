@@ -643,4 +643,8 @@ ALTER TABLE buchungen ADD COLUMN jahr INTEGER;
 ALTER TABLE buchungen ADD COLUMN rechnungsnr TEXT;
 UPDATE buchungskonten SET rechnung_pflicht = 1 WHERE art = 'Aufwand' AND (hdl = 1 OR hwl = 1);  -- § 35a verlangt eine Rechnung; weitere Konten im Kontenrahmen anhaken
 `,
+  // Migration 21: Erinnerungen mit Erstellungsdatum
+  `
+ALTER TABLE erinnerungen ADD COLUMN erstellt TEXT;
+`,
 ];

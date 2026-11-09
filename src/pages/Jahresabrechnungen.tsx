@@ -294,6 +294,15 @@ export function WegAbrechnungPage() {
           Unter „Sollstellungen“ kannst du sie aus den Stammdaten erzeugen.</p>}
         <OpAufstellung konten={verm.opKonten ?? []} jahr={jahr} />
       </section>
+      {objekt !== '' && o && <AbschlussKarte unten objekt={Number(objekt)} jahr={jahr} art="WEG" stand={stand} ordner={[o.name, 'WEG-Jahresabrechnung', String(jahr)]}
+        extra={[
+          { ok: erg.length > 0, sperrt: true, text: 'Eigentümer und Einheiten für das Jahr vorhanden' },
+          { ok: !werteFehlen, sperrt: true, text: 'Werte für Verbrauch und manuelle Verteilung eingetragen', hinweis: werteFehlen ? `Fehlt bei: ${werteFehlen}` : undefined },
+        ]}
+        vorschau={async (entwurf) => (await erzeugen({ entwurf }))!} ablegen={async () => { await erzeugen(null); }}
+        buchen={buchen} buchenText="Abrechnungsspitzen als offene Posten buchen"
+        ergebnis={() => ({ ausgaben: r2(pos.reduce((a, p) => a + p.betrag, 0)), spitzen: r2(erg.reduce((a, r) => a + r.spitze, 0)), einheiten: erg.length })}
+        onStatus={(a, t) => { setZu(a); if (t) setInfo(t); }} />}
     </>
   );
 }

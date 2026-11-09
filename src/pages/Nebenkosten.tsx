@@ -200,6 +200,15 @@ export function NebenkostenPage() {
           </table>)}
         {weg && <p className="muted small">Hier steht nur, was die Mieter betrifft: umlagefähige Kosten und ihre Vorauszahlungen. Hausgeld, Erhaltungsrücklage und die Anteile selbst genutzter Einheiten gehören den Eigentümern und stehen nur in der Hausgeldabrechnung. Diese Abrechnung ändert an der Hausgeldabrechnung nichts.</p>}
       </section>
+      {objekt !== '' && oAkt && <AbschlussKarte unten objekt={Number(objekt)} jahr={jahr} art="Nebenkosten" stand={stand} ordner={[oAkt.name, 'Nebenkostenabrechnungen', String(jahr)]}
+        extra={[
+          { ok: mieter.length > 0, sperrt: true, text: 'Mieter mit Abrechnung im Jahr vorhanden' },
+          { ok: !werteFehlen.length, sperrt: true, text: 'Werte für Verbrauch und manuelle Verteilung eingetragen', hinweis: werteFehlen.length ? `Fehlt bei: ${werteFehlen.join(', ')}` : undefined },
+          { ok: !heizFehlt, sperrt: false, text: 'Heizkosten laut Messdienst eingetragen', hinweis: heizFehlt ? `Konto ${HEIZ_KONTO} wird sonst nach Schlüssel verteilt.` : undefined },
+        ]}
+        vorschau={vorschauPdf} ablegen={pdfs} buchen={buchen} buchenText="Ergebnis als offene Posten buchen"
+        ergebnis={() => ({ kosten: Math.round(kosten * 100) / 100, saldo: Math.round(mieter.reduce((a, r) => a + r.saldo, 0) * 100) / 100, mieter: mieter.length })}
+        onStatus={(a, t) => { setZu(a); if (t) setInfo(t); }} />}
     </>
   );
 }
