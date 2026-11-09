@@ -266,3 +266,81 @@ export async function automatischZuordnen(): Promise<{ zugeordnet: number; pruef
   }
   return { zugeordnet, pruefen: offen.length - zugeordnet };
 }
+
+/* ---------------- Kontoauszug als PDF ---------------- */
+
+const GELD = /([+-]?\s?\d{1,3}(?:\.\d{3})*,\d{2}|[+-]?\s?\d+,\d{2})\s*([+-]|S|H)?\s*$/;
+const BETRAG_TXT = (s: string) => Number(s.replace(/\s/g, '').replace(/\./g, '').replace(',', '.'));
+const UEBERSPRINGEN = /kontostand|saldo|übertrag|uebertrag|zwischensumme|summe soll|summe haben|seite \d|blatt \d|^\s*buchungstag|^\s*datum\b/i;
+
+export interface PdfAuszug { umsaetze: Umsatz[]; anfang?: number; ende?: number; hinweis?: string }
+
+/** Liest die Umsätze aus dem Text eines PDF-Kontoauszugs (Sparkasse, Volksbank, Commerzbank, Deutsche Bank, ING u. a.).
+ *  Erkennt Zeilen, die mit einem Datum beginnen und mit einem Betrag enden; Folgezeilen sind Empfänger und Verwendungszweck. */
+export function parsePdfAuszug(text: string): PdfAuszug {
+  const zeilen = text.split('\n').map((z) => z.replace(/\s+/g, ' ').trim()).filter(Boolean);
+  const jahrText = text.match(/\b\d{1,2}\.\d{1,2}\.(20\d{2})\b/)?.[1] ?? text.match(/\b(20\d{2})\b/)?.[1] ?? String(new Date().getFullYear());
+  const saldo = (re: RegExp) => { const z = zeilen.find((x) => re.test(x)); const m = z?.match(GELD); if (!m) return undefined;
+    const v = BETRAG_TXT(m[1]); return m[2] === '-' || m[2] === 'S' || /^-/.test(m[1].trim()) ? -Math.abs(v) : v; };
+  // Alter und neuer Kontostand; heißen beide nur „Kontostand am …“ (z. B. Sparkasse), gilt der erste als alt und der letzte als neu
+  const kst = zeilen.filter((x) => /kontostand|saldo/i.test(x) && GELD.test(x));
+  const wert = (z?: string) => { const m = z?.match(GELD); if (!m) return undefined; const v = BETRAG_TXT(m[1]);
+    return m[2] === '-' || m[2] === 'S' || /^-/.test(m[1].trim()) ? -Math.abs(v) : Math.abs(v); };
+  const anfang = saldo(/(alter|vorheriger|anfangs)[ -]?(kontostand|saldo)/i) ?? (kst.length > 1 ? wert(kst[0]) : undefined);
+  const ende = saldo(/(neuer|end)[ -]?(kontostand|saldo)/i) ?? (kst.length > 1 ? wert(kst[kst.length - 1]) : undefined);
+  const out: Umsatz[] = [];
+  let akt: (Umsatz & { teile: string[] }) | null = null;
+  const abschliessen = () => {
+    if (!akt) return;
+    const [kopf, ...rest] = akt.teile;
+    akt.gegenpartei = (rest[0] ?? '').slice(0, 120);
+    akt.verwendungszweck = [kopf, ...rest.slice(1)].filter(Boolean).join(' ').slice(0, 400);
+    const { teile: _t, ...u } = akt; out.push(u); akt = null;
+  };
+  for (const z of zeilen) {
+    const d = z.match(/^(\d{1,2})\.(\d{1,2})\.(\d{2,4})?\s+(?:(\d{1,2})\.(\d{1,2})\.(\d{2,4})?\s+)?(.*)$/);
+    const g = z.match(GELD);
+    if (d && g && !UEBERSPRINGEN.test(z)) {
+      abschliessen();
+      const y = d[3] ? (d[3].length === 2 ? '20' + d[3] : d[3]) : jahrText;
+      const datum = `${y}-${d[2].padStart(2, '0')}-${d[1].padStart(2, '0')}`;
+      const roh = g[1].replace(/\s/g, ''), zeichen = g[2];
+      let betrag = Math.abs(BETRAG_TXT(roh));
+      const text0 = d[7].replace(GELD, '').trim();
+      const minus = roh.startsWith('-') || zeichen === '-' || zeichen === 'S';
+      const plus = roh.startsWith('+') || zeichen === '+' || zeichen === 'H';
+      if (minus) betrag = -betrag;
+      else if (!plus && !/gutschrift|eingang|zahlungseingang|haben|einzahlung|zins|erstattung|lohn|gehalt|rente/i.test(text0)) betrag = -betrag;
+      akt = { datum, betrag, verwendungszweck: '', gegenpartei: '', gegen_iban: '', teile: [text0] };
+      continue;
+    }
+    if (!akt || UEBERSPRINGEN.test(z) || akt.teile.length > 5) { if (akt && UEBERSPRINGEN.test(z)) abschliessen(); continue; }
+    const iban = z.match(/\b([A-Z]{2}\d{2}(?:\s?[A-Z0-9]{4}){3,7}(?:\s?[A-Z0-9]{1,3})?)\b/);
+    if (iban && !akt.gegen_iban) akt.gegen_iban = iban[1].replace(/\s/g, '');
+    akt.teile.push(z.replace(/IBAN:?\s*[A-Z]{2}\d{2}[A-Z0-9 ]+/, '').replace(/BIC:?\s*[A-Z0-9]{8,11}/, '').trim());
+  }
+  abschliessen();
+  const summe = Math.round(out.reduce((a, u) => a + u.betrag, 0) * 100) / 100;
+  const e = (n: number) => n.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €';
+  const hinweis = anfang !== undefined && ende !== undefined
+    ? (Math.abs(anfang + summe - ende) < 0.01 ? `Kontostand passt: ${e(anfang)} + Umsätze ${e(summe)} = ${e(ende)}.`
+      : `Achtung: Alter Kontostand ${e(anfang)} + Umsätze ${e(summe)} ergibt nicht den neuen Kontostand ${e(ende)}. Bitte die Liste prüfen.`)
+    : 'Kontostand im PDF nicht gefunden, bitte die Liste prüfen.';
+  return { umsaetze: out.filter((u) => u.betrag !== 0), anfang, ende, hinweis };
+}
+
+/** Eine Kontoauszug-Datei lesen: CAMT-XML, CSV oder PDF */
+export async function auszugLesen(f: File): Promise<{ umsaetze: Umsatz[]; hinweis?: string; anfang?: number }> {
+  const buf = new Uint8Array(await f.arrayBuffer());
+  if (/\.pdf$/i.test(f.name) || f.type === 'application/pdf') {
+    const { pdfText } = await import('./rechnungLesen');
+    const text = await pdfText(buf, 40);
+    if (!text.trim()) throw new Error(`${f.name}: Die PDF enthält keinen Text (eingescannt). Bitte den Auszug als CSV oder CAMT-XML aus dem Online-Banking laden.`);
+    const r = parsePdfAuszug(text);
+    if (!r.umsaetze.length) throw new Error(`${f.name}: In der PDF wurden keine Umsätze erkannt. Bitte den Auszug als CSV oder CAMT-XML laden.`);
+    return r;
+  }
+  let text = new TextDecoder('utf-8').decode(buf);
+  if (text.includes('�')) text = new TextDecoder('windows-1252').decode(buf);
+  return { umsaetze: parseDatei(f.name, text) };
+}
