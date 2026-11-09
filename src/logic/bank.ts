@@ -301,6 +301,7 @@ function ocrBetrag(s: string): number {
 
 /** Umsatzliste aus dem Online-Banking (z. B. Volksbank „Umsätze“ als PDF gedruckt):
  *  „Name  +900,00 EUR“, darunter „IBAN  02.01.2025“, danach der Verwendungszweck. */
+const VIER = new WeakMap<Umsatz, number>();
 export function parseOnlineListe(text: string): PdfAuszug {
   const zeilen = text.split('\n').map((z) => z.replace(/\s+/g, ' ').trim()).filter(Boolean);
   // „Name ±Betrag EUR“, wahlweise gleich dahinter „[IBAN] Datum“
@@ -312,7 +313,8 @@ export function parseOnlineListe(text: string): PdfAuszug {
   type Akt = Umsatz & { teile: string[]; offen: boolean; zeilen: number };
   let akt: Akt | null = null;
   const fertig = () => {
-    if (akt?.datum) { const { teile, offen: _o, zeilen: _z, ...u } = akt; u.verwendungszweck = teile.join(' ').slice(0, 400); out.push(u); }
+    if (akt?.datum) { const { teile, offen: _o, zeilen: _z, ...u } = akt; u.verwendungszweck = teile.join(' ').slice(0, 400); out.push(u);
+      if (VIER.has(akt)) VIER.set(u, VIER.get(akt)!); }
     akt = null;
   };
   // „[IBAN oder Name] Datum“ am Zeilenende auswerten
@@ -333,6 +335,8 @@ export function parseOnlineListe(text: string): PdfAuszug {
       fertig();
       const neu: Akt = { datum: '', betrag: wert, gegenpartei: k[1].replace(/[|]/g, ' ').replace(/[,:;]+$/, '').trim().slice(0, 120), gegen_iban: '',
         verwendungszweck: '', teile: [], offen: true, zeilen: 0, ...(!k[2] ? { pruefen: 'Vorzeichen' } : {}) };
+      // ohne Vorzeichen und mit führender 4: oft ist die 4 ein falsch gelesenes „+“
+      if (!k[2] && /^4\d/.test(k[3]) && !/^4[.,]/.test(k[3])) VIER.set(neu, ocrBetrag(k[3].slice(1)));
       if (k[4]) datumZeile(neu, k[4]);
       akt = neu;
       continue;
@@ -360,6 +364,7 @@ export function parseOnlineListe(text: string): PdfAuszug {
 
 /** Bleibt eine Differenz zum Endsaldo, die Umsätze markieren, bei denen eine einzige falsch gelesene Ziffer genau diese Differenz erklärt */
 // Ziffern, die die Texterkennung leicht verwechselt
+const ocrBetragAnzeige = (_u: Umsatz, alt: number) => Number('4' + Math.round(alt * 100).toString().padStart(3, '0')) / 100;
 const VERWECHSELBAR = new Set(['17', '38', '08', '68', '56', '06', '89', '09', '14', '49', '35', '27', '04'].flatMap((p) => [p, p[1] + p[0]]));
 function ziffernPruefen(liste: Umsatz[], anfang?: number, ende?: number) {
   if (anfang === undefined || ende === undefined) return;
@@ -376,6 +381,8 @@ function ziffernPruefen(liste: Umsatz[], anfang?: number, ende?: number) {
     }
     if (passt) treffer.push(u);
   }
+  const rund = (u: Umsatz) => Math.round(Math.abs(u.betrag) * 100) % 10000 === 0;
+  if (treffer.filter((u) => !rund(u)).length) treffer.splice(0, treffer.length, ...treffer.filter((u) => !rund(u)));
   if (!treffer.length || treffer.length > 8) return;
   const diff = (Math.abs(d) / 100).toLocaleString('de-DE', { minimumFractionDigits: 2 });
   for (const u of treffer) u.pruefen = [u.pruefen, `Betrag mit dem Auszug vergleichen: eine falsch gelesene Ziffer hier würde die Differenz von ${diff} € erklären`].filter(Boolean).join(' · ');
@@ -406,6 +413,11 @@ function vorzeichenKlaeren(liste: Umsatz[], anfang?: number, ende?: number) {
   // zwei Beträge erklären die Differenz
   for (let i = 0; i < unsicher.length; i++) for (let j = i + 1; j < unsicher.length; j++)
     if (cent(2 * unsicher[i].betrag) + cent(2 * unsicher[j].betrag) === d) { unsicher[i].betrag *= -1; unsicher[j].betrag *= -1; return; }
+  // „+3,97“ als „43.97“ gelesen: die führende 4 war das Pluszeichen
+  for (const u of unsicher) {
+    const alt = VIER.get(u); if (alt === undefined) continue;
+    if (cent(u.betrag) - cent(alt) === d) { u.betrag = alt; u.pruefen = `Betrag korrigiert: „4“ war das Pluszeichen (gelesen ${eurText(ocrBetragAnzeige(u, alt))})`; return; }
+  }
 }
 
 function parseKlassisch(text: string): PdfAuszug {
