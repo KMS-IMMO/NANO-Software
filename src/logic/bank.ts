@@ -217,11 +217,12 @@ export async function zuordnenPerson(u: Row, personId: number) {
   // Zahlweise der Liegenschaft: „zusammen“ = eine Überweisung je Monat (Miete + Nebenkosten bzw. Hausgeld + Rücklage),
   // „getrennt“ = einzelne Überweisungen; dann bestimmen Verwendungszweck und genau passender Betrag den Posten.
   const getrennt = ops.length ? await zahlweiseGetrennt(ops[0].objekt_id, personId, ops[0].einheit_id, ops[0].vertrag_id) : false;
-  if (getrennt) {
-    const art = /r(ü|ue)cklage/i.test(text) ? 'Rücklage' : /\b(nk|nebenkosten|betriebskosten|bk)\b/.test(text) ? 'NK'
-      : /\b(hk|heizkosten|heizung)\b/.test(text) ? 'HK' : null;
-    const rang = (o: Row) => (art && o.art === art ? 0 : offen(o) === betragU ? 1 : 2);
-    ops.sort((a, b) => rang(a) - rang(b));
+  if (getrennt) ops = getrenntOrdnen(ops, betragU, text, offen);
+  else {
+    // Auch bei „zusammen“: nennt der Verwendungszweck ausdrücklich nur bestimmte Arten (z. B. „Nebenkosten“) und passt der Betrag
+    // genau auf diese Posten eines Monats, dann dorthin buchen statt auf die Kaltmiete
+    const genau = getrenntOrdnen(ops, betragU, text, offen, true);
+    if (genau) ops = genau;
   }
   const konten = await db.select('SELECT id, nummer FROM buchungskonten');
   const kontoId = (art: string) => konten.find((k) => k.nummer === (KONTO_FUER_ART[art] ?? '1000'))?.id ?? null;
@@ -269,6 +270,48 @@ export async function zuordnungLoesen(u: Row) {
   for (const x of r) await db.execute('UPDATE rechnungen SET bezahlt_am = NULL WHERE id = $1', [x.rechnung_id]);
   await db.execute('DELETE FROM buchungen WHERE bankumsatz_id = $1', [u.id]);
   await db.execute(`UPDATE bankumsaetze SET status = 'offen' WHERE id = $1`, [u.id]);
+}
+
+/** Arten, die im Verwendungszweck genannt sind (für getrennte Überweisungen) */
+function artenImText(text: string): Set<string> {
+  const a = new Set<string>();
+  if (/r(ü|ue)cklage|ruecklage|erhaltungsr/.test(text)) a.add('Rücklage');
+  if (/\b(nk|nebenkosten|betriebskosten|bk|nkv|bkv|vorauszahlung)\b/.test(text)) { a.add('NK'); a.add('HK'); }
+  if (/\b(hk|heizkosten|heizung|hkv)\b/.test(text)) a.add('HK');
+  if (/\b(kaltmiete|grundmiete|nettomiete|miete|mietzahlung|pacht)\b/.test(text)) { a.add('Kaltmiete'); a.add('USt'); }
+  if (/\bhausgeld\b|\bwohngeld\b/.test(text)) a.add('Hausgeld');
+  if (/sonderumlage/.test(text)) a.add('Sonderumlage');
+  return a;
+}
+
+/**
+ * Getrennte Überweisungen: zuerst im ältesten Monat die Posten suchen, deren offene Beträge zusammen genau die Zahlung ergeben
+ * (z. B. nur NK, NK + HK, Kaltmiete + USt). Bei mehreren passenden Kombinationen entscheidet der Verwendungszweck.
+ * Passt keine Kombination genau, kommen die im Verwendungszweck genannten Arten zuerst, dann Posten mit genau passendem Betrag.
+ */
+export function getrenntOrdnen(ops: Row[], betrag: number, text: string, offen: (o: Row) => number, nurGenannt: true): Row[] | null;
+export function getrenntOrdnen(ops: Row[], betrag: number, text: string, offen: (o: Row) => number, nurGenannt?: false): Row[];
+export function getrenntOrdnen(ops: Row[], betrag: number, text: string, offen: (o: Row) => number, nurGenannt = false): Row[] | null {
+  const arten = artenImText(text);
+  if (nurGenannt && !arten.size) return null;
+  const monate = [...new Set(ops.map((o) => o.monat))];
+  for (const m of monate) {
+    const l = ops.filter((o) => o.monat === m).slice(0, 8);
+    let best: Row[] | null = null, bestScore = -Infinity;
+    for (let mask = 1; mask < 1 << l.length; mask++) {
+      const sub = l.filter((_, i) => mask & (1 << i));
+      if (Math.abs(sub.reduce((a, o) => a + offen(o), 0) - betrag) > 0.005) continue;
+      if (nurGenannt && (sub.length === l.length || sub.some((o) => !arten.has(o.art)))) continue;
+      // Treffer im Text zählen, Posten außerhalb der genannten Arten abziehen
+      const score = arten.size ? sub.filter((o) => arten.has(o.art)).length * 10 - sub.filter((o) => !arten.has(o.art)).length * 11 : 0;
+      if (score > bestScore) { best = sub; bestScore = score; }
+    }
+    if (best) { const b = best; return [...b, ...ops.filter((o) => !b.includes(o))]; }
+    if (nurGenannt) return null; // nur im ältesten offenen Monat suchen
+  }
+  if (nurGenannt) return null;
+  const rang = (o: Row) => (arten.has(o.art) ? 0 : offen(o) === betrag ? 1 : 2);
+  return [...ops].sort((a, b) => rang(a) - rang(b));
 }
 
 /** Zahlweise einer Liegenschaft (Einstellung in den Stammdaten; Ausnahme je Mietvertrag bzw. je Eigentümer) */
