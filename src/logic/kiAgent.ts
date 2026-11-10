@@ -21,7 +21,7 @@ export async function kiSchluesselSpeichern(schluessel: string) {
     ON CONFLICT (schluessel) DO UPDATE SET wert = excluded.wert`, [schluessel.trim()]);
 }
 
-const SYSTEM = `Du bist der KI-Assistent in NANO, der Verwaltungssoftware von KMS Immobilien in Köln (WEG-Verwaltung und Mietverwaltung).
+const SYSTEM = `Du bist der KI-Assistent in NEOSS, der Verwaltungssoftware von KMS Immobilien in Köln (WEG-Verwaltung und Mietverwaltung).
 Du unterstützt die Mitarbeiter bei der täglichen Arbeit: Fragen zu Objekten, Einheiten, Eigentümern, Mietern, Verträgen, Sollstellungen, offenen Posten, Rechnungen, Buchungen, Abrechnungen, Terminen und Aufgaben.
 
 So arbeitest du:
@@ -29,9 +29,9 @@ So arbeitest du:
 - Stütze Zahlen und Fakten immer auf die Datenbank. Lies zuerst mit schema_lesen, welche Tabellen und Spalten es gibt, und frage dann mit sql_abfrage gezielt ab. Erfinde keine Daten. Wenn etwas nicht in der Datenbank steht, sag das.
 - Beträge in Euro mit zwei Nachkommastellen und deutschem Format (1.234,56 €), Daten als TT.MM.JJJJ.
 - Fasse Ergebnisse knapp zusammen. Bei Listen zeige die wichtigsten Einträge als kurze Aufzählung oder kleine Tabelle.
-- Wenn es eine passende Seite in NANO gibt, kannst du sie mit seite_oeffnen öffnen.
+- Wenn es eine passende Seite in NEOSS gibt, kannst du sie mit seite_oeffnen öffnen.
 - Termine, Erinnerungen und Aufgaben legst du nur an, wenn der Nutzer das möchte. Der Nutzer bestätigt jede Anlage selbst mit einem Klick. Lehnt er ab, akzeptiere das und lege es nicht erneut an.
-- Du kannst nichts löschen oder ändern und keine Buchungen anlegen. Wenn jemand das möchte, erkläre, wo in NANO er es selbst erledigen kann.
+- Du kannst nichts löschen oder ändern und keine Buchungen anlegen. Wenn jemand das möchte, erkläre, wo in NEOSS er es selbst erledigen kann.
 - Rechtliche oder steuerliche Fragen (WEG-Recht, BetrKV, §35a EStG) beantwortest du allgemein und weist bei Einzelfällen auf fachliche Prüfung hin.
 
 Hinweise zu den Daten: Datumswerte sind Text im Format JJJJ-MM-TT. Beträge sind Zahlen in Euro. Wichtige Tabellen sind unter anderem objekte, einheiten, personen, vertraege, sollstellungen, buchungen, rechnungen, termine, erinnerungen, todos, tickets.`;
@@ -49,11 +49,11 @@ const SEITEN: Record<string, string> = {
 const DATUM = { type: 'string', description: 'Datum im Format JJJJ-MM-TT' } as const;
 const OBJEKT = { type: 'integer', description: 'Optional: id aus der Tabelle objekte' } as const;
 const WERKZEUGE: BetaToolUnion[] = [
-  { name: 'schema_lesen', description: 'Liefert alle Tabellen der NANO-Datenbank mit ihren Spalten. Zuerst aufrufen, bevor du SQL schreibst.',
+  { name: 'schema_lesen', description: 'Liefert alle Tabellen der NEOSS-Datenbank mit ihren Spalten. Zuerst aufrufen, bevor du SQL schreibst.',
     input_schema: { type: 'object', properties: {} } },
   { name: 'sql_abfrage', description: 'Führt genau eine lesende SQLite-Abfrage (SELECT oder WITH) aus und liefert höchstens 200 Zeilen als JSON. Schreibende Befehle werden abgelehnt.',
     input_schema: { type: 'object', properties: { sql: { type: 'string', description: 'Eine SELECT-Abfrage ohne Semikolon' } }, required: ['sql'] } },
-  { name: 'seite_oeffnen', description: 'Öffnet eine Seite in NANO. Erlaubte Pfade: ' + Object.entries(SEITEN).map(([p, n]) => `${p} (${n})`).join(', ') + ', außerdem /objekte/<id> für eine Liegenschaft und /vertraege/<id> für einen Vertrag.',
+  { name: 'seite_oeffnen', description: 'Öffnet eine Seite in NEOSS. Erlaubte Pfade: ' + Object.entries(SEITEN).map(([p, n]) => `${p} (${n})`).join(', ') + ', außerdem /objekte/<id> für eine Liegenschaft und /vertraege/<id> für einen Vertrag.',
     input_schema: { type: 'object', properties: { pfad: { type: 'string' } }, required: ['pfad'] } },
   { name: 'termin_anlegen', description: 'Legt einen Termin im Kalender an. Der Nutzer muss zustimmen.',
     input_schema: { type: 'object', properties: { titel: { type: 'string' }, datum: DATUM, uhrzeit: { type: 'string', description: 'Optional, HH:MM' }, objekt_id: OBJEKT, notiz: { type: 'string' } }, required: ['titel', 'datum'] } },
@@ -128,7 +128,7 @@ export async function kiFragen(verlauf: Verlauf, frage: string, kontext: string,
   const client = new Anthropic({ apiKey: schluessel, dangerouslyAllowBrowser: true, maxRetries: 2 });
   const heute = new Date().toISOString().slice(0, 10);
   // Kontext (Datum, geöffnete Seite) steht in der Nutzernachricht, damit System-Prompt und Werkzeuge gecacht bleiben
-  const v: Verlauf = [...verlauf, { role: 'user', content: `${frage}\n\n<kontext>Heute ist ${de(heute)}. Geöffnete Seite in NANO: ${kontext}</kontext>` }];
+  const v: Verlauf = [...verlauf, { role: 'user', content: `${frage}\n\n<kontext>Heute ist ${de(heute)}. Geöffnete Seite in NEOSS: ${kontext}</kontext>` }];
   for (let runde = 0; runde < 15; runde++) {
     const r = await client.beta.messages.create({
       model: modell,

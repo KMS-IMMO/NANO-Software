@@ -1,4 +1,4 @@
-// Datenbankschema der NANO-Software (KMS Immobilien).
+// Datenbankschema der NEOSS-Software (KMS Immobilien).
 // Jede Migration läuft genau einmal; Änderungen immer als neue Migration anhängen.
 // Fachliche Grundlage: /mnt/project-files/kms-verwaltung/planung.md
 

@@ -42,7 +42,7 @@ export function Wiederkehrend({ objektId, onChange }: { objektId?: number; onCha
         newLabel="Neue wiederkehrende Ausgabe"
       />
       <div className="row"><button onClick={jetzt}><Repeat size={16} />Fällige jetzt anlegen</button>{info && <span className="info" style={{ margin: 0 }}>{info}</span>}
-        <span className="muted small">NANO legt fällige Rechnungen auch bei jedem Start automatisch an.</span></div>
+        <span className="muted small">NEOSS legt fällige Rechnungen auch bei jedem Start automatisch an.</span></div>
     </>
   );
 }

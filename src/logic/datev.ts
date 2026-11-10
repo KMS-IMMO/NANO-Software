@@ -51,8 +51,8 @@ export async function datevExport(objektId: number, von: string, bis: string, ma
   const jahr = von.slice(0, 4);
   const jetzt = new Date();
   const erzeugt = jetzt.toISOString().replace(/[-:T]/g, '').slice(0, 14) + '000';
-  const kopf = ['"EXTF"', 700, 21, '"Buchungsstapel"', 13, erzeugt, '', '"RE"', '"NANO"', '""', wert('datev_berater') || '', mandant || '',
-    `${jahr}0101`, laenge, yyyymmdd(von), yyyymmdd(bis), q(`NANO ${objekt}`.slice(0, 30)), '""', 1, 0, 0, '"EUR"', '', '""', '', '', '""', '""', '', '', '""'].join(';');
+  const kopf = ['"EXTF"', 700, 21, '"Buchungsstapel"', 13, erzeugt, '', '"RE"', '"NEOSS"', '""', wert('datev_berater') || '', mandant || '',
+    `${jahr}0101`, laenge, yyyymmdd(von), yyyymmdd(bis), q(`NEOSS ${objekt}`.slice(0, 30)), '""', 1, 0, 0, '"EUR"', '', '""', '', '', '""', '""', '', '', '""'].join(';');
   const spalten = ['Umsatz (ohne Soll/Haben-Kz)', 'Soll/Haben-Kennzeichen', 'WKZ Umsatz', 'Kurs', 'Basis-Umsatz', 'WKZ Basis-Umsatz', 'Konto',
     'Gegenkonto (ohne BU-Schlüssel)', 'BU-Schlüssel', 'Belegdatum', 'Belegfeld 1', 'Belegfeld 2', 'Skonto', 'Buchungstext'].join(';');
   let ohneKonto = 0;
