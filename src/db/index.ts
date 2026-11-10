@@ -69,12 +69,15 @@ let ready: Promise<Driver> | null = null;
 
 /* =================== Mehrplatz: NANO-Server im Büronetz =================== */
 const SERVER_KEY = 'nano-server';
+/** Web-Version: NANO wird vom NANO-Server selbst ausgeliefert und spricht immer mit diesem Server */
+export const WEB = import.meta.env.VITE_NANO_WEB === '1';
 export type Benutzer = { name: string; login: string; rolle: 'admin' | 'mitarbeiter' | 'lesend' };
 let token: string | null = null;
 let ich: Benutzer | null = null;
 export const ABGEMELDET = 'nano-abgemeldet';
 
 function serverAdresse(): string | null {
+  if (WEB) return location.origin;
   try { const v = JSON.parse(localStorage.getItem(SERVER_KEY) || 'null'); return v?.url || null; } catch { return null; }
 }
 async function anfrage<T = any>(pfad: string, methode: 'GET' | 'POST' = 'POST', body?: unknown, basis = serverAdresse()): Promise<T> {
@@ -242,7 +245,7 @@ export const db = {
     if (typeof window !== 'undefined') window.dispatchEvent(new Event(DATEN_EVENT));   // Logo zeigt Datenverkehr
     return r;
   },
-  isDemo: !isTauri,
+  isDemo: !isTauri && !WEB,
 };
 
 // Einfache Tabellen-Helfer

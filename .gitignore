@@ -24,3 +24,6 @@ dist-ssr
 *.sw?
 src-tauri/target
 src-tauri/gen
+deploy/web/daten/
+deploy/web/caddy-daten/
+deploy/web/.env

@@ -2,7 +2,7 @@
 // Ohne Passwort lässt sich die verschlüsselte Datenbank nicht öffnen.
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Eye, EyeOff, Lock, Server, ShieldCheck } from 'lucide-react';
-import { ABGEMELDET, db, mehrplatz, sicherheit } from '../db';
+import { ABGEMELDET, WEB, db, mehrplatz, sicherheit } from '../db';
 import { Logo } from './Logo';
 
 type Phase = 'laden' | 'neu' | 'login' | 'server' | 'offen';
@@ -123,7 +123,7 @@ function ServerAnmeldung({ onOk, onLokal }: { onOk: () => void; onLokal: () => v
       <form className="sperre-karte" onSubmit={(e) => { e.preventDefault(); los(); }}>
         <Logo />
         <h2 className="title-ico"><Server size={22} />Anmelden</h2>
-        <p className="muted">Mit deinem NANO-Zugang am Server {aendern ? '' : <b>{mehrplatz.adresse()}</b>} anmelden.</p>
+        <p className="muted">{WEB ? 'Mit deinem NANO-Zugang anmelden.' : <>Mit deinem NANO-Zugang am Server {aendern ? '' : <b>{mehrplatz.adresse()}</b>} anmelden.</>}</p>
         {aendern && <label><span>Serveradresse</span><input value={adresse} onChange={(e) => setAdresse(e.target.value)} placeholder="z. B. 192.168.178.20" /></label>}
         <label><span>Benutzername</span><input value={login} autoFocus={!login} autoComplete="username" onChange={(e) => setLogin(e.target.value)} /></label>
         <label><span>Passwort</span>
@@ -131,10 +131,10 @@ function ServerAnmeldung({ onOk, onLokal }: { onOk: () => void; onLokal: () => v
             <button type="button" className="icon-btn" title={zeigen ? 'Verbergen' : 'Anzeigen'} onClick={() => setZeigen(!zeigen)}>{zeigen ? <EyeOff size={18} /> : <Eye size={18} />}</button></div></label>
         {fehler && <p className="error">{fehler}</p>}
         <button className="primary" type="submit" disabled={busy || !login.trim() || !pw}>{busy ? 'Bitte warten …' : 'Anmelden'}</button>
-        <p className="muted small">
+        {!WEB && <p className="muted small">
           <button type="button" className="link" onClick={() => setAendern(!aendern)}>Serveradresse ändern</button>{' · '}
           <button type="button" className="link" onClick={() => { if (confirm('Ohne Server mit den Daten auf diesem Rechner arbeiten?')) onLokal(); }}>Ohne Server arbeiten</button>
-        </p>
+        </p>}
       </form>
     </div>
   );

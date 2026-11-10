@@ -1,7 +1,7 @@
 // Einstellungen → Mehrplatz: NANO-Server verbinden, Daten übertragen, Benutzer und Protokoll verwalten.
 import { useEffect, useState } from 'react';
 import { DatabaseBackup, History, LogOut, Server, UserPlus, Users } from 'lucide-react';
-import { mehrplatz, type Row } from '../db';
+import { WEB, mehrplatz, type Row } from '../db';
 import { SPERREN } from './Sperre';
 
 const ROLLEN: Record<string, string> = { admin: 'Administrator', mitarbeiter: 'Mitarbeiter', lesend: 'Nur lesen' };
@@ -91,9 +91,11 @@ function Verbunden() {
         <button onClick={() => window.dispatchEvent(new Event(SPERREN))}><LogOut size={16} />Abmelden</button></div>
       <p className="muted small" style={{ marginTop: 0 }}>Verbunden mit <b>{mehrplatz.adresse()}</b> als <b>{ich?.name}</b> ({ROLLEN[ich?.rolle ?? ''] ?? ich?.rolle}). Alle Änderungen landen sofort auf dem Server und im Protokoll.</p>
 
+      {!WEB && <>
       <div className="sec">Gemeinsame Ablage auf diesem Rechner</div>
       <p className="muted small">Pfad zum freigegebenen NAS-Ordner, z. B. <code>/Volumes/NANO-Ablage</code> am Mac oder <code>Z:\NANO-Ablage</code> unter Windows. Jeder Rechner stellt seinen eigenen Pfad ein.</p>
       <div className="row"><input style={{ flex: 1 }} value={ablage} onChange={(e) => setAblage(e.target.value)} placeholder="Pfad zur Ablage" /><button onClick={ablageSpeichern}>Speichern</button></div>
+      </>}
 
       <div className="sec">Mein Passwort</div>
       <div className="form f3">
@@ -138,7 +140,7 @@ function Verbunden() {
       </>}
       {info && <p className="info">{info}</p>}
       {fehler && <p className="error">{fehler}</p>}
-      <div className="row end"><button className="link" onClick={trennen}>Verbindung zum Server trennen</button></div>
+      {!WEB && <div className="row end"><button className="link" onClick={trennen}>Verbindung zum Server trennen</button></div>}
     </section>
   );
 }
