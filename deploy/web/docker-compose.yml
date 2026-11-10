@@ -1,0 +1,34 @@
+# NANO als Webseite mit Anmeldung: NANO-Server + Caddy (HTTPS mit automatischem Let's-Encrypt-Zertifikat).
+# Start auf dem Server:  cd deploy/web && docker compose up -d --build
+services:
+  nano:
+    build:
+      context: ../..
+      dockerfile: deploy/web/Dockerfile
+    container_name: nano-web
+    restart: unless-stopped
+    environment:
+      - NANO_ADMIN_PASSWORT=${NANO_ADMIN_PASSWORT:?bitte in .env setzen}   # nur beim allerersten Start
+      - NANO_CORS=                 # Oberfläche kommt vom selben Server, kein CORS nötig
+      - NANO_HINTER_PROXY=1        # echte IP für die Sperre nach 5 Fehlversuchen
+      - NANO_SITZUNG_STUNDEN=10    # nach 10 Stunden Inaktivität neu anmelden
+      - TZ=Europe/Berlin
+    volumes:
+      - ./daten:/daten
+    expose:
+      - "8080"                     # nur intern erreichbar, nach außen geht alles über Caddy
+
+  caddy:
+    image: caddy:2.8-alpine
+    container_name: nano-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - NANO_DOMAIN=${NANO_DOMAIN:?bitte in .env setzen}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./caddy-daten:/data
+    depends_on:
+      - nano
