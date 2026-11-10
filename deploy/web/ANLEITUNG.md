@@ -1,6 +1,6 @@
-# NANO als geschützte Webseite
+# NEOSS als geschützte Webseite
 
-NANO läuft im Browser unter einer eigenen Adresse, z. B. `https://nano.deine-domain.de`. Ohne Benutzername und Passwort sieht man nur die Anmeldung. Alle Mitarbeiter arbeiten gleichzeitig auf derselben Datenbank, jede Änderung steht mit Namen im Protokoll.
+NEOSS (bisher NANO) läuft im Browser unter einer eigenen Adresse, z. B. `https://neoss.kms.koeln`. Ohne Benutzername und Passwort sieht man nur die Anmeldung. Alle Mitarbeiter arbeiten gleichzeitig auf derselben Datenbank, jede Änderung steht mit Namen im Protokoll.
 
 ## Aufbau
 
@@ -11,7 +11,7 @@ NANO läuft im Browser unter einer eigenen Adresse, z. B. `https://nano.deine-do
 ## Einrichtung (einmalig, ca. 30 Minuten)
 
 1. Server anlegen, z. B. Hetzner Cloud CX22 mit Ubuntu 24.04 und Docker (App „Docker CE“). Den Auftragsverarbeitungsvertrag (AVV) in der Hetzner-Konsole abschließen.
-2. Bei der Domain einen A-Eintrag `nano` auf die IP-Adresse des Servers setzen.
+2. Bei Strato unter Domainverwaltung bei kms.koeln eine Subdomain `neoss` mit A-Record auf die IP-Adresse des Servers setzen.
 3. Auf dem Server:
    ```bash
    git clone https://github.com/kms-immo/nano-software.git
@@ -21,11 +21,11 @@ NANO läuft im Browser unter einer eigenen Adresse, z. B. `https://nano.deine-do
    docker compose up -d --build
    ```
 4. Firewall: nur die Ports 22, 80 und 443 freigeben.
-5. `https://nano.deine-domain.de` öffnen und als `admin` anmelden. Danach unter **Einstellungen › Mehrplatz** das Passwort ändern und für jeden Mitarbeiter einen eigenen Zugang anlegen.
+5. `https://neoss.kms.koeln` öffnen und als `admin` anmelden. Danach unter **Einstellungen › Mehrplatz** das Passwort ändern und für jeden Mitarbeiter einen eigenen Zugang anlegen.
 
 ## Bestehende Daten übernehmen
 
-Auf dem Rechner mit den aktuellen Daten in der Desktop-App unter **Einstellungen › Mehrplatz** die Adresse `https://nano.deine-domain.de` eintragen und **Daten übertragen** wählen (als `admin`). Der Server sichert sich vorher.
+Auf dem Rechner mit den aktuellen Daten in der Desktop-App unter **Einstellungen › Mehrplatz** die Adresse `https://neoss.kms.koeln` eintragen und **Daten übertragen** wählen (als `admin`). Der Server sichert sich vorher.
 
 ## Updates
 

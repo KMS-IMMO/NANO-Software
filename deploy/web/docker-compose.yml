@@ -1,11 +1,11 @@
-# NANO als Webseite mit Anmeldung: NANO-Server + Caddy (HTTPS mit automatischem Let's-Encrypt-Zertifikat).
+# NEOSS (bisher NANO) als Webseite mit Anmeldung: NANO-Server + Caddy (HTTPS mit automatischem Let's-Encrypt-Zertifikat).
 # Start auf dem Server:  cd deploy/web && docker compose up -d --build
 services:
   nano:
     build:
       context: ../..
       dockerfile: deploy/web/Dockerfile
-    container_name: nano-web
+    container_name: neoss-web
     restart: unless-stopped
     environment:
       - NANO_ADMIN_PASSWORT=${NANO_ADMIN_PASSWORT:?bitte in .env setzen}   # nur beim allerersten Start
@@ -20,7 +20,7 @@ services:
 
   caddy:
     image: caddy:2.8-alpine
-    container_name: nano-caddy
+    container_name: neoss-caddy
     restart: unless-stopped
     ports:
       - "80:80"
