@@ -23,7 +23,8 @@ export function betragZahl(s: unknown): number | null {
   if (s === null || s === undefined) return null;
   let t = String(s).replace(/[\s €]/g, '').replace(/−/g, '-');
   if (!t) return null;
-  if (t.includes(',')) t = t.replace(/\./g, '').replace(',', '.');
+  if (t.includes(',') && t.includes('.') && t.lastIndexOf('.') > t.lastIndexOf(',')) t = t.replace(/,/g, '');  // englisch: 1,234.56
+  else if (t.includes(',')) t = t.replace(/\./g, '').replace(',', '.');
   else if (/^-?\d{1,3}(\.\d{3})+$/.test(t)) t = t.replace(/\./g, '');
   const n = Number(t);
   return Number.isFinite(n) ? n : null;
