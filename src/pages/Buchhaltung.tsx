@@ -264,7 +264,7 @@ export function JournalPage() {
                 <td>{r.nummer ? `${r.nummer} ${r.konto}` : <span className="tag">ohne Konto</span>}</td>
                 <td>{r.firma ?? <span className="muted">–</span>}</td>
                 <td className="small">{r.text}{r.rechnungsnr && !String(r.text ?? "").includes(r.rechnungsnr) ? <span className="muted"> · Rechnung {r.rechnungsnr}</span> : ''}{r.bankumsatz_id ? <span className="muted"> · Bank</span> : ''}</td>
-                <td className="num neg">{r.betrag < 0 ? eur(-r.betrag) : '–'}</td><td className="num">{r.betrag > 0 ? eur(r.betrag) : '–'}</td>
+                <td className="num neg">{r.betrag < 0 ? eur(-r.betrag) : '–'}</td><td className="num pos">{r.betrag > 0 ? eur(r.betrag) : '–'}</td>
                 <td className="actions nowrap"><button className={'icon-btn beleg-btn ' + (r.belege ? 'hat' : 'leer')} title={r.belege ? `${r.belege} Beleg(e) ansehen oder anhängen` : 'Beleg anhängen'} onClick={() => setBelegFuer(r)}><Paperclip size={15} />{r.belege > 0 && <small>{r.belege}</small>}</button>
                   <button className="icon-btn" title="Buchung bearbeiten" onClick={() => bearbeiten(r)}><Pencil size={15} /></button>
                   <button className="icon-btn" title="Buchung löschen" onClick={() => loeschen(r)}><Trash2 size={15} /></button></td>

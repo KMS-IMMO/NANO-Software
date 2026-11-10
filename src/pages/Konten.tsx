@@ -1,4 +1,5 @@
 import { EntityTable, eur } from '../components/EntityTable';
+import { darstellungLesen, darstellungSetzen, type Darstellung } from '../lib/theme';
 import { SicherheitKarte } from '../components/SicherheitKarte';
 import { db, mehrplatz, sicherheit } from '../db';
 import { MehrplatzKarte } from '../components/MehrplatzKarte';
@@ -109,6 +110,7 @@ export function EinstellungenPage() {
   }
   return (
     <>
+      <DarstellungKarte />
       <section className="card">
         <div className="card-head"><h2>Allgemein und Mahnwesen</h2></div>
         <div className="form">
@@ -154,6 +156,31 @@ export function EinstellungenPage() {
   );
 }
 
+
+/** Darstellung: Hell, Dunkel (Forged Carbon) oder wie macOS */
+function DarstellungKarte() {
+  const [d, setD] = useState<Darstellung>(darstellungLesen);
+  const wahl: [Darstellung, string, string][] = [
+    ['hell', 'Hell', 'Heller Hintergrund, wie bisher'],
+    ['dunkel', 'Dunkel (Forged Carbon)', 'Carbon-Grau mit Bronze, Minus knallrot, Plus knallgrün'],
+    ['system', 'Wie macOS', 'Folgt der Einstellung des Mac (hell am Tag, dunkel am Abend)'],
+  ];
+  return (
+    <section className="card">
+      <div className="card-head"><h2>Darstellung</h2></div>
+      <div className="darstellung-wahl">
+        {wahl.map(([k, t, b]) => (
+          <button key={k} type="button" className={'darstellung-option ' + k + (d === k ? ' aktiv' : '')}
+            onClick={() => { setD(k); darstellungSetzen(k); }}>
+            <span className="darstellung-muster" aria-hidden="true" />
+            <strong>{t}</strong><small>{b}</small>
+          </button>
+        ))}
+      </div>
+      <p className="muted" style={{ marginBottom: 0 }}>Gilt sofort und nur auf diesem Mac. Ausdrucke und PDFs bleiben immer hell.</p>
+    </section>
+  );
+}
 
 /** KI-Assistent: API-Schlüssel und Modell */
 function KiKarte() {

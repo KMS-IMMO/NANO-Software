@@ -259,7 +259,7 @@ function Kennzahlen({ objektId, weg }: { objektId: number; weg: boolean }) {
           <div className="card-head"><h2 className="title-ico"><BookOpen size={20} />Letzte Buchungen</h2><Link to={`/objekte/${objektId}/buchungen`}>Alle Einnahmen & Ausgaben →</Link></div>
           <table className="list"><tbody>{letzte.map((r) => (
             <tr key={r.id}><td>{datum(r.datum)}</td><td>{r.nummer ? `${r.nummer} ${r.konto}` : '–'}<div className="muted small">{r.einheit ?? (r.betrag < 0 ? 'alle Einheiten' : '')}</div></td>
-              <td className="small">{r.text}</td><td className={'num ' + (r.betrag < 0 ? 'neg' : '')}>{eur(r.betrag)}</td></tr>))}</tbody></table>
+              <td className="small">{r.text}</td><td className={'num ' + (r.betrag < 0 ? 'neg' : 'pos')}>{eur(r.betrag)}</td></tr>))}</tbody></table>
         </section>)}
     </>
   );
