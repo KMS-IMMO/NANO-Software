@@ -1,6 +1,7 @@
 // Verteilerschlüssel einer Kostenposition direkt in der Abrechnung ändern (gilt für das Abrechnungsjahr).
 // Bei „Verbrauch“ und „Manuell“ (Summe) öffnet sich ein Fenster: Gesamtverbrauch bzw. Gesamtsumme und die Werte je Einheit.
 // Gespeichert wird erst, wenn die Summe der Einheiten genau mit dem Gesamtwert übereinstimmt.
+import { betragZahl } from '../lib/betrag';
 import { useState } from 'react';
 import { Pencil } from 'lucide-react';
 import { db, type Row } from '../db';
@@ -11,7 +12,7 @@ export const WAHL: [string, string][] = [['MEA', 'MEA'], ['Fläche', 'Fläche'],
   ['Verbrauch', 'Verbrauch'], ['Summe', 'Manuell (Betrag je Einheit)']];
 export const schluesselText = (s: string) => WAHL.find(([k]) => k === s)?.[1] ?? s;
 
-const zahl = (s: string) => Number(String(s).replace(/\s/g, '').replace(/\./g, '').replace(',', '.')) || 0;
+const zahl = (s: string) => betragZahl(s) ?? 0;
 const fmt = (n: number, d = 2) => n.toLocaleString('de-DE', { minimumFractionDigits: d, maximumFractionDigits: d });
 const r2 = (n: number) => Math.round(n * 100) / 100;
 

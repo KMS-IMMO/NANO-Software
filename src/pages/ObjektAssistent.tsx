@@ -1,12 +1,14 @@
 // Assistent „Liegenschaft hinzufügen“: Grunddaten → Einheiten erfassen → Zusammenfassung.
+import { BetragFeld } from '../components/BetragFeld';
+import { betragZahl } from '../lib/betrag';
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ArrowLeft, ArrowRight, Building2, Check, Layers, Maximize2, Plus, Trash2, Users } from 'lucide-react';
 import { db, insert, type Row } from '../db';
 import { EINHEIT_TYPEN, personOptions } from '../db/labels';
-import { num } from '../components/EntityTable';
+import { eur, num } from '../components/EntityTable';
 
-const zahl = (s: any) => Number(String(s ?? '').replace(/\./g, '').replace(',', '.')) || 0;
+const zahl = (s: any) => betragZahl(s) ?? 0;
 import { WARMWASSER } from '../db/labels';
 const HEIZUNG = ['Gas-Zentralheizung', 'Öl-Zentralheizung', 'Fernwärme', 'Wärmepumpe', 'Pellets', 'Gasetagenheizung', 'Nachtspeicher', 'Sonstige'];
 type Einheit = { nummer: string; typ: string; lage: string; flaeche: string; mea: string; personenzahl: string;
@@ -204,17 +206,17 @@ export function ObjektAssistentPage() {
                     <td><input value={e.nachname} list="eig-namen" onChange={(x) => setE(i, 'nachname', x.target.value)} style={{ width: 150 }} /></td>
                     <td><input type="tel" value={e.telefon} onChange={(x) => setE(i, 'telefon', x.target.value)} style={{ width: 140 }} /></td>
                     <td><input type="email" value={e.email} onChange={(x) => setE(i, 'email', x.target.value)} style={{ width: 190 }} /></td>
-                    <td className="num"><input className="cell" inputMode="decimal" value={e.hausgeld} style={{ width: 90 }} onChange={(x) => setE(i, 'hausgeld', x.target.value)} /></td>
-                    <td className="num"><input className="cell" inputMode="decimal" value={e.ruecklage} style={{ width: 90 }} onChange={(x) => setE(i, 'ruecklage', x.target.value)} /></td>
+                    <td className="num"><BetragFeld zelle className="cell" value={e.hausgeld} style={{ width: 110 }} onChange={(x) => setE(i, 'hausgeld', x.target.value)} /></td>
+                    <td className="num"><BetragFeld zelle className="cell" value={e.ruecklage} style={{ width: 110 }} onChange={(x) => setE(i, 'ruecklage', x.target.value)} /></td>
                     <td><input value={e.mVorname} placeholder="leer = nicht vermietet" onChange={(x) => setE(i, 'mVorname', x.target.value)} style={{ width: 140 }} /></td>
                     <td><input value={e.mNachname} onChange={(x) => setE(i, 'mNachname', x.target.value)} style={{ width: 140 }} /></td>
                     <td><input type="date" value={e.mSeit} disabled={!e.mNachname.trim()} onChange={(x) => setE(i, 'mSeit', x.target.value)} /></td>
-                    <td className="num"><input className="cell" inputMode="decimal" value={e.nkVz} disabled={!e.mNachname.trim()} style={{ width: 90 }} onChange={(x) => setE(i, 'nkVz', x.target.value)} /></td>
+                    <td className="num"><BetragFeld zelle className="cell" value={e.nkVz} disabled={!e.mNachname.trim()} style={{ width: 110 }} onChange={(x) => setE(i, 'nkVz', x.target.value)} /></td>
                   </>}
                   <td className="actions"><button className="icon-btn" title="Entfernen" disabled={einheiten.length === 1} onClick={() => setEinheiten(einheiten.filter((_, j) => j !== i))}><Trash2 size={17} /></button></td>
                 </tr>))}
               </tbody>
-              <tfoot><tr><td>Summe</td><td>{einheiten.length} Einheiten</td><td>–</td><td className="num">{num(sFl)} m²</td><td className="num">{num(sMea, 0)}</td><td className="num">{num(sP, 0)}</td>{weg && <><td colSpan={4}>{nEig} Eigentümer</td><td className="num">{num(sHg)} €</td><td className="num">{num(sRl)} €</td><td colSpan={3}>{nMieter} vermietet</td><td className="num">{num(sNk)} €</td></>}<td /></tr></tfoot>
+              <tfoot><tr><td>Summe</td><td>{einheiten.length} Einheiten</td><td>–</td><td className="num">{num(sFl)} m²</td><td className="num">{num(sMea, 0)}</td><td className="num">{num(sP, 0)}</td>{weg && <><td colSpan={4}>{nEig} Eigentümer</td><td className="num">{eur(sHg)}</td><td className="num">{eur(sRl)}</td><td colSpan={3}>{nMieter} vermietet</td><td className="num">{eur(sNk)}</td></>}<td /></tr></tfoot>
             </table></div>
             {weg && <p className="muted small" style={{ marginTop: 8 }}>Gleicher Name in mehreren Zeilen = ein Eigentümer mit mehreren Einheiten. Ist der Name schon als Eigentümer gespeichert, wird diese Person verwendet.
               Hausgeld und Erhaltungsrücklage gelten ab 01.01.{abJahr} (oben bei „Hausgeld ab“ änderbar: für ein abgelaufenes Jahr, das du nachbuchst, das Jahr der Kontoauszüge wählen). Der Eigentümer zahlt beides zusammen; in der Hausgeldabrechnung wird die Rücklage von den Vorschüssen abgezogen. Bei vermieteten Einheiten zahlt der Mieter an den Eigentümer; die Vorauszahlung brauchen wir für seine Nebenkostenabrechnung. Mieter seit leer = 01.01.{abJahr}.</p>}
@@ -234,7 +236,7 @@ export function ObjektAssistentPage() {
               <tr><td>Warmwasser / Gesamtfläche</td><td>{o.warmwasser || '–'} / {o.gesamt_flaeche ? `${o.gesamt_flaeche} m²` : '–'}</td></tr>
               {!weg && <tr><td>Eigentümer des Hauses</td><td>{o.eigentuemer_id === 'neu' ? <>{[o.neu_vorname, o.neu_nachname].filter(Boolean).join(' ')} <span className="muted">(wird neu angelegt)</span></> : eigentuemer.find((p) => String(p.value) === String(o.eigentuemer_id))?.label ?? '–'}</td></tr>}
               <tr><td>Einheiten</td><td>{einheiten.length} ({[...new Set(einheiten.map((e) => e.typ))].join(', ')})</td></tr>
-              {weg && <tr><td>Hausgeld / vermietet</td><td>{num(sHg + sRl)} € im Monat (davon Erhaltungsrücklage {num(sRl)} €) · {nMieter} von {einheiten.length} Einheiten vermietet (NK-Vorauszahlungen {num(sNk)} € im Monat)</td></tr>}
+              {weg && <tr><td>Hausgeld / vermietet</td><td>{eur(sHg + sRl)} im Monat (davon Erhaltungsrücklage {eur(sRl)}) · {nMieter} von {einheiten.length} Einheiten vermietet (NK-Vorauszahlungen {eur(sNk)} im Monat)</td></tr>}
               {weg && <tr><td>Eigentümer</td><td>{nEig} erfasst{einheiten.some((e) => !e.nachname.trim()) ? `, ${einheiten.filter((e) => !e.nachname.trim()).length} Einheiten noch ohne` : ''}</td></tr>}
               <tr><td>Fläche / MEA / Personen</td><td>{num(sFl)} m² / {num(sMea, 0)}{meaSoll ? ` von ${num(meaSoll, 0)}` : ''} / {num(sP, 0)}</td></tr>
             </tbody></table>

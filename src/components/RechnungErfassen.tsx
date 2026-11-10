@@ -1,4 +1,6 @@
 // Rechnung oder Gutschrift erfassen: alle Angaben in einem Bereich, Beleg per Drag & Drop hochladen.
+import { BetragFeld } from './BetragFeld';
+import { betragZahl } from '../lib/betrag';
 import { useEffect, useRef, useState } from 'react';
 import { Building2, FileUp, Paperclip, Plus, UserPlus, X } from 'lucide-react';
 import { gesperrt, sperrText } from '../logic/abschluss';
@@ -8,7 +10,7 @@ import { eur } from './EntityTable';
 import { letztesDokument, speichern } from '../lib/dateien';
 
 const heute = () => new Date().toISOString().slice(0, 10);
-const zahl = (s: string) => Number(String(s).replace(/\./g, '').replace(',', '.')) || 0;
+const zahl = (s: string) => betragZahl(s) ?? 0;
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
 export type RechnungVorlage = { datei?: File; umsatz?: Row };
@@ -184,7 +186,7 @@ export function RechnungErfassen({ objektFest, onSaved, vorlage }: { objektFest?
             <label><span>Datum *</span><input type="date" value={datum} onChange={(e) => setDatum(e.target.value)} /></label>
             <label><span>Rechnungsnummer</span><input value={nr} onChange={(e) => setNr(e.target.value)} placeholder="z. B. RE-2026-0815" /></label>
           </div>
-          <label><span>Betrag *</span><div className="addon"><input inputMode="decimal" value={betrag} onChange={(e) => setBetrag(e.target.value)} placeholder="0,00" /><span>Brutto</span></div></label>
+          <label><span>Betrag *</span><div className="addon"><BetragFeld value={betrag} onChange={(e) => setBetrag(e.target.value)} /><span>Brutto</span></div></label>
           <div className="row">
             <label className="check"><input type="checkbox" checked={mitMwst} onChange={(e) => setMitMwst(e.target.checked)} /><span>Beinhaltet MwSt</span></label>
             {mitMwst && <div className="addon klein"><span>MwSt-Satz</span><input inputMode="decimal" value={satz} onChange={(e) => setSatz(e.target.value)} /><span>%</span></div>}
@@ -192,7 +194,7 @@ export function RechnungErfassen({ objektFest, onSaved, vorlage }: { objektFest?
           </div>
           {(() => { const k = konten.find((x) => String(x.value) === String(konto)); return k && (k.hdl || k.hwl) ? (
             <label className="hint-35a"><span>davon § 35a-Anteil (Arbeitskosten) € · {k.hdl ? 'haushaltsnahe Dienstleistung' : 'Handwerkerleistung'}</span>
-              <input inputMode="decimal" placeholder="leer = ganzer Betrag" value={lohn} onChange={(e) => setLohn(e.target.value)} />
+              <BetragFeld placeholder="leer = ganzer Betrag" value={lohn} onChange={(e) => setLohn(e.target.value)} />
               <small className="muted">Erscheint in der Abrechnung als § 35a-Anteil der Eigentümer bzw. Mieter.</small></label>) : null; })()}
           <hr />
           <label><span>Immobilie *</span>{objektFest
@@ -211,7 +213,7 @@ export function RechnungErfassen({ objektFest, onSaved, vorlage }: { objektFest?
                 return (
                   <div key={e.id} className="row">
                     <label className="check grow"><input type="checkbox" checked={an} onChange={() => einheitUmschalten(e.id)} /><span>{e.nummer} {e.person && <b className="einheit-person">{e.person}</b>} <span className="muted">{e.typ}</span></span></label>
-                    {an && <input className="cell" inputMode="decimal" value={anteile[e.id]} onChange={(x) => setAnteile({ ...anteile, [e.id]: x.target.value })} />}
+                    {an && <BetragFeld zelle className="cell" value={anteile[e.id]} onChange={(x) => setAnteile({ ...anteile, [e.id]: x.target.value })} />}
                   </div>);
               })}
               <p className={'small ' + (gewaehlt.length && Math.abs(summeEigen - brutto) > 0.005 ? 'warn' : 'muted')}>

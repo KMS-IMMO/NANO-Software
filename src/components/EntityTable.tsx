@@ -1,4 +1,6 @@
 // Wiederverwendbare Liste mit Formular zum Anlegen, Bearbeiten und Löschen.
+import { BetragFeld } from './BetragFeld';
+import { betragZahl, euro } from '../lib/betrag';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { Pencil } from 'lucide-react';
 import { db, insert, remove, update, type Row } from '../db';
@@ -22,6 +24,10 @@ export interface Field {
   sum?: boolean;
   /** Text der leeren Auswahl (Standard: – bitte wählen –) */
   leer?: string;
+  /** Geldbetrag: Eingabe mit €, Anzeige 1.234,00 €, Minusbeträge rot */
+  geld?: boolean;
+  /** bei geld: Minusbeträge nicht rot färben */
+  minusNeutral?: boolean;
 }
 
 interface Props {
@@ -91,7 +97,11 @@ export function EntityTable({ title, table, fields, listSql, listParams = [], fi
     for (const f of formFields) {
       let v = editing[f.key];
       if (v === '' || v === undefined) v = null;
-      if (f.type === 'number' && v !== null) v = Number(String(v).replace(',', '.'));
+      if (f.type === 'number' && v !== null) {
+        const n = betragZahl(v);
+        if (n === null) { setError(`„${f.label}“ ist keine gültige Zahl.`); return; }
+        v = n;
+      }
       if (f.type === 'checkbox') v = v ? 1 : 0;
       values[f.key] = v;
     }
@@ -155,7 +165,7 @@ export function EntityTable({ title, table, fields, listSql, listParams = [], fi
                 <tr key={'g' + r.id} className="group"><td colSpan={shown.length + 1}>{r[groupBy] ?? 'Ohne Gruppe'}</td></tr>
               ) : null,
               <tr key={r.id} onClick={() => (onOpen ? onOpen(r) : setEditing(r))} className="clickable">
-                {shown.map((f) => <td key={f.key} className={f.type === 'number' ? 'num' : ''}>{display(f, r)}</td>)}
+                {shown.map((f) => <td key={f.key} className={f.type === 'number' ? 'num' + (f.geld && !f.minusNeutral && Number(r[f.key]) < -0.004 ? ' neg' : '') : ''}>{display(f, r)}</td>)}
                 <td className="actions">
                   <button className="icon-btn" title="Bearbeiten" onClick={(e) => { e.stopPropagation(); setEditing(r); }}><Pencil size={17} /></button>
                 </td>
@@ -216,7 +226,8 @@ function Input({ f, value, opts, onChange }: { f: Field; value: any; opts?: Opt[
     case 'checkbox':
       return <input type="checkbox" checked={!!value} onChange={(e) => onChange(e.target.checked)} />;
     case 'number':
-      return <input inputMode="decimal" value={v} onChange={(e) => onChange(e.target.value)} />;
+      if (f.geld) return <BetragFeld value={value} onChange={(e) => onChange(e.target.value)} />;
+      return <input inputMode="decimal" value={typeof value === 'number' ? String(value).replace('.', ',') : v} onChange={(e) => onChange(e.target.value)} />;
     case 'date':
       return <input type="date" value={v} onChange={(e) => onChange(e.target.value)} />;
     case 'time':
@@ -228,5 +239,6 @@ function Input({ f, value, opts, onChange }: { f: Field; value: any; opts?: Opt[
 
 export const num = (v: any, digits = 2) =>
   v === null || v === undefined || v === '' ? '' : Number(v).toLocaleString('de-DE', { minimumFractionDigits: digits, maximumFractionDigits: digits });
-export const eur = (v: any) => (v === null || v === undefined ? '' : num(v) + ' €');
+/** Geldbetrag immer als 1.234,00 € */
+export const eur = (v: any) => (v === null || v === undefined || v === '' || !Number.isFinite(Number(v)) ? '' : euro(Number(v)));
 export const datum = (v: any) => (v ? new Date(v + 'T00:00:00').toLocaleDateString('de-DE') : '');

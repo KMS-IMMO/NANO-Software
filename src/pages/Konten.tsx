@@ -60,10 +60,10 @@ export function RechnungenPage() {
         { key: 'firma_id', label: 'Firma', type: 'select', optionsSql: 'SELECT id AS value, name AS label FROM firmen ORDER BY name' },
         { key: 'rechnungsnr', label: 'Rechnungsnr.' },
         { key: 'buchungskonto_id', label: 'Buchungskonto', type: 'select', required: true, wide: true, optionsSql: kontoOptions("art IN ('Aufwand')") },
-        { key: 'betrag', label: 'Betrag brutto', type: 'number', required: true, format: (v: any) => <span className={v < 0 ? '' : 'neg'}>{eur(v)}{v < 0 ? ' Gutschrift' : ''}</span> },
+        { key: 'betrag', label: 'Betrag brutto', type: 'number', geld: true, minusNeutral: true, required: true, format: (v: any) => <span className={v < 0 ? '' : 'neg'}>{eur(v)}{v < 0 ? ' Gutschrift' : ''}</span> },
         { key: 'mwst_satz', label: 'MwSt %', type: 'number', format: (v: any) => (v == null ? '' : `${v} %`) },
         { key: 'beleg', label: 'Beleg', computed: true, format: (v: any) => v ? <button className="link" title={v} onClick={(e) => { e.stopPropagation(); oeffnen(v); }}><Paperclip size={15} /></button> : '' },
-        { key: 'anteil_lohn', label: 'davon Arbeitskosten (§35a)', type: 'number', format: eur, hideInTable: true },
+        { key: 'anteil_lohn', label: 'davon Arbeitskosten (§35a)', type: 'number', geld: true, format: eur, hideInTable: true },
         { key: 'zeitraum_von', label: 'Leistung von', type: 'date', hideInTable: true },
         { key: 'zeitraum_bis', label: 'Leistung bis', type: 'date', hideInTable: true },
         { key: 'faellig', label: 'Fällig', type: 'date' },
@@ -132,7 +132,7 @@ export function EinstellungenPage() {
           { key: 'bank', label: 'Bank' },
           { key: 'iban', label: 'IBAN', wide: true },
           { key: 'bic', label: 'BIC', hideInTable: true },
-          { key: 'anfangssaldo', label: 'Anfangssaldo', type: 'number', format: eur, hideInTable: true },
+          { key: 'anfangssaldo', label: 'Anfangssaldo', type: 'number', geld: true, format: eur, hideInTable: true },
           { key: 'saldo_datum', label: 'Saldo zum', type: 'date', hideInTable: true },
         ]}
         listSql={`SELECT b.*, o.name AS objekt_id_label FROM bankkonten b LEFT JOIN objekte o ON o.id = b.objekt_id ORDER BY o.name`}

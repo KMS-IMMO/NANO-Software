@@ -1,5 +1,7 @@
 // Kontoauszug per Drag & Drop (CSV, CAMT-XML oder PDF): Vorschau, Bankkonto wählen, importieren und automatisch zuordnen.
 // Aus den zugeordneten Umsätzen entstehen die Buchungen unter „Einnahmen & Ausgaben“.
+import { BetragFeld } from './BetragFeld';
+import { betragZahl } from '../lib/betrag';
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { FileUp, Landmark } from 'lucide-react';
@@ -8,7 +10,7 @@ import { auszugLesen, automatischZuordnen, bilderLesen, importieren, saldoHinwei
 import { istBild } from '../logic/ocr';
 import { datum, eur } from './EntityTable';
 
-const zahl = (s: string) => Number(String(s ?? '').replace(/\./g, '').replace(',', '.')) || 0;
+const zahl = (s: string) => betragZahl(s) ?? 0;
 
 export function AuszugImport({ objektId, onDone, kompakt, kontoId }: { objektId: number | null; onDone: () => void; kompakt?: boolean; kontoId?: number }) {
   const [drag, setDrag] = useState(false);
@@ -118,7 +120,7 @@ export function AuszugImport({ objektId, onDone, kompakt, kontoId }: { objektId:
                   : objektId ? <><p className="muted small wide">Für diese Liegenschaft gibt es noch kein Bankkonto. Es wird jetzt angelegt:</p>
                     <label><span>Bezeichnung</span><input value={neu.name} onChange={(e) => setNeu({ ...neu, name: e.target.value })} /></label>
                     <label><span>IBAN</span><input value={neu.iban} onChange={(e) => setNeu({ ...neu, iban: e.target.value })} /></label>
-                    <label><span>Kontostand vor dem ersten Umsatz €</span><input inputMode="decimal" value={neu.saldo} onChange={(e) => setNeu({ ...neu, saldo: e.target.value })} placeholder="0,00" /></label>
+                    <label><span>Kontostand vor dem ersten Umsatz</span><BetragFeld value={neu.saldo} onChange={(e) => setNeu({ ...neu, saldo: e.target.value })} /></label>
                     <label><span>Kontostand vom</span><input type="date" value={neu.datum} onChange={(e) => setNeu({ ...neu, datum: e.target.value })} /></label></>
                   : <p className="warn">Noch kein Bankkonto vorhanden. Bitte in der Liegenschaft ein Bankkonto anlegen.</p>}
               </div>

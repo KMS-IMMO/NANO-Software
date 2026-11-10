@@ -1,3 +1,5 @@
+import { BetragFeld } from './BetragFeld';
+import { betragZahl } from '../lib/betrag';
 import { MonatWahl } from './MonatWahl';
 // „Mieter anlegen“ direkt aus der Einheit: Mieter (Person), optional zweiter Mieter, Mietvertrag mit Miete und Vorauszahlungen,
 // auf Wunsch gleich die Sollstellungen. Alles wird im System gespeichert (Kontakte, Mietverträge, Offene Posten).
@@ -7,7 +9,7 @@ import { db, insert, type Row } from '../db';
 import { sollStellen } from '../logic/soll';
 import { eur } from './EntityTable';
 
-const zahl = (s: string) => Number(String(s ?? '').replace(/\./g, '').replace(',', '.')) || 0;
+const zahl = (s: string) => betragZahl(s) ?? 0;
 const heute = () => new Date().toISOString().slice(0, 10);
 
 type Daten = Record<string, string>;
@@ -132,10 +134,10 @@ export function MieterAnlegen({ einheit, objekt, onClose, onSaved }: { einheit: 
           </div> })}
           {Abschnitt({ n: 3, titel: 'Mietvertrag', children: <div className="mieter-raster">
             <label><span>Mietbeginn *</span><input type="date" value={d.beginn} onChange={s('beginn')} /></label>
-            <label><span>Kaltmiete € / Monat{weg ? '' : ' *'}</span><input inputMode="decimal" value={d.kalt} onChange={s('kalt')} placeholder="0,00" /></label>
-            <label><span>NK-Vorauszahlung €</span><input inputMode="decimal" value={d.nk} onChange={s('nk')} placeholder="0,00" /></label>
-            <label><span>HK-Vorauszahlung €</span><input inputMode="decimal" value={d.hk} onChange={s('hk')} placeholder="0,00" /></label>
-            <label><span>Kaution €</span><input inputMode="decimal" value={d.kaution} onChange={s('kaution')} placeholder="0,00" /></label>
+            <label><span>Kaltmiete / Monat{weg ? '' : ' *'}</span><BetragFeld value={d.kalt} onChange={s('kalt')} /></label>
+            <label><span>NK-Vorauszahlung</span><BetragFeld value={d.nk} onChange={s('nk')} /></label>
+            <label><span>HK-Vorauszahlung</span><BetragFeld value={d.hk} onChange={s('hk')} /></label>
+            <label><span>Kaution</span><BetragFeld value={d.kaution} onChange={s('kaution')} /></label>
             <label><span>Personen im Haushalt</span><input inputMode="numeric" value={d.personen} onChange={s('personen')} /></label>
             <label><span>Fällig am (Tag)</span><input inputMode="numeric" value={d.tag} onChange={s('tag')} /></label>
             <label><span>Umsatzsteuer</span><select value={d.ust} onChange={s('ust')}><option value="0">keine (Wohnung)</option><option value="19">19 % (Gewerbe mit Option)</option></select></label>

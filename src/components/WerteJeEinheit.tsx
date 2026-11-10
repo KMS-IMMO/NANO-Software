@@ -1,10 +1,12 @@
 // Eingabe je Einheit für Konten mit Schlüssel „Verbrauch“ (Menge) oder „Summe“ (fester Betrag in €).
+import { BetragFeld } from './BetragFeld';
+import { betragZahl } from '../lib/betrag';
 import { useEffect, useState } from 'react';
 import { db, type Row } from '../db';
 import { eur, num } from './EntityTable';
 import type { Position } from '../logic/verteilung';
 
-const zahl = (s: string) => Number(String(s).replace(/\./g, '').replace(',', '.')) || 0;
+const zahl = (s: string) => betragZahl(s) ?? 0;
 
 export function WerteJeEinheit({ objekt, jahr, einheiten, konten, onSaved }: { objekt: number; jahr: number; einheiten: Row[]; konten: Position[]; onSaved: () => void }) {
   const [werte, setWerte] = useState<Record<string, string>>({});
@@ -35,8 +37,10 @@ export function WerteJeEinheit({ objekt, jahr, einheiten, konten, onSaved }: { o
         <tbody>{einheiten.map((e) => (
           <tr key={e.id}><td>{e.nummer}</td>
             {konten.map((k) => (
-              <td key={k.konto_id} className="num"><input className="cell" inputMode="decimal" value={werte[`${e.id}-${k.konto_id}`] ?? ''}
-                onChange={(ev) => setWerte({ ...werte, [`${e.id}-${k.konto_id}`]: ev.target.value })} /></td>))}
+              <td key={k.konto_id} className="num">{k.schluessel === 'Summe'
+                ? <BetragFeld zelle className="cell" placeholder="" value={werte[`${e.id}-${k.konto_id}`] ?? ''} onChange={(ev) => setWerte({ ...werte, [`${e.id}-${k.konto_id}`]: ev.target.value })} />
+                : <input className="cell" inputMode="decimal" value={werte[`${e.id}-${k.konto_id}`] ?? ''}
+                onChange={(ev) => setWerte({ ...werte, [`${e.id}-${k.konto_id}`]: ev.target.value })} />}</td>))}
           </tr>))}
         </tbody>
         <tfoot><tr><td>Summe</td>{konten.map((k) => <td key={k.konto_id} className="num">{k.schluessel === 'Summe'

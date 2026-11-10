@@ -1,4 +1,6 @@
 // Nebenkostenabrechnung je Objekt und Kalenderjahr (Mietverwaltung und vermietete WEG-Einheiten).
+import { BetragFeld } from '../components/BetragFeld';
+import { betragZahl } from '../lib/betrag';
 import { useEffect, useState } from 'react';
 import { db, type Row } from '../db';
 import { wid } from '../db/labels';
@@ -151,18 +153,20 @@ export function NebenkostenPage() {
       <section className="card">
         <div className="card-head"><h2>Eingaben je Einheit für {jahr}</h2><button onClick={eingabenSpeichern}>Speichern und neu berechnen</button></div>
         <table className="list">
-          <thead><tr><th>Einheit</th><th className="num">Fläche</th><th className="num">Heizkosten lt. Messdienst €</th><th className="num">Warmwasser lt. Messdienst €</th>
+          <thead><tr><th>Einheit</th><th className="num">Fläche</th><th className="num">Heizkosten lt. Messdienst</th><th className="num">Warmwasser lt. Messdienst</th>
             {verbrauchsKonten.map((k) => <th key={k.konto_id} className="num">{k.schluessel === 'Summe' ? `Betrag € ${k.name}` : `Verbrauch ${k.name}`}</th>)}</tr></thead>
           <tbody>{einheiten.map((e) => (
             <tr key={e.id}>
               <td>{e.nummer}</td><td className="num">{num(e.flaeche)}</td>
               {(['heizkosten', 'warmwasser'] as const).map((f) => (
-                <td key={f} className="num"><input className="cell" inputMode="decimal" value={heiz[e.id]?.[f] ?? ''}
+                <td key={f} className="num"><BetragFeld zelle className="cell" placeholder="" value={heiz[e.id]?.[f] ?? ''}
                   onChange={(ev) => setHeiz({ ...heiz, [e.id]: { heizkosten: heiz[e.id]?.heizkosten ?? '', warmwasser: heiz[e.id]?.warmwasser ?? '', [f]: ev.target.value } })} /></td>
               ))}
               {verbrauchsKonten.map((k) => (
-                <td key={k.konto_id} className="num"><input className="cell" inputMode="decimal" value={verbr[`${e.id}-${k.konto_id}`] ?? ''}
-                  onChange={(ev) => setVerbr({ ...verbr, [`${e.id}-${k.konto_id}`]: ev.target.value })} /></td>
+                <td key={k.konto_id} className="num">{k.schluessel === 'Summe'
+                  ? <BetragFeld zelle className="cell" placeholder="" value={verbr[`${e.id}-${k.konto_id}`] ?? ''} onChange={(ev) => setVerbr({ ...verbr, [`${e.id}-${k.konto_id}`]: ev.target.value })} />
+                  : <input className="cell" inputMode="decimal" value={verbr[`${e.id}-${k.konto_id}`] ?? ''}
+                  onChange={(ev) => setVerbr({ ...verbr, [`${e.id}-${k.konto_id}`]: ev.target.value })} />}</td>
               ))}
             </tr>))}
           </tbody>
@@ -213,7 +217,7 @@ export function NebenkostenPage() {
   );
 }
 
-const zahl = (s: string) => Number(String(s).replace(/\./g, '').replace(',', '.')) || 0;
+const zahl = (s: string) => betragZahl(s) ?? 0;
 
 /** Eigentümer der Einheit am Jahresende (bei vermieteten WEG-Einheiten der Vermieter) */
 async function vermieter(einheitId: number, jahr: number): Promise<string> {

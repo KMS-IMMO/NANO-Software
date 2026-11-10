@@ -1,3 +1,4 @@
+import { betragZahl, betragText } from '../lib/betrag';
 import { MonatWahl } from '../components/MonatWahl';
 // Sollstellungen: monatlich zu zahlende Beträge (Miete, Vorauszahlungen, Hausgeld) je Einheit auflisten,
 // für einen Zeitraum aus den Stammdaten erzeugen, einzeln bearbeiten, löschen oder von Hand anlegen.
@@ -10,7 +11,7 @@ import { SollstellungNeu } from '../components/SollstellungNeu';
 import { OP_SQL, postenStatus, sollStellen, zahlungBuchen, mahnenAbTage } from '../logic/soll';
 
 const heute = () => new Date().toISOString().slice(0, 10);
-const zahl = (s: string) => Number(String(s).replace(/\./g, '').replace(',', '.')) || 0;
+const zahl = (s: string) => betragZahl(s) ?? 0;
 const monatName = (m: string) => /^\d{4}-\d{2}$/.test(m) ? new Date(Number(m.slice(0, 4)), Number(m.slice(5, 7)) - 1).toLocaleDateString('de-DE', { month: 'long', year: 'numeric' }) : m;
 export const STATUS_KLASSE: Record<string, string> = { bezahlt: 'aktiv', erwartet: 'erwartet', 'fällig': 'faellig', mahnen: 'mahnen', gemahnt: 'gemahnt' };
 
@@ -121,7 +122,7 @@ export function SollstellungenPage() {
                     <td>{r.schuldner || <span className="muted">–</span>}</td>
                     <td>{r.art}</td>
                     <td><input type="date" className="cell" style={{ width: 140 }} defaultValue={r.faellig} onBlur={(e) => aendern(r, 'faellig', e.target.value)} /></td>
-                    <td className="num"><input className="cell" inputMode="decimal" defaultValue={Number(r.betrag).toFixed(2).replace('.', ',')} onBlur={(e) => aendern(r, 'betrag', e.target.value)} /></td>
+                    <td className="num"><span className="betrag-feld zelle"><input className="cell" inputMode="decimal" defaultValue={betragText(Number(r.betrag))} onBlur={(e) => { const n = betragZahl(e.target.value); if (n !== null) e.target.value = betragText(n); aendern(r, 'betrag', e.target.value); }} /><span className="betrag-eur">€</span></span></td>
                     <td className="num">{eur(r.bezahlt)}</td>
                     <td><span className={'pill st-' + STATUS_KLASSE[st]}>{st}</span></td>
                     <td className="actions">

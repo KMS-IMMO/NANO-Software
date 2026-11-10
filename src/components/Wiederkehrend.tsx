@@ -28,7 +28,7 @@ export function Wiederkehrend({ objektId, onChange }: { objektId?: number; onCha
           { key: 'text', label: 'Bezeichnung', required: true, wide: true },
           { key: 'firma_id', label: 'Unternehmen', type: 'select', optionsSql: 'SELECT id AS value, name AS label FROM firmen ORDER BY name' },
           { key: 'buchungskonto_id', label: 'Buchungskonto', type: 'select', required: true, optionsSql: kontoOptions("art = 'Aufwand'") },
-          { key: 'betrag', label: 'Betrag brutto', type: 'number', required: true, format: (x) => eur(Number(x)) },
+          { key: 'betrag', label: 'Betrag brutto', type: 'number', geld: true, required: true, format: (x) => eur(Number(x)) },
           { key: 'intervall', label: 'Rhythmus', type: 'select', required: true, options: INTERVALLE, format: (x) => INTERVALLE.find((i) => i.value === Number(x))?.label ?? x },
           { key: 'naechste', label: 'Nächste Rechnung am', type: 'date', required: true, format: (x) => datum(x) },
           { key: 'zahlungsziel', label: 'Zahlungsziel in Tagen (leer = 14)', type: 'number', hideInTable: true },

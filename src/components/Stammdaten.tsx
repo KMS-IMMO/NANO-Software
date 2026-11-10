@@ -3,6 +3,8 @@ import { useState, type ReactNode } from 'react';
 import { Pencil, Save, X } from 'lucide-react';
 import type { Row } from '../db';
 import { datum, eur } from './EntityTable';
+import { BetragFeld } from './BetragFeld';
+import { betragText, betragZahl } from '../lib/betrag';
 
 export type SFeld = {
   key: string; label: string;
@@ -16,13 +18,8 @@ export type SFeld = {
 };
 export type SGruppe = { titel: string; felder: SFeld[] };
 
-const zahlStr = (v: any) => (v === null || v === undefined || v === '' ? '' : String(Number(v).toFixed(2)).replace('.', ','));
-const zahlIn = (s: string) => {
-  const t = String(s ?? '').trim();
-  if (!t) return null;
-  const n = Number(t.replace(/\s/g, '').replace(/\.(?=\d{3}(\D|$))/g, '').replace(',', '.'));
-  return Number.isFinite(n) ? n : null;
-};
+const zahlStr = (v: any) => (v === null || v === undefined || v === '' ? '' : betragText(Number(v)));
+const zahlIn = (s: string) => betragZahl(s);
 
 function anzeigen(f: SFeld, v: any): ReactNode {
   if (f.anzeige !== undefined) return f.anzeige;
@@ -49,7 +46,7 @@ export function StammdatenKarte({ titel, icon, gruppen, werte, onSpeichern }: {
   const felder = gruppen.flatMap((g) => g.felder).filter((f) => !f.nurLesen && f.anzeige === undefined);
 
   const start = () => {
-    setD(Object.fromEntries(felder.map((f) => [f.key, f.typ === 'geld' ? zahlStr(werte[f.key]) : werte[f.key] == null ? '' : String(werte[f.key])])));
+    setD(Object.fromEntries(felder.map((f) => [f.key, f.typ === 'geld' ? zahlStr(werte[f.key]) : werte[f.key] == null ? '' : f.typ === 'zahl' ? String(werte[f.key]).replace('.', ',') : String(werte[f.key])])));
     setInfo(''); setFehler(''); setBearbeiten(true);
   };
   const speichern = async () => {
@@ -100,7 +97,8 @@ export function StammdatenKarte({ titel, icon, gruppen, werte, onSpeichern }: {
                       ? <select value={v} onChange={set}>{f.optionen?.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</select>
                       : f.typ === 'lang' ? <textarea rows={2} value={v} onChange={set} />
                       : f.typ === 'datum' ? <input type="date" value={v} onChange={set} />
-                      : <input inputMode={f.typ === 'geld' ? 'decimal' : f.typ === 'zahl' ? 'numeric' : undefined} value={v} onChange={set} placeholder={f.typ === 'geld' ? '0,00' : undefined} />}
+                      : f.typ === 'geld' ? <BetragFeld value={v} onChange={set} />
+                      : <input inputMode={f.typ === 'zahl' ? 'decimal' : undefined} value={v} onChange={set} />}
                   </label>);
               })}
             </div>
