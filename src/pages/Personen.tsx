@@ -36,8 +36,8 @@ export function PersonenPage({ rolle, titel }: { rolle?: 'Eigentümer' | 'Mieter
         { key: 'notiz', label: 'Notiz', type: 'textarea', hideInTable: true },
         { key: 'objekte', label: 'Objekte / Einheiten', computed: true },
         ...(rolle === 'Mieter' ? [
-          { key: 'nk_vz', label: 'NK-Vorauszahlung / Monat', type: 'number' as const, computed: true, sum: true, format: (v: any) => v != null ? eur(v) : '–' },
-          { key: 'hk_vz', label: 'HK-Vorauszahlung / Monat', type: 'number' as const, computed: true, sum: true, format: (v: any) => v != null ? eur(v) : '–' }] : []),
+          { key: 'nk_vz', label: 'NK-Vorauszahlung / Monat', type: 'number' as const, geld: true, computed: true, sum: true, format: (v: any) => v != null ? eur(v) : '–' },
+          { key: 'hk_vz', label: 'HK-Vorauszahlung / Monat', type: 'number' as const, geld: true, computed: true, sum: true, format: (v: any) => v != null ? eur(v) : '–' }] : []),
       ]}
       listSql={`SELECT p.*, ${personLabel('p')} AS anzeigename,
           (SELECT GROUP_CONCAT(x, '; ') FROM (

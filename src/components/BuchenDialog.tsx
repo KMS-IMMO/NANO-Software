@@ -1,5 +1,7 @@
 // Buchen-Fenster: Konto über ein drehendes Rad wählen, dann Einheiten, Buchungsjahr, Rechnungsnummer (wenn das Konto sie verlangt) und § 35a.
 // Wird für Bankumsätze (Betrag und Datum stehen fest) und für freie Einnahmen und Ausgaben benutzt.
+import { BetragFeld } from './BetragFeld';
+import { betragZahl, betragText } from '../lib/betrag';
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as KE, type PointerEvent as PE } from 'react';
 import { Check, Search } from 'lucide-react';
 import { db, insert, type Row } from '../db';
@@ -7,7 +9,7 @@ import { einheitLabel, einheitPerson } from '../db/labels';
 import { eur } from './EntityTable';
 import { gesperrt, sperrText } from '../logic/abschluss';
 
-const zahl = (s: string) => Number(String(s).replace(/\./g, '').replace(',', '.')) || 0;
+const zahl = (s: string) => betragZahl(s) ?? 0;
 const r2 = (n: number) => Math.round(n * 100) / 100;
 const heute = () => new Date().toISOString().slice(0, 10);
 
@@ -174,7 +176,7 @@ export function BuchenDialog({ vorlage, onClose, onSaved }: { vorlage: BuchenVor
   const verteilen = (ids: string[]) => {
     if (!ids.length) return {};
     const teil = Math.floor((gesamt / ids.length) * 100) / 100, rest = r2(gesamt - teil * ids.length);
-    return Object.fromEntries(ids.map((id, i) => [id, gesamt ? (i === 0 ? r2(teil + rest) : teil).toFixed(2).replace('.', ',') : '']));
+    return Object.fromEntries(ids.map((id, i) => [id, gesamt ? betragText(i === 0 ? r2(teil + rest) : teil) : '']));
   };
   const einheitUmschalten = (id: string) => {
     const neu = wahl.includes(id) ? wahl.filter((x) => x !== id) : [...wahl, id];
@@ -220,7 +222,7 @@ export function BuchenDialog({ vorlage, onClose, onSaved }: { vorlage: BuchenVor
         {u ? <p className="muted small bf-umsatz">{new Date(u.datum).toLocaleDateString('de-DE')} · {u.gegenpartei} · {u.verwendungszweck}</p>
           : <div className="bf-kopf">
               <label><span>Datum</span><input type="date" value={datum} onChange={(e) => { setDatum(e.target.value); const j = Number(e.target.value.slice(0, 4)); if (j) setJahr(j); }} /></label>
-              <label><span>Betrag €</span><input inputMode="decimal" autoFocus value={betrag} onChange={(e) => { setBetrag(e.target.value); setAnteile({}); setWahl([]); }} placeholder="0,00" /></label>
+              <label><span>Betrag</span><BetragFeld autoFocus value={betrag} onChange={(e) => { setBetrag(e.target.value); setAnteile({}); setWahl([]); }} /></label>
               <label className="grow"><span>Buchungstext</span><input value={text} onChange={(e) => setText(e.target.value)} /></label>
             </div>}
 
@@ -247,7 +249,7 @@ export function BuchenDialog({ vorlage, onClose, onSaved }: { vorlage: BuchenVor
                   <span className="bf-haken">{an && <Check size={13} />}</span>
                   <b>{x.nummer}</b>
                   <span className="bf-name">{x.person ?? <span className="muted">leer stehend</span>}</span>
-                  {an && wahl.length > 1 && <input inputMode="decimal" value={anteile[id] ?? ''} onClick={(e) => e.stopPropagation()} onChange={(e) => setAnteile({ ...anteile, [id]: e.target.value })} />}
+                  {an && wahl.length > 1 && <BetragFeld zelle value={anteile[id] ?? ''} onClick={(e) => e.stopPropagation()} onChange={(e) => setAnteile({ ...anteile, [id]: e.target.value })} />}
                 </div>);
             })}
           </div>}
@@ -270,7 +272,7 @@ export function BuchenDialog({ vorlage, onClose, onSaved }: { vorlage: BuchenVor
 
         {mit35 && <div className="bf-schritt bf-neu">
           <div className="bf-titel"><span className="bf-nr">{mitRg ? 5 : 4}</span>§ 35a <span className="muted small">{k?.hdl ? 'haushaltsnahe Dienstleistung' : 'Handwerkerleistung'}</span></div>
-          <input inputMode="decimal" value={a35} onChange={(e) => setA35(e.target.value)} placeholder="davon Arbeitskosten €, leer = ganzer Betrag" />
+          <BetragFeld value={a35} onChange={(e) => setA35(e.target.value)} placeholder="davon Arbeitskosten, leer = ganzer Betrag" />
         </div>}
 
         {fehler && <p className="error">{fehler}</p>}

@@ -1,3 +1,5 @@
+import { BetragFeld } from '../components/BetragFeld';
+import { betragZahl, betragText } from '../lib/betrag';
 import { MieterAnlegen } from '../components/MieterAnlegen';
 import { useEffect, useMemo, useState } from 'react';
 import { BJ } from '../logic/buchung';
@@ -334,9 +336,9 @@ function EinheitenTab({ objektId, weg, onChange }: { objektId: number; weg: bool
           { key: 'eig_telefon', label: 'Telefon', computed: true, format: (v: any) => v || '–' },
           { key: 'eig_email', label: 'E-Mail', computed: true, format: (v: any) => v ? <a href={`mailto:${v}`}>{v}</a> : '–' }] : []),
         { key: 'mieter', label: 'Mieter (aktuell)', computed: true, format: (v: any) => v ?? <span className="muted">–</span> },
-        { key: 'monat', label: weg ? 'Hausgeld (Soll) / Monat' : 'Miete warm / Monat', type: 'number', computed: true, format: eur, sum: true },
-        ...(weg ? [{ key: 'nk_vz', label: 'NK-VZ Mieter / Monat', type: 'number', computed: true, format: (v: any) => v != null ? eur(v) : '–', sum: true }] : []),
-        { key: 'ist', label: `Zahlungseingang ${jahr}`, type: 'number', computed: true, format: eur, sum: true },
+        { key: 'monat', label: weg ? 'Hausgeld (Soll) / Monat' : 'Miete warm / Monat', type: 'number', geld: true, computed: true, format: eur, sum: true },
+        ...(weg ? [{ key: 'nk_vz', label: 'NK-VZ Mieter / Monat', type: 'number', geld: true, computed: true, format: (v: any) => v != null ? eur(v) : '–', sum: true }] : []),
+        { key: 'ist', label: `Zahlungseingang ${jahr}`, type: 'number', geld: true, computed: true, format: eur, sum: true },
         { key: 'saldo', label: 'Offener Saldo', type: 'number', computed: true, sum: true,
           format: (v: any) => <span className={v > 0.005 ? 'neg' : ''}>{eur(v ?? 0)}</span> },
         { key: 'status', label: 'Status', computed: true, format: status },
@@ -379,8 +381,8 @@ function EinheitenTab({ objektId, weg, onChange }: { objektId: number; weg: bool
 const einheitOptions = (objektId: number) => `SELECT e.id AS value, ${einheitLabel('e')} AS label FROM einheiten e WHERE e.objekt_id = ${objektId} ORDER BY e.lfd_nr, e.nummer`;
 
 const ZAHLWEISE: Record<string, string> = { zusammen: 'Hausgeld und Rücklage in einer Summe', getrennt: 'Hausgeld und Rücklage getrennt' };
-const zahlStr = (n: number) => (n ? n.toFixed(2).replace('.', ',') : '');
-const zahlIn = (s: string) => Number(String(s).replace(/\./g, '').replace(',', '.')) || 0;
+const zahlStr = (n: number) => (n ? betragText(n) : '');
+const zahlIn = (s: string) => betragZahl(s) ?? 0;
 
 /** Eigentümer je Einheit mit Hausgeld, Erhaltungsrücklage und Zahlweise (eine Überweisung oder zwei getrennte) */
 function EigentuemerTab({ objektId, nurHausgeld }: { objektId: number; nurHausgeld?: boolean }) {
@@ -449,15 +451,15 @@ function EigentuemerTab({ objektId, nurHausgeld }: { objektId: number; nurHausge
         </div>
         {info && <p className="info">{info}</p>}
         <div className="tablewrap"><table className="list">
-          <thead><tr><th>W-ID</th><th>Einheit</th><th>Eigentümer</th><th className="num">Hausgeld ohne Rücklage €</th><th className="num">Erhaltungsrücklage €</th><th className="num">Hausgeld gesamt</th><th>Zahlweise</th><th>Überweisung</th></tr></thead>
+          <thead><tr><th>W-ID</th><th>Einheit</th><th>Eigentümer</th><th className="num">Hausgeld ohne Rücklage</th><th className="num">Erhaltungsrücklage</th><th className="num">Hausgeld gesamt</th><th>Zahlweise</th><th>Überweisung</th></tr></thead>
           <tbody>{rows.map((r) => {
             const e = edit[r.einheit_id] ?? { bew: '', rl: '', zw: '' };
             const bew = zahlIn(e.bew), rl = zahlIn(e.rl), z = effektiv(e.zw);
             return (
               <tr key={r.einheit_id}>
                 <td className="nowrap"><b>{r.wid}</b></td><td>{r.nummer}</td><td>{r.eigentuemer ?? <span className="muted">kein Eigentümer</span>}</td>
-                <td className="num"><input className="cell" inputMode="decimal" value={e.bew} onChange={(x) => setEdit({ ...edit, [r.einheit_id]: { ...e, bew: x.target.value } })} /></td>
-                <td className="num"><input className="cell" inputMode="decimal" value={e.rl} onChange={(x) => setEdit({ ...edit, [r.einheit_id]: { ...e, rl: x.target.value } })} /></td>
+                <td className="num"><BetragFeld zelle className="cell" value={e.bew} onChange={(x) => setEdit({ ...edit, [r.einheit_id]: { ...e, bew: x.target.value } })} /></td>
+                <td className="num"><BetragFeld zelle className="cell" value={e.rl} onChange={(x) => setEdit({ ...edit, [r.einheit_id]: { ...e, rl: x.target.value } })} /></td>
                 <td className="num"><b>{eur(bew + rl)}</b></td>
                 <td><select className="cell" value={e.zw} disabled={!r.eigentum_id} onChange={(x) => setEdit({ ...edit, [r.einheit_id]: { ...e, zw: x.target.value } })}>
                   <option value="">wie Liegenschaft ({standard === 'getrennt' ? 'getrennt' : 'eine Summe'})</option>
@@ -519,8 +521,8 @@ function HausgeldTab({ objektId, version, onChange }: { objektId: number; versio
       fields={[
         { key: 'einheit_id', label: 'Einheit', type: 'select', required: true, optionsSql: einheitOptions(objektId) },
         { key: 'gueltig_ab', label: 'Gültig ab', type: 'date', required: true },
-        { key: 'betrag', label: 'Hausgeld gesamt / Monat (inkl. Rücklage)', type: 'number', required: true, format: eur },
-        { key: 'davon_ruecklage', label: 'davon Erhaltungsrücklage', type: 'number', format: eur },
+        { key: 'betrag', label: 'Hausgeld gesamt / Monat (inkl. Rücklage)', type: 'number', geld: true, required: true, format: eur },
+        { key: 'davon_ruecklage', label: 'davon Erhaltungsrücklage', type: 'number', geld: true, format: eur },
       ]}
       listSql={`SELECT h.*, e.nummer AS einheit_id_label FROM hausgeld h JOIN einheiten e ON e.id = h.einheit_id
         WHERE e.objekt_id = $1 ORDER BY e.lfd_nr, e.nummer, h.gueltig_ab DESC`}

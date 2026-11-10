@@ -1047,3 +1047,25 @@ i.hq { background: #e6d3ae; border: 1.5px solid #3a3d42; } i.mv { background: #5
 .stammdaten .erin-schritt:not(:last-of-type)::before { left: 14px; }
 .stammdaten-wert { font-size: 14px; font-weight: 600; color: var(--text); min-height: 20px; overflow-wrap: anywhere; white-space: pre-wrap; }
 .stammdaten .card-head .row { gap: 8px; }
+
+/* ===== Geldbeträge: immer 1.234,00 €, gleich breite Ziffern, rechtsbündig ===== */
+.num, td.num, th.num, .kpi b, .betrag, b.num { font-variant-numeric: tabular-nums; }
+table.list td.num { letter-spacing: -.005em; }
+table.list tfoot td.num { font-weight: 700; }
+.betrag-feld { position: relative; display: block; width: 100%; }
+.betrag-feld input { text-align: right; padding-right: 30px; font-variant-numeric: tabular-nums; }
+.betrag-feld input::placeholder { color: #b5b0a6; }
+.betrag-feld .betrag-eur { position: absolute; right: 11px; top: 50%; transform: translateY(-50%); color: var(--muted);
+  font-size: .9em; font-weight: 500; pointer-events: none; transition: color .15s; }
+.betrag-feld input:focus + .betrag-eur { color: var(--accent-dark); }
+.betrag-feld input:disabled + .betrag-eur { opacity: .45; }
+.betrag-feld.minus input { color: var(--neg); }
+.betrag-feld.zelle { display: inline-block; width: auto; vertical-align: middle; }
+.betrag-feld.zelle input { width: 130px; padding-right: 24px; }
+.betrag-feld.zelle .betrag-eur { right: 8px; font-size: .85em; }
+.addon > .betrag-feld { background: none; padding: 0; flex: 1; display: block; min-width: 0; }
+.addon > .betrag-feld input { height: 100%; }
+/* Betragsfeld in Formular-Labels nicht wie die Feldbeschriftung (klein/grau) darstellen */
+.form label span.betrag-feld, label span.betrag-feld, .addon > span.betrag-feld { font-size: inherit; color: inherit; text-transform: none; letter-spacing: normal; background: none; padding: 0; }
+.form label span.betrag-feld .betrag-eur { font-size: 13px; color: var(--muted); }
+.form label span.betrag-feld input:focus + .betrag-eur { color: var(--accent-dark); }

@@ -2,6 +2,7 @@
 // und zeigt die einzelnen Rechnungen und Buchungen, aus denen sich der Betrag zusammensetzt.
 // Der Verteilerschlüssel wird je Konto für das Abrechnungsjahr gewählt.
 // Beträge lassen sich hier direkt ändern, löschen und neu hinzufügen (als Buchung auf das Konto der Liegenschaft).
+import { BetragFeld } from './BetragFeld';
 import { Fragment, useEffect, useState, type ReactNode } from 'react';
 import { Check, ChevronDown, ChevronRight, Pencil, Plus, Trash2, X } from 'lucide-react';
 import { db, type Row } from '../db';
@@ -79,7 +80,7 @@ function Belege({ liste, ausgabe, kontoId, objekt, jahr, onChanged }: { liste: R
     <tr className="beleg-edit" key={'e' + (b ? keyVon(b) : 'neu')}>
       <td><input type="date" className="cell" value={e.datum} onChange={(x) => setE({ ...e, datum: x.target.value })} /></td>
       <td colSpan={4}><input className="cell" style={{ width: '100%', textAlign: 'left' }} placeholder="Text, z. B. Korrektur oder Rechnung Hausmeister" value={e.text} onChange={(x) => setE({ ...e, text: x.target.value })} /></td>
-      <td className="num"><input className="cell" inputMode="decimal" autoFocus style={{ width: 110 }} value={e.betrag} onChange={(x) => setE({ ...e, betrag: x.target.value })}
+      <td className="num"><BetragFeld zelle className="cell" autoFocus style={{ width: 130 }} value={e.betrag} onChange={(x) => setE({ ...e, betrag: x.target.value })}
         onKeyDown={(x) => { if (x.key === 'Enter') speichern(b); if (x.key === 'Escape') setE(null); }} /></td>
       <td className="actions nowrap"><button className="icon-btn" title="Speichern" onClick={() => speichern(b)}><Check size={16} /></button>
         <button className="icon-btn" title="Abbrechen" onClick={() => { setE(null); setFehler(''); }}><X size={16} /></button></td>
@@ -171,7 +172,7 @@ export function AbrechnungsUebersicht({ objekt, jahr, pos, schluessel, stand = 0
           </select></label>
           <label><span>Datum</span><input type="date" value={neu.datum} onChange={(x) => setNeu({ ...neu, datum: x.target.value })} /></label>
           <label className="grow"><span>Text</span><input placeholder="z. B. Rechnung Hausmeister Dezember" value={neu.text} onChange={(x) => setNeu({ ...neu, text: x.target.value })} /></label>
-          <label><span>Betrag €</span><input inputMode="decimal" value={neu.betrag} onChange={(x) => setNeu({ ...neu, betrag: x.target.value })} onKeyDown={(x) => x.key === 'Enter' && neuSpeichern()} /></label>
+          <label><span>Betrag</span><BetragFeld value={neu.betrag} onChange={(x) => setNeu({ ...neu, betrag: x.target.value })} onKeyDown={(x) => x.key === 'Enter' && neuSpeichern()} /></label>
           <div className="row"><button onClick={() => { setNeu(null); setNeuFehler(''); }}>Abbrechen</button><button className="primary" onClick={neuSpeichern}>Hinzufügen</button></div>
           {neuFehler && <p className="error small">{neuFehler}</p>}
         </div>)}

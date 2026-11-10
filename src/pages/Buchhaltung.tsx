@@ -1,4 +1,6 @@
 // Buchhaltung: Buchungsjournal mit manueller Buchung, Buchungsregeln, Kontenübersicht (GuV) und Berichte.
+import { BetragFeld } from '../components/BetragFeld';
+import { betragZahl } from '../lib/betrag';
 import { OffeneUmsaetze } from '../components/OffeneUmsaetze';
 import { AuszugImport } from '../components/AuszugImport';
 import { useEffect, useState, type ReactNode } from 'react';
@@ -24,7 +26,7 @@ import { ruecklageMonate, ruecklageZeitraum } from '../logic/ruecklage';
 const RL_KONTEN = ['1260', '1261', '1262'];
 
 const heute = () => new Date().toISOString().slice(0, 10);
-const zahl = (s: string) => Number(String(s).replace(/\./g, '').replace(',', '.')) || 0;
+const zahl = (s: string) => betragZahl(s) ?? 0;
 const kontoOptions = `SELECT id AS value, nummer || ' ' || name AS label, hdl, hwl FROM buchungskonten ORDER BY nummer`;
 
 function useObjekte() {
@@ -316,9 +318,9 @@ export function JournalPage() {
               <label><span>Rechnungs-Nr.</span><input value={rEdit.rechnungsnr ?? ''} onChange={(e) => setREdit({ ...rEdit, rechnungsnr: e.target.value })} /></label>
               <label><span>Buchungskonto *</span><select value={rEdit.buchungskonto_id ?? ''} onChange={(e) => setREdit({ ...rEdit, buchungskonto_id: e.target.value })}>
                 {konten.map((k) => <option key={k.value} value={k.value}>{k.label}</option>)}</select></label>
-              <label><span>Betrag € *</span><input inputMode="decimal" value={rEdit.betrag ?? ''} onChange={(e) => setREdit({ ...rEdit, betrag: e.target.value })} /></label>
+              <label><span>Betrag *</span><BetragFeld value={rEdit.betrag ?? ''} onChange={(e) => setREdit({ ...rEdit, betrag: e.target.value })} /></label>
               {(() => { const k = konten.find((x) => Number(x.value) === Number(rEdit.buchungskonto_id)); return k && (k.hdl || k.hwl) ? (
-                <label><span>davon § 35a-Anteil (Arbeitskosten) €</span><input inputMode="decimal" placeholder="leer = ganzer Betrag" value={rEdit.anteil_lohn ?? ''} onChange={(e) => setREdit({ ...rEdit, anteil_lohn: e.target.value })} /></label>) : null; })()}
+                <label><span>davon § 35a-Anteil (Arbeitskosten)</span><BetragFeld placeholder="leer = ganzer Betrag" value={rEdit.anteil_lohn ?? ''} onChange={(e) => setREdit({ ...rEdit, anteil_lohn: e.target.value })} /></label>) : null; })()}
             </div>
             {fehler && <p className="error">{fehler}</p>}
             <div className="row end"><button className="danger" onClick={() => { const r = rEdit; setREdit(null); rechnungLoeschen(r); }}>Löschen</button><span className="grow" />
@@ -378,10 +380,10 @@ function BuchungForm({ edit, setEdit, objekte, konten, fest }: { edit: Row; setE
         {einheiten.map((x) => <option key={x.id} value={x.id}>{x.nummer}</option>)}</select></label>
       <label className="wide"><span>Konto *</span><select value={edit.buchungskonto_id ?? ''} onChange={(e) => set('buchungskonto_id', e.target.value)}>
         <option value="">– bitte wählen –</option>{konten.map((k) => <option key={k.value} value={k.value}>{k.label}</option>)}</select></label>
-      <label><span>Betrag € *</span><input inputMode="decimal" value={edit.betrag ?? ''} onChange={(e) => setEdit({ ...edit, betrag: e.target.value, ...(edit.einheit_id === 'eigen' && gewaehlt.length ? { anteile: {} } : {}) })} /></label>
+      <label><span>Betrag *</span><BetragFeld value={edit.betrag ?? ''} onChange={(e) => setEdit({ ...edit, betrag: e.target.value, ...(edit.einheit_id === 'eigen' && gewaehlt.length ? { anteile: {} } : {}) })} /></label>
       {(() => { const k = konten.find((x) => Number(x.value) === Number(edit.buchungskonto_id)); return k && (k.hdl || k.hwl) && edit.richtung !== 'Einnahme' ? (
         <label className="wide hint-35a"><span>davon § 35a-Anteil (Arbeitskosten) € · {k.hdl ? 'haushaltsnahe Dienstleistung' : 'Handwerkerleistung'}</span>
-          <input inputMode="decimal" placeholder="leer = ganzer Betrag" value={edit.anteil_35a ?? ''} onChange={(e) => set('anteil_35a', e.target.value)} />
+          <BetragFeld placeholder="leer = ganzer Betrag" value={edit.anteil_35a ?? ''} onChange={(e) => set('anteil_35a', e.target.value)} />
           <small className="muted">Dieser Betrag erscheint in der Abrechnung als § 35a-Anteil. Ohne Eintrag zählt der ganze Betrag.</small></label>) : null; })()}
       <label><span>Unternehmen</span><input list="buchung-firmen" value={edit.firma ?? ''} placeholder="z. B. Stadtwerke, Handwerker" onChange={(e) => set('firma', e.target.value)} /></label>
       <datalist id="buchung-firmen">{firmen.map((f) => <option key={f.id} value={f.name} />)}</datalist>
@@ -393,7 +395,7 @@ function BuchungForm({ edit, setEdit, objekte, konten, fest }: { edit: Row; setE
             return (
               <div key={x.id} className="row">
                 <label className="check grow"><input type="checkbox" checked={an} onChange={() => umschalten(String(x.id))} />{x.nummer}</label>
-                {an && <input className="cell" inputMode="decimal" value={anteile[x.id]} onChange={(e) => set('anteile', { ...anteile, [x.id]: e.target.value })} />}
+                {an && <BetragFeld zelle className="cell" value={anteile[x.id]} onChange={(e) => set('anteile', { ...anteile, [x.id]: e.target.value })} />}
               </div>);
           })}
           <p className={'small ' + (gewaehlt.length && Math.abs(summe - gesamt) > 0.005 ? 'warn' : 'muted')}>Summe {eur(summe)} von {eur(gesamt)}. Beim Anhaken wird gleichmäßig aufgeteilt, danach kannst du die Beträge ändern.</p>

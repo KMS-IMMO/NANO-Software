@@ -1,4 +1,6 @@
 // WEG-Module: Beschlüsse und Versammlungen, Erhaltungsrücklage, Wirtschaftsplan; Instandhaltung (WEG und Miete).
+import { BetragFeld } from '../components/BetragFeld';
+import { betragZahl } from '../lib/betrag';
 import { einheitLabel } from '../db/labels';
 import { useEffect, useState } from 'react';
 import { CalendarDays, ClipboardList, Gavel, PiggyBank, Wrench } from 'lucide-react';
@@ -19,7 +21,7 @@ const STATUS_V: Record<string, string> = { 'Offen': 'offen', 'In Arbeit': 'künf
 const PRIO: Record<string, string> = { 'Hoch': 'offen', 'Mittel': 'teil', 'Niedrig': '' };
 const STATUS_M: Record<string, string> = { 'Vorgesehen': 'teil', 'Geplant': 'künftig', 'Beschlossen': 'künftig', 'Umgesetzt': 'bezahlt' };
 const objektOptions = 'SELECT id AS value, name AS label FROM objekte ORDER BY name';
-const zahl = (s: string) => Number(String(s).replace(/\./g, '').replace(',', '.')) || 0;
+const zahl = (s: string) => betragZahl(s) ?? 0;
 
 /* =================== Beschlüsse und Versammlungen =================== */
 
@@ -63,7 +65,7 @@ export function BeschluesseTab({ objektId }: { objektId?: number }) {
               ${objektId ? `WHERE v.objekt_id = ${Number(objektId)}` : ''} ORDER BY v.datum DESC` },
           { key: 'betreff', label: 'Betreff', required: true, wide: true },
           { key: 'art', label: 'Beschlussart', type: 'select', options: ['Investition', 'Instandhaltung', 'Finanzen', 'Organisation', 'Sonstiges'] },
-          { key: 'betrag', label: 'Betrag', type: 'number', format: (v) => v ? eur(v) : '' },
+          { key: 'betrag', label: 'Betrag', type: 'number', geld: true, format: (v) => v ? eur(v) : '' },
           { key: 'ergebnis', label: 'Ergebnis', type: 'select', options: ['Angenommen', 'Abgelehnt', 'Vertagt'], required: true,
             format: (v, r) => <>{pill(v, ERGEBNIS)}{r.zustimmung != null && <span className="muted small"> {num(r.zustimmung, 0)} %</span>}</> },
           { key: 'zustimmung', label: 'Zustimmung in %', type: 'number', hideInTable: true },
@@ -115,7 +117,7 @@ export function VorgaengeTab({ objektId }: { objektId?: number }) {
           { key: 'faellig', label: 'Fälligkeit', type: 'date',
             format: (v, r) => <span className={v && r.status !== 'Erledigt' && v < new Date().toISOString().slice(0, 10) ? 'neg' : ''}>{datum(v)}</span> },
           { key: 'firma_id', label: 'Firma', type: 'select', optionsSql: 'SELECT id AS value, name AS label FROM firmen ORDER BY name' },
-          { key: 'kosten', label: 'Kosten (geplant)', type: 'number', format: (v) => v ? eur(v) : '', sum: true },
+          { key: 'kosten', label: 'Kosten (geplant)', type: 'number', geld: true, format: (v) => v ? eur(v) : '', sum: true },
           { key: 'erledigt_am', label: 'Erledigt am', type: 'date', hideInTable: true },
           { key: 'notiz', label: 'Beschreibung', type: 'textarea', hideInTable: true },
         ]}
@@ -209,7 +211,7 @@ export function RuecklagenTab({ objektId }: { objektId: number }) {
                 <g key={v.jahr}>
                   <rect x={30 + i * 94} y={185 - h} width={56} height={h} rx={4} fill="#2e7d32" />
                   <text x={58 + i * 94} y={205} textAnchor="middle" fontSize="12" fill="#6b6f76">{v.jahr}</text>
-                  <text x={58 + i * 94} y={178 - h} textAnchor="middle" fontSize="11" fill="#1f2328">{num(v.bestand, 0)} €</text>
+                  <text x={58 + i * 94} y={178 - h} textAnchor="middle" fontSize="11" fill="#1f2328">{eur(v.bestand)}</text>
                 </g>);
             })}
           </svg>
@@ -222,7 +224,7 @@ export function RuecklagenTab({ objektId }: { objektId: number }) {
         table="ruecklage_massnahmen"
         fields={[
           { key: 'massnahme', label: 'Maßnahme', required: true, wide: true },
-          { key: 'betrag', label: 'Geplanter Betrag', type: 'number', format: eur, sum: true, required: true },
+          { key: 'betrag', label: 'Geplanter Betrag', type: 'number', geld: true, format: eur, sum: true, required: true },
           { key: 'jahr', label: 'Zeitraum (Jahr)', type: 'number', format: (v) => v ?? '' },
           { key: 'status', label: 'Status', type: 'select', options: ['Vorgesehen', 'Geplant', 'Beschlossen', 'Umgesetzt'], required: true, format: (v) => pill(v, STATUS_M) },
           { key: 'notiz', label: 'Notiz', type: 'textarea', hideInTable: true },
@@ -422,14 +424,14 @@ export function WirtschaftsplanTab({ objektId }: { objektId: number }) {
             <button className="primary" onClick={speichern}>Speichern</button>
           </div></div>
         <table className="list">
-          <thead><tr><th>Kostenart</th><th>Schlüssel</th><th className="num">Ist {jahr - 1}</th><th className="num">Geplante Kosten €</th></tr></thead>
+          <thead><tr><th>Kostenart</th><th>Schlüssel</th><th className="num">Ist {jahr - 1}</th><th className="num">Geplante Kosten</th></tr></thead>
           <tbody>{konten.flatMap((k) => {
             const out = [];
             if (k.gruppe !== gruppe) { gruppe = k.gruppe; out.push(<tr key={'g' + k.id} className="group"><td colSpan={4}>{gruppe}</td></tr>); }
             out.push(
               <tr key={k.id}><td>{k.nummer} {k.name}</td><td className="muted small">{k.nummer === RUECKLAGE_KONTO ? 'MEA' : k.objekt_schluessel ?? 'MEA'}</td>
                 <td className="num muted">{vorjahr[k.id] ? eur(vorjahr[k.id]) : ''}</td>
-                <td className="num"><input className="cell" inputMode="decimal" value={plan[k.id] ?? ''} onChange={(e) => setPlan({ ...plan, [k.id]: e.target.value })} /></td></tr>);
+                <td className="num"><BetragFeld zelle className="cell" placeholder="" value={plan[k.id] ?? ''} onChange={(e) => setPlan({ ...plan, [k.id]: e.target.value })} /></td></tr>);
             return out;
           })}</tbody>
           <tfoot>
