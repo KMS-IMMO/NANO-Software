@@ -8,7 +8,7 @@ export interface Briefpapier {
   erste: string;            // JPEG als data-URL
   folge?: string;           // eigene Folgeseite, sonst leer
   name?: string;
-  kopfDrucken: boolean;     // Firmenname und Kontaktzeile von NANO zusätzlich drucken
+  kopfDrucken: boolean;     // Firmenname und Kontaktzeile von NEOSS zusätzlich drucken
   obenFolge: number;        // mm: Textbeginn auf Folgeseiten
   unten: number;            // mm: freier Rand unten (Fußzeile des Briefpapiers)
 }

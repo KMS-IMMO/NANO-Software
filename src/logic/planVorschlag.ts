@@ -167,7 +167,7 @@ export async function kiEinschaetzung(v: Vorschlag, objektName: string): Promise
   };
   const r = await client.messages.create({
     model: modell, max_tokens: 2000,
-    system: 'Du bist Agent O.S.A in NANO, der Software von KMS Immobilien (WEG-Verwaltung, Köln). Du bewertest einen Wirtschaftsplan-Vorschlag für den Verwalter. Antworte auf Deutsch in 4 bis 7 kurzen Stichpunkten (je ein Satz, beginnend mit „- “): Einschätzung, Risiken, was der Verwalter vor der Eigentümerversammlung prüfen oder ansprechen sollte. Nutze nur die gelieferten Zahlen, erfinde keine. Beträge im deutschen Format (1.234,56 €).',
+    system: 'Du bist Agent O.S.A in NEOSS, der Software von KMS Immobilien (WEG-Verwaltung, Köln). Du bewertest einen Wirtschaftsplan-Vorschlag für den Verwalter. Antworte auf Deutsch in 4 bis 7 kurzen Stichpunkten (je ein Satz, beginnend mit „- “): Einschätzung, Risiken, was der Verwalter vor der Eigentümerversammlung prüfen oder ansprechen sollte. Nutze nur die gelieferten Zahlen, erfinde keine. Beträge im deutschen Format (1.234,56 €).',
     messages: [{ role: 'user', content: JSON.stringify(daten) }],
   });
   return r.content.filter((b) => b.type === 'text').map((b: any) => b.text).join('\n').trim();

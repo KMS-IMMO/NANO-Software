@@ -67,7 +67,7 @@ async function browserDriver(): Promise<Driver> {
 
 let ready: Promise<Driver> | null = null;
 
-/* =================== Mehrplatz: NANO-Server im Büronetz =================== */
+/* =================== Mehrplatz: NEOSS-Server im Büronetz =================== */
 const SERVER_KEY = 'nano-server';
 export type Benutzer = { name: string; login: string; rolle: 'admin' | 'mitarbeiter' | 'lesend' };
 let token: string | null = null;
@@ -78,7 +78,7 @@ function serverAdresse(): string | null {
   try { const v = JSON.parse(localStorage.getItem(SERVER_KEY) || 'null'); return v?.url || null; } catch { return null; }
 }
 async function anfrage<T = any>(pfad: string, methode: 'GET' | 'POST' = 'POST', body?: unknown, basis = serverAdresse()): Promise<T> {
-  if (!basis) throw new Error('Kein NANO-Server eingerichtet.');
+  if (!basis) throw new Error('Kein NEOSS-Server eingerichtet.');
   const url = basis.replace(/\/+$/, '') + pfad;
   let status: number, text: string;
   if (isTauri) {
@@ -105,15 +105,15 @@ function serverDriver(): Driver {
   };
 }
 
-/** Mehrplatz-Betrieb: alle Arbeitsplätze arbeiten auf derselben Datenbank im NANO-Server */
+/** Mehrplatz-Betrieb: alle Arbeitsplätze arbeiten auf derselben Datenbank im NEOSS-Server */
 export const mehrplatz = {
   get aktiv() { return !!serverAdresse(); },
   adresse: serverAdresse,
   benutzer: () => ich,
-  /** Prüft, ob unter der Adresse ein NANO-Server antwortet */
+  /** Prüft, ob unter der Adresse ein NEOSS-Server antwortet */
   async testen(url: string) {
     const r = await anfrage<{ name: string; version: string }>('/api/info', 'GET', undefined, normalisieren(url));
-    if (r.name !== 'NANO-Server') throw new Error('Unter dieser Adresse antwortet kein NANO-Server.');
+    if (r.name !== 'NEOSS-Server' && r.name !== 'NANO-Server') throw new Error('Unter dieser Adresse antwortet kein NEOSS-Server.');
     return r;
   },
   einstellen(url: string | null) {
@@ -126,7 +126,7 @@ export const mehrplatz = {
     const d = serverDriver();
     ready = migrate(d).then(() => d).catch((e) => {
       ready = null;
-      throw new Error(/Administrator/.test(String(e?.message)) ? 'Die Datenbank auf dem Server muss für diese NANO-Version aktualisiert werden. Bitte einmal als Administrator anmelden.' : e?.message ?? String(e));
+      throw new Error(/Administrator/.test(String(e?.message)) ? 'Die Datenbank auf dem Server muss für diese NEOSS-Version aktualisiert werden. Bitte einmal als Administrator anmelden.' : e?.message ?? String(e));
     });
     await ready;
     const ablage = mehrplatz.ablageHier();
@@ -197,7 +197,7 @@ async function migrate(d: Driver) {
 
 function driver(): Promise<Driver> {
   if (!ready) {
-    if (serverAdresse()) return Promise.reject(new Error('Bitte am NANO-Server anmelden.'));
+    if (serverAdresse()) return Promise.reject(new Error('Bitte am NEOSS-Server anmelden.'));
     if (isTauri) return Promise.reject(new Error('Die Datenbank ist gesperrt.'));
     ready = browserDriver().then(async (d) => { await migrate(d); return d; });
   }
@@ -211,7 +211,7 @@ export const sicherheit = {
   async entsperren(passwort: string, neu: boolean) {
     await invoke(neu ? 'db_einrichten' : 'db_oeffnen', { passwort });
     const d = tauriDriver();
-    // Vor einer Datenbank-Aktualisierung (neue NANO-Version) immer zuerst eine Sicherung anlegen
+    // Vor einer Datenbank-Aktualisierung (neue NEOSS-Version) immer zuerst eine Sicherung anlegen
     if (!neu) {
       const v = await d.select('SELECT MAX(version) AS v FROM _schema', []).then((r) => Number(r[0]?.v ?? 0)).catch(() => 0);
       if (v > 0 && v < MIGRATIONS.length) await invoke('db_sicherung_erstellen', { ordnerPfad: null });

@@ -1,6 +1,6 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "NANO Verwaltung",
+  "productName": "NEOSS Verwaltung",
   "version": "0.1.0",
   "identifier": "koeln.kms.verwaltung",
   "build": {
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "NANO Verwaltung",
+        "title": "NEOSS Verwaltung",
         "width": 1280,
         "height": 800,
         "resizable": true,

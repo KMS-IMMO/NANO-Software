@@ -44,7 +44,7 @@ export function SicherheitKarte() {
   }
   async function dateiWaehlen() {
     const { open } = await import('@tauri-apps/plugin-dialog');
-    const r = await open({ title: 'Sicherung auswählen', filters: [{ name: 'NANO-Sicherung', extensions: ['nanosicherung'] }] });
+    const r = await open({ title: 'Sicherung auswählen', filters: [{ name: 'NEOSS-Sicherung', extensions: ['nanosicherung'] }] });
     if (r) setWieder({ pfad: String(r), pw: '' });
   }
   async function wiederherstellen() {
@@ -92,7 +92,7 @@ export function SicherheitKarte() {
         <div className="tablewrap"><table className="list" style={{ marginTop: 12 }}>
           <thead><tr><th>Sicherung</th><th className="num">Größe</th><th /></tr></thead>
           <tbody>{liste.map((s) => (
-            <tr key={s.pfad}><td>{s.name.replace('.nanosicherung', '').replace(/_/g, ' ')}</td><td className="num">{kb(s.groesse)}</td>
+            <tr key={s.pfad}><td>{s.name.replace(/^(NANO|NEOSS)-/, '').replace('.nanosicherung', '').replace(/_/g, ' ')}</td><td className="num">{kb(s.groesse)}</td>
               <td className="actions"><button className="link" onClick={() => setWieder({ pfad: s.pfad, pw: '' })}>Zurückspielen</button></td></tr>))}
           </tbody></table></div>)}
       {wieder && (
