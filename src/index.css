@@ -1082,3 +1082,7 @@ table.list tfoot td.num { font-weight: 700; }
   repeating-linear-gradient(45deg, #17181a 0 3px, #222428 3px 6px);
   box-shadow: inset 0 -4px 0 #c8955a; }
 .darstellung-option.system .darstellung-muster { background: linear-gradient(110deg, #f3efe8 0 50%, #1b1d20 50%); }
+
+/* 3D-Stadt: Hinweis darf umbrechen, „Ganze Stadt“ unten mittig statt über der Legende */
+.leit-hinweis { white-space: normal; text-align: center; max-width: calc(100% - 28px); width: max-content; }
+.leit-zurueck { top: auto; right: auto; bottom: 14px; left: 50%; transform: translateX(-50%); }

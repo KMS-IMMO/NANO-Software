@@ -140,7 +140,7 @@ export function DashboardPage() {
 
         <div className="leit-stadt">
           <Stadt3D objekte={stadt} gewaehlt={wahl} onWahl={(id) => setWahl(id)} />
-          <div className="leit-legende"><span><i className="hq" />KMS HQ · Agent O.S.A</span><span><i className="mv" />Mietverwaltung</span><span><i className="weg" />WEG</span></div>
+          <div className="leit-legende"><span><i className="hq" />KMS Zentrale · Agent O.S.A</span><span><i className="mv" />Mietverwaltung</span><span><i className="weg" />WEG</span></div>
           {wahl == null ? <p className="leit-hinweis">Gebäude anklicken oder oben suchen · Ziehen dreht die Stadt · Mausrad zoomt</p>
             : <button className="leit-zurueck" onClick={() => waehlen(null)}><X size={14} />Ganze Stadt</button>}
           {objekte.length === 0 && <p className="leit-leer">Noch keine Liegenschaften. Sobald du eine anlegst, wächst hier ihr Gebäude. <Link to="/objekte/neu">Liegenschaft anlegen →</Link></p>}

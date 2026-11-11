@@ -1,53 +1,25 @@
-// 3D-Stadt für das Dashboard: in der Mitte das KMS HQ mit dem Agenten O.S.A, ringsum ein Gebäude je Liegenschaft.
-// Ein digitales Netz verbindet jedes Gebäude mit dem HQ. Ist ein Gebäude gewählt, laufen dorthin pulsierende Signale
-// und die Kamera fährt animiert hin. Neue Liegenschaften wachsen beim nächsten Öffnen sichtbar aus dem Boden.
-import { useEffect, useRef } from 'react';
+// 3D-Stadt für das Dashboard, realistisch: echte Häuser mit Putzfassaden, Fenstern je Etage, Sattel- oder Flachdach,
+// Balkonen, Bäumen, Autos und weichen Schatten. Ringsum neutrale Blockrandbebauung, damit die eigenen Liegenschaften auffallen.
+// In der Mitte die KMS-Zentrale (Glas und Bronze) mit Agent O.S.A als Leuchtsignal auf dem Dach.
+// Helles Design: Stadt bei Tag. Dunkelmodus: dieselbe Stadt am Abend mit erleuchteten Fenstern und Laternen.
+// Bedienung wie bisher: Haus anklicken, Kamera fährt hin; neue Liegenschaften wachsen beim nächsten Öffnen aus dem Boden.
+import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
-import { FontLoader } from 'three/examples/jsm/loaders/FontLoader.js';
-import { TextGeometry } from 'three/examples/jsm/geometries/TextGeometry.js';
-import schriftDaten from 'three/examples/fonts/helvetiker_bold.typeface.json';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { GTAOPass } from 'three/examples/jsm/postprocessing/GTAOPass.js';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 
 export type StadtObjekt = { id: number; name: string; einheiten: number; verwaltungsart: string };
 
-// Helles Design passend zum System: cremefarbener Grund, weiße Gebäude, goldene und farbige Kanten
-const GOLD = 0xb8873a;
-const GOLD_HELL = 0xd9a441;
-const TUERKIS = 0x2e9ca1;
-const FARBE: Record<string, number> = { WEG: 0x4f7fd6, Mietverwaltung: 0x48a85f };
-const KANTE = 0x3a3d42;   // alle Seitenlinien dunkelgrau
-const HQ_BEIGE = 0xe6d3ae;
-const hell = (farbe: number, anteil = 0.16) => new THREE.Color(0xffffff).lerp(new THREE.Color(farbe), anteil);
 const BEKANNT = 'nano-stadt-bekannt';
+const RASTER = 7, BLOCK = 5.2, STRASSE = RASTER - BLOCK, ETAGE = 0.62, SOCKEL = 0.16;
+const zufall = (n: number) => { const x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
 
-function schild(text: string, farbe = '#3b3428', gross = false) {
-  const c = document.createElement('canvas');
-  const s = gross ? 2 : 1;
-  c.width = 512 * s; c.height = 112 * s;
-  const g = c.getContext('2d')!;
-  g.scale(s, s);
-  g.font = `600 ${gross ? 46 : 40}px Montserrat, system-ui, sans-serif`;
-  const t = text.length > 26 ? text.slice(0, 25) + '…' : text;
-  const w = Math.min(500, g.measureText(t).width + 44);
-  const x = (512 - w) / 2;
-  g.shadowColor = 'rgba(80,60,30,.18)'; g.shadowBlur = 10; g.shadowOffsetY = 3;
-  g.fillStyle = 'rgba(255,255,255,.94)';
-  g.beginPath(); g.roundRect(x, 18, w, 72, 36); g.fill();
-  g.shadowColor = 'transparent'; g.strokeStyle = 'rgba(184,135,58,.8)'; g.lineWidth = 2.5; g.stroke();
-  g.fillStyle = farbe; g.textAlign = 'center'; g.textBaseline = 'middle';
-  g.fillText(t, 256, 56);
-  const tex = new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false, depthTest: false }));
-  sp.scale.set(gross ? 5.2 : 4.4, gross ? 1.14 : 0.96, 1);
-  sp.renderOrder = 10;
-  return sp;
-}
-
-// Stadtraster: Blöcke mit Straßen dazwischen. Das HQ steht im mittleren Block,
-// jedes Gebäude bekommt einen festen Block, von innen nach außen vergeben.
-const RASTER = 7;            // Abstand der Blockmitten
-const BLOCK = 5.2;           // Kantenlänge eines Blocks (Gehweg-Platte)
-const STRASSE = RASTER - BLOCK;
+// Stadtraster: das HQ steht im mittleren Block, jedes Haus bekommt einen festen Block, von innen nach außen vergeben
 const ZELLEN: [number, number][] = (() => {
   const z: [number, number][] = [];
   for (let i = -8; i <= 8; i++) for (let j = -8; j <= 8; j++) if (i || j) z.push([i, j]);
@@ -55,13 +27,87 @@ const ZELLEN: [number, number][] = (() => {
   const winkel = (c: [number, number]) => (Math.atan2(c[1], c[0]) + Math.PI * 2.25) % (Math.PI * 2);
   return z.sort((a, b) => ring(a) - ring(b) || Math.hypot(...a) - Math.hypot(...b) || winkel(a) - winkel(b));
 })();
-function zelle(i: number): [number, number] { return ZELLEN[Math.min(i, ZELLEN.length - 1)]; }
-function platz(i: number) { const [x, z] = zelle(i); return new THREE.Vector3(x * RASTER, 0, z * RASTER); }
+const zelle = (i: number): [number, number] => ZELLEN[Math.min(i, ZELLEN.length - 1)];
 
-/** Weg einer Datenspur vom HQ über die Straßen zum Block (rechte Winkel mit 45°-Fasen wie auf einer Leiterplatte) */
-function spurPunkte(i: number, nr: number): THREE.Vector3[] {
+type Stil = {
+  abend: boolean; himmel: [string, string]; nebel: number; boden: number; strasse: number; gehweg: number; bord: number; rasen: number; platz: number;
+  putz: string[]; kontext: string[]; fenster: string; rahmen: string; dach: number; kontextDach: number; attika: number; baum: number[]; stamm: number;
+  sonne: number; sonnenFarbe: number; himmelOben: number; himmelUnten: number; himmelLicht: number; env: number; markierung: number; akzent: number;
+};
+const TAG: Stil = {
+  abend: false, himmel: ['#cdd8e2', '#eef1f3'], nebel: 0xe4e9ed, boden: 0x8d9094, strasse: 0x6f7378, gehweg: 0xbdbab3, bord: 0xcfccc5, rasen: 0x8fa772, platz: 0xd6d1c6,
+  putz: ['#e9e2d3', '#dccdb4', '#e6e5e0', '#cfbfa6', '#b9765c', '#d8d3c8', '#a4a29d', '#ece7dc'], kontext: ['#e4e1db', '#dad6ce', '#d0ccc4', '#e9e7e2'],
+  fenster: '#3c4652', rahmen: '#f2f0ea', dach: 0x4b4e53, kontextDach: 0x9a9893, attika: 0x7d7a74, baum: [0x5d7f45, 0x6e8f4c, 0x4e6f3d], stamm: 0x5b4636,
+  sonne: 3.2, sonnenFarbe: 0xfff3e2, himmelOben: 0xffffff, himmelUnten: 0x8a8478, himmelLicht: 0.7, env: 0.6, markierung: 0xe9e7e0, akzent: 0xc8955a,
+};
+const ABEND: Stil = {
+  abend: true, himmel: ['#0f1115', '#24262c'], nebel: 0x15171b, boden: 0x1d1f23, strasse: 0x26282c, gehweg: 0x34363a, bord: 0x45474b, rasen: 0x1f2a1d, platz: 0x3a3a3c,
+  putz: ['#6d675e', '#625a4f', '#6a6a68', '#5e554a', '#6b4639', '#64615b', '#4f4e4c', '#6e6a62'], kontext: ['#4a4845', '#43413e', '#504d49'],
+  fenster: '#1b2129', rahmen: '#7c7870', dach: 0x2a2c30, kontextDach: 0x2e3034, attika: 0x55524d, baum: [0x22301d, 0x283621, 0x1d2a19], stamm: 0x2a221c,
+  sonne: 0.35, sonnenFarbe: 0x8ea2d0, himmelOben: 0x5a6a90, himmelUnten: 0x111111, himmelLicht: 0.35, env: 0.18, markierung: 0x8c8a84, akzent: 0xe0ad6e,
+};
+const ART_FARBE: Record<string, string> = { WEG: '#5f89d8', Mietverwaltung: '#5bb06f' };
+
+const SCHILD_CSS = `.stadt-schild{font:600 12.5px/1 Montserrat,system-ui,sans-serif;padding:6px 10px 6px 8px;border-radius:7px;white-space:nowrap;display:flex;align-items:center;gap:7px;
+ transform:translateY(-50%);box-shadow:0 4px 14px rgba(0,0,0,.28);border:1px solid rgba(200,149,90,.7);pointer-events:none;letter-spacing:.1px;transition:background .25s,color .25s,border-color .25s}
+.stadt-schild{background:rgba(20,22,25,.9);color:#ece9e3}
+.stadt-schild i{width:8px;height:8px;border-radius:50%;background:var(--punkt,#c8955a);box-shadow:0 0 0 3px rgba(255,255,255,.12)}
+.stadt-schild.zentrale{font-size:13px;border-color:#c8955a}
+.stadt-schild.hover{border-color:#e0ad6e}
+.stadt-schild.aktiv{background:#c8955a;color:#17130d;border-color:#e0ad6e;box-shadow:0 6px 20px rgba(200,149,90,.45)}
+.stadt-schild.aktiv i{box-shadow:0 0 0 3px rgba(0,0,0,.18)}
+.stadt-schild.leise{opacity:.55}
+.stadt-schild.klein{font-size:11px;padding:4px 8px 4px 6px;gap:5px}.stadt-schild.klein i{width:6px;height:6px}`;
+
+function schild(text: string, punkt: string, extra = '') {
+  const d = document.createElement('div');
+  d.className = 'stadt-schild ' + extra;
+  d.style.setProperty('--punkt', punkt);
+  const i = document.createElement('i'); d.appendChild(i); d.appendChild(document.createTextNode(text.length > 30 ? text.slice(0, 29) + '…' : text));
+  return new CSS2DObject(d);
+}
+
+type Fassade = { tex: THREE.CanvasTexture; em: THREE.CanvasTexture | null };
+/** Fassade als Bild: Putz, Gesimse, Fenster mit Rahmen und Bank, Haustür; am Abend zusätzlich eine Leuchtmaske für erleuchtete Fenster */
+function fassade(breite: number, etagen: number, s: Stil, seed: number, front: boolean, palette: string[], licht: number): Fassade {
+  const pxE = 64, buchten = Math.max(2, Math.round(breite / 0.62));
+  const W = buchten * 40, H = etagen * pxE;
+  const c = document.createElement('canvas'); c.width = W; c.height = H;
+  const g = c.getContext('2d')!;
+  let ge: CanvasRenderingContext2D | null = null, e: HTMLCanvasElement | null = null;
+  if (s.abend) { e = document.createElement('canvas'); e.width = W; e.height = H; ge = e.getContext('2d')!; ge.fillStyle = '#000'; ge.fillRect(0, 0, W, H); }
+  g.fillStyle = palette[Math.floor(zufall(seed) * palette.length)]; g.fillRect(0, 0, W, H);
+  for (let k = 0; k < 900; k++) { g.fillStyle = `rgba(0,0,0,${0.015 + zufall(seed * 9 + k) * 0.025})`; g.fillRect(zufall(k + seed) * W, zufall(k * 3 + seed) * H, 2, 2); }
+  g.fillStyle = 'rgba(0,0,0,.10)'; g.fillRect(0, H - pxE, W, pxE);
+  g.fillStyle = 'rgba(0,0,0,.14)'; g.fillRect(0, 0, W, 5);
+  for (let f = 1; f < etagen; f++) { g.fillStyle = 'rgba(0,0,0,.05)'; g.fillRect(0, H - f * pxE - 2, W, 2); }
+  for (let f = 0; f < etagen; f++) for (let b = 0; b < buchten; b++) {
+    const x = b * 40 + 9, y = H - (f + 1) * pxE + 14, w = 22, h = f === 0 ? 34 : 36;
+    if (front && f === 0 && b === Math.floor(buchten / 2)) {
+      g.fillStyle = s.rahmen; g.fillRect(x - 3, y - 3, w + 6, pxE - 11); g.fillStyle = '#3b3027'; g.fillRect(x, y, w, pxE - 14);
+      if (ge) { ge.fillStyle = '#ffcf80'; ge.fillRect(x + 2, y - 6, w - 4, 3); }
+      continue;
+    }
+    g.fillStyle = s.rahmen; g.fillRect(x - 2, y - 2, w + 4, h + 4);
+    g.fillStyle = s.fenster; g.fillRect(x, y, w, h);
+    g.fillStyle = 'rgba(255,255,255,.10)'; g.fillRect(x, y, w, h * 0.4);
+    g.fillStyle = s.rahmen; g.fillRect(x + w / 2 - 1, y, 2, h);
+    g.fillStyle = 'rgba(0,0,0,.18)'; g.fillRect(x - 3, y + h + 2, w + 6, 3);
+    if (ge && zufall(seed * 31 + f * 7 + b * 3) < licht) {
+      const warm = zufall(seed + f + b) < 0.9 ? '#ffc56e' : '#d8e6f5';
+      ge.fillStyle = warm; ge.fillRect(x, y, w, h); g.fillStyle = warm; g.fillRect(x, y, w, h);
+    }
+  }
+  const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 8;
+  let em: THREE.CanvasTexture | null = null;
+  if (e) { em = new THREE.CanvasTexture(e); em.colorSpace = THREE.SRGBColorSpace; }
+  return { tex, em };
+}
+
+/** Weg der Verbindung von der Zentrale über die Straßen zum Block (rechte Winkel mit kurzen Fasen) */
+function spurPunkte(i: number): THREE.Vector3[] {
   const [ci, cj] = zelle(i);
-  const versatz = ((nr % 5) - 2) * 0.17;
+  const versatz = ((i % 5) - 2) * 0.12;
   const sx = Math.sign(ci) || 1, sz = Math.sign(cj) || 1;
   const tx = ci * RASTER, tz = cj * RASTER;
   const zs = sz * RASTER / 2 + versatz;
@@ -70,257 +116,390 @@ function spurPunkte(i: number, nr: number): THREE.Vector3[] {
   const p: THREE.Vector3[] = [roh[0]];
   for (let k = 1; k < roh.length - 1; k++) {
     const a = roh[k - 1], m = roh[k], b = roh[k + 1];
-    const c = Math.min(0.55, a.distanceTo(m) / 3, m.distanceTo(b) / 3);
+    const c = Math.min(0.45, a.distanceTo(m) / 3, m.distanceTo(b) / 3);
     if (c < 0.01) { p.push(m); continue; }
     p.push(m.clone().add(a.clone().sub(m).normalize().multiplyScalar(c)), m.clone().add(b.clone().sub(m).normalize().multiplyScalar(c)));
   }
   p.push(roh[roh.length - 1]);
-  return p.filter((x, k) => k === 0 || x.distanceTo(p[k - 1]) > 0.001).map((x) => x.setY(0.075));
+  return p.filter((x, k) => k === 0 || x.distanceTo(p[k - 1]) > 0.001).map((x) => x.setY(0.03));
 }
-
 type Pfad = { punkte: THREE.Vector3[]; laengen: number[]; gesamt: number };
 function pfad(punkte: THREE.Vector3[]): Pfad {
   const laengen = [0];
   for (let k = 1; k < punkte.length; k++) laengen.push(laengen[k - 1] + punkte[k].distanceTo(punkte[k - 1]));
   return { punkte, laengen, gesamt: laengen[laengen.length - 1] };
 }
-function aufPfad(p: Pfad, s: number, pos: THREE.Vector3): number {
+function aufPfad(p: Pfad, s: number, pos: THREE.Vector3) {
   const d = Math.max(0, Math.min(p.gesamt, s));
   let k = 1; while (k < p.laengen.length - 1 && p.laengen[k] < d) k++;
   const a = p.punkte[k - 1], b = p.punkte[k], f = (d - p.laengen[k - 1]) / Math.max(1e-6, p.laengen[k] - p.laengen[k - 1]);
   pos.copy(a).lerp(b, f);
-  return Math.atan2(b.z - a.z, b.x - a.x);
 }
 
-type Haus = { id: number; gruppe: THREE.Group; koerper: THREE.Mesh; kanten: THREE.LineSegments; hoehe: number; pos: THREE.Vector3;
-  pfad: Pfad; spur: THREE.Group; spurMat: THREE.MeshBasicMaterial; knoten: THREE.Mesh; start: number; neu: boolean; farbe: number; boden: THREE.Mesh };
+type Haus = { id: number; gruppe: THREE.Group; koerper: THREE.Mesh; hoehe: number; pos: THREE.Vector3; label: CSS2DObject;
+  pfad: Pfad; spur: THREE.Group; spurMat: THREE.MeshBasicMaterial; start: number; neu: boolean; wachsen: THREE.Mesh };
+
+const istDunkel = () => typeof document !== 'undefined' && document.documentElement.dataset.theme === 'dunkel';
 
 export function Stadt3D({ objekte, gewaehlt, onWahl }: { objekte: StadtObjekt[]; gewaehlt: number | null; onWahl: (id: number | null) => void }) {
   const box = useRef<HTMLDivElement>(null);
   const welt = useRef<{ setzeObjekte: (o: StadtObjekt[]) => void; waehle: (id: number | null) => void } | null>(null);
   const wahlRef = useRef(onWahl); wahlRef.current = onWahl;
+  const [abend, setAbend] = useState(istDunkel);
+
+  // Darstellung beobachten: Wechsel auf Dunkel zeigt die Stadt am Abend
+  useEffect(() => {
+    const mo = new MutationObserver(() => setAbend(istDunkel()));
+    mo.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    return () => mo.disconnect();
+  }, []);
 
   useEffect(() => {
     const el = box.current!;
+    const s = abend ? ABEND : TAG;
     let renderer: THREE.WebGLRenderer;
-    try { renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true }); }
+    try { renderer = new THREE.WebGLRenderer({ antialias: true }); }
     catch { el.classList.add('ohne-3d'); return; }
+    el.classList.remove('ohne-3d');
     renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+    renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = s.abend ? 1.0 : 0.95;
     el.appendChild(renderer.domElement);
+    if (!document.getElementById('stadt-schild-css')) { const st = document.createElement('style'); st.id = 'stadt-schild-css'; st.textContent = SCHILD_CSS; document.head.appendChild(st); }
+    const css2d = new CSS2DRenderer();
+    Object.assign(css2d.domElement.style, { position: 'absolute', inset: '0', pointerEvents: 'none' });
+    el.appendChild(css2d.domElement);
+
     const szene = new THREE.Scene();
-    szene.fog = new THREE.Fog(0xf6f1e8, 70, 170);
-    const kamera = new THREE.PerspectiveCamera(36, 1, 0.1, 400);
+    const texturen: THREE.Texture[] = [];
+    const merke = <T extends THREE.Texture>(t: T) => { texturen.push(t); return t; };
+    const hc = document.createElement('canvas'); hc.width = 4; hc.height = 256;
+    const hg = hc.getContext('2d')!; const lg = hg.createLinearGradient(0, 0, 0, 256); lg.addColorStop(0, s.himmel[0]); lg.addColorStop(1, s.himmel[1]);
+    hg.fillStyle = lg; hg.fillRect(0, 0, 4, 256);
+    const himmel = merke(new THREE.CanvasTexture(hc)); himmel.colorSpace = THREE.SRGBColorSpace; szene.background = himmel;
+    const nebel = new THREE.Fog(s.nebel, 70, 125); szene.fog = nebel;
+    const pm = new THREE.PMREMGenerator(renderer);
+    const umg = pm.fromScene(new RoomEnvironment(), 0.04); szene.environment = umg.texture; szene.environmentIntensity = s.env; pm.dispose();
 
-    szene.add(new THREE.HemisphereLight(0xffffff, 0xe9dfcd, 1.25));
-    const sonne = new THREE.DirectionalLight(0xfff6e8, 1.5); sonne.position.set(14, 26, 10); szene.add(sonne);
-    const hqLicht = new THREE.PointLight(GOLD_HELL, 14, 26, 1.6); hqLicht.position.set(0, 9, 0); szene.add(hqLicht);
+    szene.add(new THREE.HemisphereLight(s.himmelOben, s.himmelUnten, s.himmelLicht));
+    const sonne = new THREE.DirectionalLight(s.sonnenFarbe, s.sonne);
+    sonne.position.set(-22, 34, 16); sonne.castShadow = true;
+    sonne.shadow.mapSize.set(2048, 2048); sonne.shadow.bias = -0.0004; sonne.shadow.normalBias = 0.03; sonne.shadow.radius = 4;
+    szene.add(sonne, sonne.target);
 
-    // Boden mit digitalem Raster
-    const boden = new THREE.Mesh(new THREE.CircleGeometry(60, 96), new THREE.MeshStandardMaterial({ color: 0xf1ebe0, roughness: 1 }));
-    boden.rotation.x = -Math.PI / 2; szene.add(boden);
-    // Straßen, Gehwege, Bäume: werden neu gebaut, wenn die Stadt größer wird
-    const strassen = new THREE.Group(); szene.add(strassen);
-    let strassenN = -1;
-    const mittelTex = (() => {
-      const c = document.createElement('canvas'); c.width = 64; c.height = 8;
-      const g = c.getContext('2d')!; g.fillStyle = '#ffffff'; g.fillRect(0, 2, 34, 4);
-      const t = new THREE.CanvasTexture(c); t.wrapS = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; return t;
+    const mat = (c: number, r = 0.9, m = 0) => new THREE.MeshStandardMaterial({ color: c, roughness: r, metalness: m });
+    const boden = new THREE.Mesh(new THREE.PlaneGeometry(600, 600), mat(s.boden, 1)); boden.rotation.x = -Math.PI / 2; boden.receiveShadow = true; szene.add(boden);
+
+    // KMS-Zentrale: Glas mit Bronze-Lisenen, Vorplatz, KMS-Schriftzug am Dach
+    const hq = new THREE.Group(); hq.position.y = SOCKEL; szene.add(hq);
+    const glas = new THREE.MeshPhysicalMaterial({ color: s.abend ? 0x1c2630 : 0x6f8496, metalness: 0.7, roughness: 0.12, clearcoat: 1, envMapIntensity: 1.6,
+      emissive: s.abend ? 0x7a5428 : 0x000000, emissiveIntensity: s.abend ? 0.55 : 0 });
+    const bronze = mat(0x9c7a4a, 0.42, 0.75);
+    const band = mat(0x3a4048, 0.5, 0.5);
+    for (const [w, h, d, y] of [[3.6, 3.0, 3.6, 0], [2.8, 4.6, 2.8, 3.0], [2.0, 2.4, 2.0, 7.6]] as const) {
+      const k = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), glas); k.position.y = y + h / 2; k.castShadow = k.receiveShadow = true; hq.add(k);
+      const lisene = new THREE.BoxGeometry(0.045, h, 0.045);
+      for (let n = -w / 2; n <= w / 2 + 0.01; n += w / 4) for (const [sx, sz] of [[n, d / 2 + 0.03], [n, -d / 2 - 0.03], [w / 2 + 0.03, n], [-w / 2 - 0.03, n]]) {
+        const l = new THREE.Mesh(lisene, bronze); l.position.set(sx, y + h / 2, sz); l.castShadow = true; hq.add(l);
+      }
+      const bandG = new THREE.BoxGeometry(w + 0.03, 0.025, d + 0.03);
+      for (let f = y + ETAGE; f < y + h; f += ETAGE) { const b = new THREE.Mesh(bandG, band); b.position.y = f; hq.add(b); }
+      const deck = new THREE.Mesh(new THREE.BoxGeometry(w + 0.12, 0.12, d + 0.12), bronze); deck.position.y = y + h; deck.castShadow = true; hq.add(deck);
+      if (s.abend) for (let f = y + 0.3; f < y + h - 0.2; f += ETAGE) {
+        const l = new THREE.Mesh(new THREE.BoxGeometry(w - 0.1, 0.22, d - 0.1), new THREE.MeshBasicMaterial({ color: zufall(f * 10) < 0.6 ? 0xffd08a : 0x3a3020 })); l.position.y = f + 0.15; hq.add(l);
+      }
+    }
+    const lc = document.createElement('canvas'); lc.width = 512; lc.height = 160; const lgx = lc.getContext('2d')!;
+    lgx.font = '700 120px Montserrat, system-ui, sans-serif'; lgx.textBaseline = 'middle';
+    const kmB = lgx.measureText('KM').width, sB = lgx.measureText('S').width, x0 = 256 - (kmB + sB) / 2;
+    lgx.fillStyle = '#f2f2f0'; lgx.fillText('KM', x0, 84); lgx.fillStyle = '#d4a05a'; lgx.fillText('S', x0 + kmB, 84);
+    const logoTex = merke(new THREE.CanvasTexture(lc)); logoTex.colorSpace = THREE.SRGBColorSpace;
+    const logoMat = new THREE.MeshBasicMaterial({ map: logoTex, transparent: true, toneMapped: false });
+    for (const r of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) {
+      const p = new THREE.Mesh(new THREE.PlaneGeometry(1.9, 0.6), logoMat); p.position.set(Math.sin(r) * 1.02, 9.4, Math.cos(r) * 1.02); p.rotation.y = r; hq.add(p);
+    }
+    // Agent O.S.A: Antenne mit pulsierendem Bronze-Licht auf dem Dach
+    const antenne = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.04, 1.1, 8), bronze); antenne.position.y = 10.6; hq.add(antenne);
+    const osa = new THREE.Mesh(new THREE.SphereGeometry(0.13, 16, 16), new THREE.MeshBasicMaterial({ color: 0xffd9a0, toneMapped: false })); osa.position.y = 11.2; hq.add(osa);
+    const osaRing = new THREE.Mesh(new THREE.RingGeometry(0.28, 0.33, 48), new THREE.MeshBasicMaterial({ color: s.akzent, transparent: true, opacity: 0.8, side: THREE.DoubleSide, toneMapped: false, depthWrite: false }));
+    osaRing.rotation.x = -Math.PI / 2; osaRing.position.y = 11.2; hq.add(osaRing);
+    const osaLicht = new THREE.PointLight(0xffc27a, s.abend ? 6 : 2, 8, 1.6); osaLicht.position.y = 11.2; hq.add(osaLicht);
+    const hqSchild = schild('KMS Zentrale · Agent O.S.A', '#c8955a', 'zentrale'); hqSchild.position.set(0, 12.2, 0); hq.add(hqSchild);
+    const platz = new THREE.Mesh(new THREE.BoxGeometry(BLOCK - 0.5, 0.02, BLOCK - 0.5), mat(s.platz, 0.85)); platz.position.y = SOCKEL + 0.01; platz.receiveShadow = true; szene.add(platz);
+    const hqLaterne: THREE.PointLight[] = [];
+    if (s.abend) for (const [x, z] of [[0, 3.6], [3.6, 0], [-3.6, 0], [0, -3.6]]) { const p = new THREE.PointLight(0xffc27a, 6, 9, 1.5); p.position.set(x, 2.2, z); szene.add(p); hqLaterne.push(p); }
+
+    // Umgebung: Straßen, Gehwege, Nachbarhäuser, Parks, Bäume, Autos, Laternen; wird neu gebaut, wenn die Stadt wächst
+    const umgebung = new THREE.Group(); szene.add(umgebung);
+    let umgebungSchluessel = '';
+    let N = 3;
+    const mGehweg = mat(s.gehweg, 0.95), mBord = mat(s.bord, 0.9), mRasen = mat(s.rasen, 1), mStrasse = mat(s.strasse, 0.95), mKDach = mat(s.kontextDach, 0.9);
+    const kontextFassaden = new Map<string, THREE.MeshStandardMaterial>();
+    const kontextMat = (len: number, et: number, variante: number) => {
+      const key = `${len.toFixed(2)}|${et}|${variante}`;
+      let m = kontextFassaden.get(key);
+      if (!m) {
+        const f = fassade(len, et, s, 500 + variante * 17 + et * 3 + Math.round(len * 10), false, s.kontext, 0.12);
+        merke(f.tex); if (f.em) merke(f.em);
+        m = new THREE.MeshStandardMaterial({ map: f.tex, roughness: 0.95, emissive: s.abend ? 0xffffff : 0, emissiveMap: f.em, emissiveIntensity: 0.55 });
+        kontextFassaden.set(key, m);
+      }
+      return m;
+    };
+    const lichtFleck = (() => {
+      const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d')!;
+      const rg = g.createRadialGradient(32, 32, 0, 32, 32, 32); rg.addColorStop(0, 'rgba(255,255,255,.9)'); rg.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = rg; g.fillRect(0, 0, 64, 64);
+      return merke(new THREE.CanvasTexture(c));
     })();
-    const asphaltMat = new THREE.MeshStandardMaterial({ color: 0xc4c1bb, roughness: 0.95 });
-    const gehwegMat = new THREE.MeshStandardMaterial({ color: 0xeee7da, roughness: 1 });
-    const kanteMat = new THREE.MeshStandardMaterial({ color: 0xd9d1c2, roughness: 1 });
-    const rasenMat = new THREE.MeshStandardMaterial({ color: 0xcfe0bf, roughness: 1 });
-    const stammMat = new THREE.MeshStandardMaterial({ color: 0x8a7458, roughness: 1 });
-    const kroneMat = new THREE.MeshStandardMaterial({ color: 0x8fbf7a, roughness: 0.9, flatShading: true });
-    const zebraMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85 });
-    const strassenBauen = (N: number, belegt: Set<string>) => {
-      if (N === strassenN) { baeume(N, belegt); return; }
-      strassenN = N;
-      strassen.children.slice().forEach((c) => { strassen.remove(c); (c as THREE.Mesh).geometry?.dispose(); });
+    const umgebungBauen = (belegt: Set<string>) => {
+      const neuerN = Math.max(3, ...[...belegt].map((k) => Math.max(...k.split(',').map((x) => Math.abs(Number(x)))))) + 2;
+      const schluessel = neuerN + '|' + [...belegt].sort().join(';');
+      if (schluessel === umgebungSchluessel) return;
+      umgebungSchluessel = schluessel; N = neuerN;
+      umgebung.traverse((o) => { if ((o as THREE.Mesh).isMesh) (o as THREE.Mesh).geometry.dispose(); });
+      umgebung.clear();
       const weite = (2 * N + 1) * RASTER + STRASSE;
-      for (let k = -N - 1; k <= N; k++) {
-        const pos = (k + 0.5) * RASTER;
-        for (const quer of [false, true]) {
-          const m = new THREE.Mesh(new THREE.PlaneGeometry(quer ? STRASSE : weite, quer ? weite : STRASSE), asphaltMat);
-          m.rotation.x = -Math.PI / 2; m.position.set(quer ? pos : 0, 0.02 + (quer ? 0.001 : 0), quer ? 0 : pos); strassen.add(m);
-          // Mittellinie je Abschnitt zwischen zwei Kreuzungen
-          for (let s2 = -N; s2 <= N; s2++) {
-            const t = mittelTex.clone(); t.needsUpdate = true; t.repeat.set(BLOCK / 1.2, 1);
-            const l = new THREE.Mesh(new THREE.PlaneGeometry(BLOCK - 0.6, 0.09), new THREE.MeshBasicMaterial({ map: t, transparent: true }));
-            l.rotation.x = -Math.PI / 2; if (quer) l.rotation.z = Math.PI / 2;
-            l.position.set(quer ? pos : s2 * RASTER, 0.035, quer ? s2 * RASTER : pos); strassen.add(l);
-          }
-        }
+      const asphalt = new THREE.Mesh(new THREE.PlaneGeometry(weite, weite), mStrasse); asphalt.rotation.x = -Math.PI / 2; asphalt.position.y = 0.01; asphalt.receiveShadow = true; umgebung.add(asphalt);
+      // Fahrbahnmarkierung zwischen den Kreuzungen
+      const striche: [number, number, boolean][] = [];
+      for (let k = -N - 1; k <= N; k++) for (let t = -weite / 2 + 0.6; t < weite / 2; t += 1.1) {
+        if (Math.abs(t - Math.round(t / RASTER) * RASTER) > BLOCK / 2 - 0.3) continue;
+        striche.push([t, (k + 0.5) * RASTER, false], [(k + 0.5) * RASTER, t, true]);
       }
-      // Zebrastreifen an den Kreuzungen rund um das HQ
-      for (const [x, z, quer] of [[0, RASTER / 2, false], [0, -RASTER / 2, false], [RASTER / 2, 0, true], [-RASTER / 2, 0, true]] as [number, number, boolean][]) {
-        for (let n = -3; n <= 3; n++) {
-          const st = new THREE.Mesh(new THREE.PlaneGeometry(0.22, STRASSE * 0.8), zebraMat);
-          st.rotation.x = -Math.PI / 2; if (quer) st.rotation.z = Math.PI / 2;
-          st.position.set(x + (quer ? 0 : n * 0.45 + (x ? 0 : 0)) + (quer ? 0 : 0), 0.036, z + (quer ? n * 0.45 : 0));
-          if (!quer) st.position.x = n * 0.45; else st.position.z = n * 0.45;
-          strassen.add(st);
-        }
-      }
-      // Gehweg-Platten mit Bordstein
-      const platte = new THREE.BoxGeometry(BLOCK, 0.12, BLOCK), bord = new THREE.BoxGeometry(BLOCK + 0.14, 0.08, BLOCK + 0.14);
+      const im = new THREE.InstancedMesh(new THREE.PlaneGeometry(0.55, 0.06), new THREE.MeshBasicMaterial({ color: s.markierung }), striche.length);
+      const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), eu = new THREE.Euler(), eins = new THREE.Vector3(1, 1, 1);
+      striche.forEach(([a, b, quer], i) => { eu.set(-Math.PI / 2, 0, quer ? Math.PI / 2 : 0); q.setFromEuler(eu); m4.compose(new THREE.Vector3(a, 0.02, b), q, eins); im.setMatrixAt(i, m4); });
+      umgebung.add(im);
+      // Blöcke
+      const bordG = new THREE.BoxGeometry(BLOCK + 0.12, 0.14, BLOCK + 0.12), platteG = new THREE.BoxGeometry(BLOCK, SOCKEL, BLOCK);
+      const bordI = new THREE.InstancedMesh(bordG, mBord, (2 * N + 1) ** 2), platteI = new THREE.InstancedMesh(platteG, mGehweg, (2 * N + 1) ** 2);
+      bordI.receiveShadow = platteI.receiveShadow = true;
+      const baumOrte: [number, number, number][] = [];
+      let n = 0;
       for (let i = -N; i <= N; i++) for (let j = -N; j <= N; j++) {
-        const b1 = new THREE.Mesh(bord, kanteMat); b1.position.set(i * RASTER, 0.04, j * RASTER); strassen.add(b1);
-        const b2 = new THREE.Mesh(platte, gehwegMat); b2.position.set(i * RASTER, 0.06, j * RASTER); strassen.add(b2);
-      }
-      baeume(N, belegt);
-    };
-    // Leere Blöcke werden kleine Parks mit Bäumen, bebaute Blöcke bekommen Bäume an den Ecken
-    let baumGruppe: THREE.Group | null = null;
-    const baeume = (N: number, belegt: Set<string>) => {
-      if (baumGruppe) { strassen.remove(baumGruppe); baumGruppe.traverse((o) => (o as THREE.Mesh).geometry?.dispose()); }
-      baumGruppe = new THREE.Group(); strassen.add(baumGruppe);
-      const orte: [number, number, number][] = [];
-      const zufall = (n: number) => { const x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
-      for (let i = -N; i <= N; i++) for (let j = -N; j <= N; j++) {
+        const cx = i * RASTER, cz = j * RASTER;
+        m4.makeTranslation(cx, 0.07, cz); bordI.setMatrixAt(n, m4); m4.makeTranslation(cx, SOCKEL / 2, cz); platteI.setMatrixAt(n, m4); n++;
         if (!i && !j) continue;
-        const cx = i * RASTER, cz = j * RASTER, e = BLOCK / 2 - 0.55;
-        if (belegt.has(`${i},${j}`)) { for (const [dx, dz] of [[e, e], [-e, -e]]) orte.push([cx + dx, cz + dz, 0.8]); continue; }
-        const rasen = new THREE.Mesh(new THREE.PlaneGeometry(BLOCK - 0.7, BLOCK - 0.7), rasenMat);
-        rasen.rotation.x = -Math.PI / 2; rasen.position.set(cx, 0.125, cz); baumGruppe.add(rasen);
-        const n = 3 + Math.floor(zufall(i * 31 + j) * 3);
-        for (let k = 0; k < n; k++) orte.push([cx + (zufall(i * 7 + j * 13 + k) - 0.5) * (BLOCK - 1.4), cz + (zufall(i * 11 + j * 5 + k * 3) - 0.5) * (BLOCK - 1.4), 0.8 + zufall(k + i + j) * 0.5]);
+        const e2 = BLOCK / 2 - 0.35;
+        if (belegt.has(`${i},${j}`)) { for (const [dx, dz] of [[e2, e2], [-e2, e2], [e2, -e2], [-e2, -e2]]) baumOrte.push([cx + dx, cz + dz, 0.75]); continue; }
+        if (zufall(i * 17 + j * 29 + 3) < 0.72) {
+          // Blockrandbebauung in ruhigen Tönen
+          const L = BLOCK - 0.5, T = 1.15, off = L / 2 - T / 2;
+          for (let sd = 0; sd < 4; sd++) {
+            const et = 3 + Math.floor(zufall(i * 5 + j * 3 + sd) * 3), hh = et * ETAGE, len = sd < 2 ? L : L - 2 * T, v = Math.floor(zufall(i * 13 + j * 7 + sd) * 4);
+            const ma = kontextMat(len, et, v), mb = kontextMat(T, et, v);
+            const k2 = new THREE.Mesh(new THREE.BoxGeometry(len, hh, T), [mb, mb, mKDach, mKDach, ma, ma]);
+            k2.castShadow = k2.receiveShadow = true;
+            if (sd === 0) k2.position.set(cx, SOCKEL + hh / 2, cz + off);
+            if (sd === 1) k2.position.set(cx, SOCKEL + hh / 2, cz - off);
+            if (sd === 2) { k2.position.set(cx + off, SOCKEL + hh / 2, cz); k2.rotation.y = Math.PI / 2; }
+            if (sd === 3) { k2.position.set(cx - off, SOCKEL + hh / 2, cz); k2.rotation.y = Math.PI / 2; }
+            umgebung.add(k2);
+          }
+          const hof = new THREE.Mesh(new THREE.BoxGeometry(L - 2 * T, 0.03, L - 2 * T), mRasen); hof.position.set(cx, SOCKEL + 0.02, cz); hof.receiveShadow = true; umgebung.add(hof);
+          baumOrte.push([cx + 0.3, cz - 0.2, 0.8]);
+        } else {
+          const r = new THREE.Mesh(new THREE.BoxGeometry(BLOCK - 1.0, 0.04, BLOCK - 1.0), mRasen); r.position.set(cx, SOCKEL + 0.02, cz); r.receiveShadow = true; umgebung.add(r);
+          const anz = 4 + Math.floor(zufall(i * 31 + j) * 4);
+          for (let k = 0; k < anz; k++) baumOrte.push([cx + (zufall(i * 7 + j * 13 + k) - 0.5) * (BLOCK - 1.8), cz + (zufall(i * 11 + j * 5 + k * 3) - 0.5) * (BLOCK - 1.8), 0.9 + zufall(k + i + j) * 0.6]);
+        }
       }
-      const stamm = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.06, 0.08, 0.5, 6), stammMat, orte.length);
-      const krone = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(0.42, 0), kroneMat, orte.length);
-      const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), sk = new THREE.Vector3();
-      orte.forEach(([x, z, g], k) => {
-        m4.compose(new THREE.Vector3(x, 0.37 * g, z), q, sk.set(g, g, g)); stamm.setMatrixAt(k, m4);
-        m4.compose(new THREE.Vector3(x, 0.85 * g, z), q, sk.set(g, g * 1.15, g)); krone.setMatrixAt(k, m4);
+      umgebung.add(bordI, platteI);
+      // Bäume: Stamm und drei Kronenkugeln, leicht unterschiedliche Grüntöne
+      const stammG = new THREE.CylinderGeometry(0.05, 0.08, 0.7, 6); stammG.translate(0, 0.35, 0);
+      const stamm = new THREE.InstancedMesh(stammG, mat(s.stamm, 1), baumOrte.length);
+      const krone = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(0.4, 2), mat(0xffffff, 0.95), baumOrte.length * 3);
+      stamm.castShadow = krone.castShadow = true; krone.receiveShadow = true;
+      const sk = new THREE.Vector3(), col = new THREE.Color(), q0 = new THREE.Quaternion();
+      baumOrte.forEach(([x, z, g], k) => {
+        m4.compose(new THREE.Vector3(x, SOCKEL, z), q0, sk.set(g, g, g)); stamm.setMatrixAt(k, m4);
+        for (let c = 0; c < 3; c++) {
+          const a = c * 2.1 + k, r = c ? 0.18 * g : 0, f = g * (c === 0 ? 1.05 : 0.8);
+          m4.compose(new THREE.Vector3(x + Math.cos(a) * r, SOCKEL + g * (0.85 + (c ? 0.1 : 0.25)), z + Math.sin(a) * r), q0, sk.set(f, f * 1.05, f));
+          krone.setMatrixAt(k * 3 + c, m4); krone.setColorAt(k * 3 + c, col.set(s.baum[(k + c) % s.baum.length]).offsetHSL(0, 0, (zufall(k * 3 + c) - 0.5) * 0.06));
+        }
       });
-      baumGruppe.add(stamm, krone);
-    };
-
-    // KMS HQ
-    const hq = new THREE.Group(); szene.add(hq);
-    const hqTeile: [number, number, number, number][] = [[3.4, 2.2, 3.4, 0], [2.6, 4.2, 2.6, 2.2], [1.8, 2.6, 1.8, 6.4]];
-    for (const [w, h, d, y] of hqTeile) {
-      const g = new THREE.BoxGeometry(w, h, d);
-      const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: HQ_BEIGE, metalness: 0.1, roughness: 0.6, emissive: 0xf2d9a8, emissiveIntensity: 0.08 }));
-      m.position.y = y + h / 2; hq.add(m);
-      const k = new THREE.LineSegments(new THREE.EdgesGeometry(g), new THREE.LineBasicMaterial({ color: KANTE }));
-      k.position.copy(m.position); hq.add(k);
-      for (let f = 0.5; f < h; f += 0.6) {   // leuchtende Etagen
-        const band = new THREE.Mesh(new THREE.BoxGeometry(w + 0.02, 0.06, d + 0.02), new THREE.MeshBasicMaterial({ color: KANTE, transparent: true, opacity: 0.22 }));
-        band.position.y = y + f; hq.add(band);
+      umgebung.add(stamm, krone);
+      // Geparkte und fahrende Autos am Straßenrand
+      const farben = s.abend ? [0x2c2f34, 0x3a3d42, 0x4a3f36, 0x1f2329] : [0xe9e9e6, 0x2b2e33, 0x6e7680, 0x8a1f24, 0x1f3b5c, 0xbfc3c7];
+      const kdG = new THREE.BoxGeometry(0.95, 0.24, 0.44), kabG = new THREE.BoxGeometry(0.52, 0.2, 0.4), lG = new THREE.SphereGeometry(0.045, 8, 8);
+      const kabM = mat(0x1c2026, 0.15, 0.6), lackM = farben.map((f) => new THREE.MeshPhysicalMaterial({ color: f, roughness: 0.3, metalness: 0.6, clearcoat: 1 }));
+      const vorneM = new THREE.MeshBasicMaterial({ color: 0xfff1d0, toneMapped: false }), hintenM = new THREE.MeshBasicMaterial({ color: 0xff2020, toneMapped: false });
+      for (let k = 0; k < N * 9; k++) {
+        const quer = zufall(k * 5) < 0.5, spur = (Math.floor(zufall(k * 7) * (2 * N + 2)) - N - 0.5) * RASTER;
+        const t = (zufall(k * 11) - 0.5) * (weite - 4);
+        if (Math.abs(t - Math.round(t / RASTER) * RASTER) > BLOCK / 2 - 0.5) continue;
+        const seite = zufall(k * 13) < 0.5 ? -0.42 : 0.42;
+        const a = new THREE.Group();
+        const kd = new THREE.Mesh(kdG, lackM[k % lackM.length]); kd.position.y = 0.2; kd.castShadow = true; a.add(kd);
+        const kab = new THREE.Mesh(kabG, kabM); kab.position.set(-0.05, 0.4, 0); kab.castShadow = true; a.add(kab);
+        if (s.abend) for (const zz of [-0.13, 0.13]) { const v = new THREE.Mesh(lG, vorneM); v.position.set(0.48, 0.22, zz); const h = new THREE.Mesh(lG, hintenM); h.position.set(-0.48, 0.22, zz); a.add(v, h); }
+        if (quer) { a.position.set(spur + seite, 0, t); a.rotation.y = seite > 0 ? Math.PI / 2 : -Math.PI / 2; } else { a.position.set(t, 0, spur + seite); a.rotation.y = seite > 0 ? Math.PI : 0; }
+        umgebung.add(a);
       }
-    }
-    const antenne = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 1.6), new THREE.MeshBasicMaterial({ color: GOLD }));
-    antenne.position.y = 9.8; hq.add(antenne);
-    const hqWelle = new THREE.Mesh(new THREE.RingGeometry(1.9, 2.2, 64), new THREE.MeshBasicMaterial({ color: GOLD, transparent: true, opacity: 0.6, side: THREE.DoubleSide }));
-    hqWelle.rotation.x = -Math.PI / 2; hqWelle.position.y = 0.05; szene.add(hqWelle);
-
-    // Agent O.S.A schwebt über dem HQ
-    const osa = new THREE.Group(); osa.position.set(0, 12.8, 0); szene.add(osa);
-    // KMS-Zeichen wie im Logo: „KM“ dunkelgrau, „S“ gold, langsam drehend
-    const kern = new THREE.Group(); osa.add(kern);
-    const schrift = new FontLoader().parse(schriftDaten as any);
-    const buchstabe = (t: string, farbe: number, glanz: number) => {
-      const g = new TextGeometry(t, { font: schrift, size: 1.25, depth: 0.38, curveSegments: 6, bevelEnabled: true, bevelThickness: 0.04, bevelSize: 0.03, bevelSegments: 2 });
-      g.computeBoundingBox();
-      return { g, m: new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: farbe, metalness: 0.35, roughness: 0.35, emissive: farbe, emissiveIntensity: glanz })) };
+      // Straßenlaternen am Abend
+      if (s.abend) {
+        const orte: [number, number][] = [];
+        for (let i = -N; i <= N; i++) for (let j = -N; j <= N; j++) for (const [dx, dz] of [[BLOCK / 2 - 0.15, 0], [0, BLOCK / 2 - 0.15]]) orte.push([i * RASTER + dx, j * RASTER + dz]);
+        const mast = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.025, 0.035, 1.3, 6), mat(0x2a2c30, 0.6, 0.6), orte.length);
+        const kopf = new THREE.InstancedMesh(new THREE.SphereGeometry(0.08, 10, 10), new THREE.MeshBasicMaterial({ color: 0xffd9a0, toneMapped: false }), orte.length);
+        const fleckG = new THREE.CircleGeometry(1.1, 24); fleckG.rotateX(-Math.PI / 2);
+        const fleck = new THREE.InstancedMesh(fleckG, new THREE.MeshBasicMaterial({ map: lichtFleck, color: 0xffb860, transparent: true, opacity: 0.35, depthWrite: false, blending: THREE.AdditiveBlending }), orte.length);
+        orte.forEach(([x, z], k) => {
+          m4.makeTranslation(x, 0.81, z); mast.setMatrixAt(k, m4);
+          m4.makeTranslation(x, 1.48, z); kopf.setMatrixAt(k, m4);
+          m4.makeTranslation(x, SOCKEL + 0.015, z); fleck.setMatrixAt(k, m4);
+        });
+        umgebung.add(mast, kopf, fleck);
+      }
+      const r = (N + 1) * RASTER;
+      Object.assign(sonne.shadow.camera, { left: -r, right: r, top: r, bottom: -r, near: 1, far: 140 });
+      sonne.shadow.camera.updateProjectionMatrix();
     };
-    const km = buchstabe('KM', 0x3a3d42, 0.05), sBuch = buchstabe('S', 0xd09a3c, 0.25);
-    const bKM = km.g.boundingBox!.max.x - km.g.boundingBox!.min.x, bS = sBuch.g.boundingBox!.max.x - sBuch.g.boundingBox!.min.x, luecke = 0.06;
-    const breiteKMS = bKM + luecke + bS;
-    km.m.position.set(-breiteKMS / 2, -0.6, -0.19); sBuch.m.position.set(-breiteKMS / 2 + bKM + luecke, -0.6, -0.19);
-    kern.add(km.m, sBuch.m);
-    const huelle = new THREE.Mesh(new THREE.RingGeometry(1.75, 1.8, 64), new THREE.MeshBasicMaterial({ color: GOLD, transparent: true, opacity: 0.0, side: THREE.DoubleSide }));
-    osa.add(huelle);
-    const bahnen: THREE.Mesh[] = [];
-    for (let i = 0; i < 3; i++) {
-      const r = new THREE.Mesh(new THREE.TorusGeometry(2.25 + i * 0.3, 0.026, 8, 96), new THREE.MeshBasicMaterial({ color: i === 1 ? TUERKIS : GOLD, transparent: true, opacity: 0.85 }));
-      r.rotation.set(Math.PI / 2 + i * 0.6, i * 0.9, 0); osa.add(r); bahnen.push(r);
-    }
-    const osaSchild = schild('KMS HQ · Agent O.S.A', '#237b80'); osaSchild.scale.multiplyScalar(0.9); osaSchild.position.set(0, -2.3, 0); osa.add(osaSchild);
 
-    // Gebäude
+    // Häuser
     const haeuser = new Map<number, Haus>();
     const stadt = new THREE.Group(); szene.add(stadt);
     let bekannt: number[] = [];
     try { bekannt = JSON.parse(localStorage.getItem(BEKANNT) ?? '[]'); } catch { /* egal */ }
     const ersteSicht = bekannt.length === 0;
+    const dachMat = mat(s.dach, 0.8), attikaMat = mat(s.attika, 0.85), aufbauMat = mat(s.abend ? 0x55524d : 0x8b8882, 0.8), pvMat = mat(0x1e2633, 0.3, 0.4);
+    const balkonMat = mat(s.abend ? 0x55524d : 0xd9d6cf, 0.8), gelaenderMat = mat(0x3d4148, 0.4, 0.5);
+    const fenstermat = (f: Fassade, starke: number) => {
+      merke(f.tex); if (f.em) merke(f.em);
+      return new THREE.MeshStandardMaterial({ map: f.tex, roughness: 0.92, emissive: s.abend ? 0xffffff : 0x000000, emissiveMap: f.em, emissiveIntensity: starke });
+    };
 
     const bauen = (o: StadtObjekt, i: number, verzoegerung: number) => {
-      const pos = platz(i);
-      const hoehe = Math.min(8, 1.6 + (Number(o.einheiten) || 1) * 0.45);
-      const breite = 2.6 + Math.min(1.2, (Number(o.einheiten) || 1) / 10);
-      const farbe = FARBE[o.verwaltungsart] ?? 0x9b7fd1;
-      const gruppe = new THREE.Group(); gruppe.position.copy(pos);
-      const geo = new THREE.BoxGeometry(breite, hoehe, breite); geo.translate(0, hoehe / 2, 0);
-      const koerper = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: hell(farbe, 0.82), emissive: farbe, emissiveIntensity: 0.04, metalness: 0.1, roughness: 0.6, transparent: true, opacity: 0.96 }));
-      koerper.userData.id = o.id; gruppe.add(koerper);
-      const kanten = new THREE.LineSegments(new THREE.EdgesGeometry(geo), new THREE.LineBasicMaterial({ color: KANTE, transparent: true, opacity: 0.95 }));
-      gruppe.add(kanten);
-      for (let f = 0.55; f < hoehe - 0.2; f += 0.55) {
-        const band = new THREE.Mesh(new THREE.BoxGeometry(breite + 0.02, 0.05, breite + 0.02), new THREE.MeshBasicMaterial({ color: KANTE, transparent: true, opacity: 0.22 }));
-        band.position.y = f; gruppe.add(band);
+      const [ci, cj] = zelle(i);
+      const einheiten = Math.max(1, Number(o.einheiten) || 1);
+      const etagen = Math.max(2, Math.min(8, Math.round(einheiten / 3) + 2));
+      const h = etagen * ETAGE;
+      const b = 2.8 + Math.min(1.4, einheiten / 18), t = 2.4 + zufall(o.id) * 0.8;
+      const gruppe = new THREE.Group(); gruppe.position.set(ci * RASTER, SOCKEL, cj * RASTER);
+      const innen = new THREE.Group(); gruppe.add(innen);
+      innen.rotation.y = Math.abs(ci) >= Math.abs(cj) ? (ci > 0 ? -Math.PI / 2 : Math.PI / 2) : (cj > 0 ? 0 : Math.PI);
+      const seed = o.id * 7 + 1;
+      const pal = s.putz;
+      const fl = fenstermat(fassade(b, etagen, s, seed, true, pal, 0.42), 1.6), sl = fenstermat(fassade(t, etagen, s, seed, false, pal, 0.42), 1.6), rl = fenstermat(fassade(b, etagen, s, seed + 20, false, pal, 0.42), 1.6);
+      const koerper = new THREE.Mesh(new THREE.BoxGeometry(b, h, t), [sl, sl, dachMat, dachMat, fl, rl]);
+      koerper.position.y = h / 2; koerper.castShadow = koerper.receiveShadow = true; koerper.userData.id = o.id; innen.add(koerper);
+      let dachHoehe = 0;
+      if (einheiten <= 6) {
+        // Satteldach mit Giebeln
+        const form = new THREE.Shape(); form.moveTo(-t / 2 - 0.12, 0); form.lineTo(t / 2 + 0.12, 0); form.lineTo(0, 0.95); form.closePath();
+        const dg = new THREE.ExtrudeGeometry(form, { depth: b + 0.16, bevelEnabled: false }); dg.translate(0, 0, -(b + 0.16) / 2); dg.rotateY(Math.PI / 2);
+        const d = new THREE.Mesh(dg, dachMat); d.position.y = h; d.castShadow = d.receiveShadow = true; d.userData.id = o.id; innen.add(d);
+        const giebel = new THREE.Shape(); giebel.moveTo(-t / 2, 0); giebel.lineTo(t / 2, 0); giebel.lineTo(0, 0.88); giebel.closePath();
+        const gm = new THREE.MeshStandardMaterial({ color: pal[Math.floor(zufall(seed) * pal.length)], roughness: 0.92 });
+        for (const sx of [-1, 1]) { const gg = new THREE.Mesh(new THREE.ShapeGeometry(giebel), gm); gg.rotation.y = sx * Math.PI / 2; gg.position.set(sx * (b / 2 + 0.001), h, 0); innen.add(gg); }
+        dachHoehe = 0.95;
+      } else {
+        // Flachdach mit Attika, Treppenhausaufbau und Solarmodulen
+        for (const [w, d2, x, z] of [[b, 0.08, 0, t / 2 - 0.04], [b, 0.08, 0, -t / 2 + 0.04], [0.08, t, b / 2 - 0.04, 0], [0.08, t, -b / 2 + 0.04, 0]]) {
+          const a = new THREE.Mesh(new THREE.BoxGeometry(w, 0.16, d2), attikaMat); a.position.set(x, h + 0.08, z); a.castShadow = true; innen.add(a);
+        }
+        const auf = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.45, 0.7), aufbauMat); auf.position.set(-b * 0.2, h + 0.22, 0); auf.castShadow = true; innen.add(auf);
+        const pv = new THREE.Mesh(new THREE.BoxGeometry(b * 0.35, 0.04, t * 0.5), pvMat); pv.position.set(b * 0.22, h + 0.05, 0); pv.rotation.z = 0.15; innen.add(pv);
+        dachHoehe = 0.45;
       }
-      const s = schild(o.name); s.position.set(0, hoehe + 1.1, 0); gruppe.add(s);
-      const bodenRing = new THREE.Mesh(new THREE.RingGeometry(breite * 0.8, breite * 0.8 + 0.12, 48), new THREE.MeshBasicMaterial({ color: farbe, transparent: true, opacity: 0, side: THREE.DoubleSide }));
-      bodenRing.rotation.x = -Math.PI / 2; bodenRing.position.y = 0.04; gruppe.add(bodenRing);
-      gruppe.scale.set(1, 0.001, 1);
+      if (einheiten >= 8) {
+        const bkG = new THREE.BoxGeometry(0.7, 0.05, 0.35), glG = new THREE.BoxGeometry(0.7, 0.18, 0.02);
+        for (let f = 1; f < etagen; f++) for (const x of [-b * 0.25, b * 0.25]) {
+          const bk = new THREE.Mesh(bkG, balkonMat); bk.position.set(x, f * ETAGE + 0.02, -t / 2 - 0.17); bk.castShadow = true; innen.add(bk);
+          const gl = new THREE.Mesh(glG, gelaenderMat); gl.position.set(x, f * ETAGE + 0.12, -t / 2 - 0.34); innen.add(gl);
+        }
+      }
+      const label = schild(o.name, ART_FARBE[o.verwaltungsart] ?? '#c8955a'); label.position.set(0, h + dachHoehe + 0.7, 0); gruppe.add(label);
+      // Rahmen am Boden: wählt man das Haus, leuchtet er in Bronze; beim Wachsen pulsiert er
+      const r = Math.max(b, t) / 2 + 0.75;
+      const wachsen = new THREE.Mesh(new THREE.RingGeometry(r * Math.SQRT2 - 0.06, r * Math.SQRT2 + 0.06, 4, 1, Math.PI / 4), new THREE.MeshBasicMaterial({ color: s.akzent, transparent: true, opacity: 0, toneMapped: false, depthWrite: false }));
+      wachsen.rotation.x = -Math.PI / 2; wachsen.position.y = 0.03; gruppe.add(wachsen);
+      gruppe.scale.set(1, 0.001, 1); label.visible = false;
       stadt.add(gruppe);
-      // Datenspur wie im Logo: flache Leiterbahn über die Straßen, am Ende ein Knoten
-      const pf = pfad(spurPunkte(i, i));
-      const spurMat = new THREE.MeshBasicMaterial({ color: 0xbfa877, transparent: true, opacity: 0 });
+      // Verbindung zur Zentrale: feine Linie auf der Straße
+      const pf = pfad(spurPunkte(i));
+      const spurMat = new THREE.MeshBasicMaterial({ color: s.akzent, transparent: true, opacity: 0, toneMapped: !s.abend, depthWrite: false });
       const spur = new THREE.Group();
       for (let k = 1; k < pf.punkte.length; k++) {
-        const a2 = pf.punkte[k - 1], b2 = pf.punkte[k], l = a2.distanceTo(b2);
-        const seg = new THREE.Mesh(new THREE.BoxGeometry(l + 0.15, 0.02, 0.15), spurMat);
-        seg.position.copy(a2).lerp(b2, 0.5); seg.rotation.y = -Math.atan2(b2.z - a2.z, b2.x - a2.x); spur.add(seg);
+        const a = pf.punkte[k - 1], c = pf.punkte[k], l = a.distanceTo(c);
+        const seg = new THREE.Mesh(new THREE.PlaneGeometry(l + 0.05, 0.05), spurMat);
+        seg.rotation.x = -Math.PI / 2; seg.rotation.z = -Math.atan2(c.z - a.z, c.x - a.x); seg.position.copy(a).lerp(c, 0.5); spur.add(seg);
       }
-      const knoten = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.26, 0.05, 24), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0 }));
-      const knotenRand = new THREE.Mesh(new THREE.TorusGeometry(0.27, 0.035, 6, 24), spurMat);
-      knoten.position.copy(pf.punkte[pf.punkte.length - 1]).setY(0.1); knotenRand.position.copy(knoten.position); knotenRand.rotation.x = Math.PI / 2;
-      spur.add(knoten, knotenRand);
       szene.add(spur);
-      haeuser.set(o.id, { id: o.id, gruppe, koerper, kanten, hoehe, pos, pfad: pf, spur, spurMat, knoten, start: performance.now() / 1000 + verzoegerung, neu: !ersteSicht && !bekannt.includes(o.id), farbe, boden: bodenRing });
+      haeuser.set(o.id, { id: o.id, gruppe, koerper, hoehe: h + dachHoehe, pos: gruppe.position.clone(), label, pfad: pf, spur, spurMat,
+        start: performance.now() / 1000 + verzoegerung, neu: !ersteSicht && !bekannt.includes(o.id), wachsen });
+    };
+    const entfernen = (h: Haus) => {
+      stadt.remove(h.gruppe); szene.remove(h.spur);
+      for (const g of [h.gruppe, h.spur]) g.traverse((o) => {
+        const m = o as THREE.Mesh; if (!m.isMesh) return; m.geometry.dispose();
+        (Array.isArray(m.material) ? m.material : [m.material]).forEach((x) => { const sm = x as THREE.MeshStandardMaterial; if (sm.map && !texturen.includes(sm.map)) sm.map.dispose(); x.dispose(); });
+      });
+      h.label.element.remove();
     };
 
-    // Datenpakete: kurze Lichtstriche, die auf den Leiterbahnen laufen (gold und grau wie im Logo)
-    const paketGeo = new THREE.BoxGeometry(0.9, 0.06, 0.2);
+    // Lichtpunkte auf den Verbindungen
+    const punktGeo = new THREE.SphereGeometry(0.07, 12, 12);
     type Puls = { m: THREE.Mesh; h: Haus; s: number; v: number; rueck: boolean };
     const pulse: Puls[] = [];
-    const puls = (h: Haus, rueck = false, farbe = GOLD, gross = 1) => {
-      const m = new THREE.Mesh(paketGeo, new THREE.MeshBasicMaterial({ color: farbe, transparent: true, opacity: 1 }));
-      m.scale.set(gross, 1, gross); szene.add(m);
-      pulse.push({ m, h, s: 0, v: 7 + Math.random() * 4, rueck });
+    const puls = (h: Haus, rueck: boolean, farbe: number, gross = 1) => {
+      const m = new THREE.Mesh(punktGeo, new THREE.MeshBasicMaterial({ color: farbe, transparent: true, toneMapped: false }));
+      m.scale.setScalar(gross); szene.add(m); pulse.push({ m, h, s: 0, v: 6 + Math.random() * 3, rueck });
     };
 
-    let wahl: number | null = null;
-    const ziel = new THREE.Vector3(), blick = new THREE.Vector3();
-    let winkel = Math.PI / 4, abstand = 44, hoeheKam = 30, zielAbstand = 44, zielHoehe = 30;
-    const zielPunkt = new THREE.Vector3();
+    // Kamera: Blick schräg von oben (etwa 33°), passt die Stadt oder das gewählte Haus ins Bild
+    const kamera = new THREE.PerspectiveCamera(30, 1, 0.5, 600);
+    const NEIGUNG = 0.58;
+    let winkel = Math.PI / 4, zoom = 1, entfernung = 80, zielEntfernung = 60;
+    const ziel = new THREE.Vector3(), zielPunkt = new THREE.Vector3(0, 2, 0);
+    let wahl: number | null = null, ueber: number | null = null;
+    const passend = (radius: number) => {
+      const vf = THREE.MathUtils.degToRad(kamera.fov), hf = 2 * Math.atan(Math.tan(vf / 2) * kamera.aspect);
+      return (radius * 1.08) / Math.tan(Math.min(vf, hf) / 2);
+    };
     const fokus = (id: number | null) => {
       wahl = id;
       const h = id != null ? haeuser.get(id) : null;
-      if (h) { zielPunkt.set(h.pos.x, h.hoehe * 0.55, h.pos.z); zielAbstand = 17 + h.hoehe; zielHoehe = 14 + h.hoehe; winkel = Math.atan2(h.pos.z, h.pos.x) + 0.28; }
-      else { const r = Math.max(1, ...[...haeuser.values()].map((x) => Math.max(Math.abs(x.pos.x), Math.abs(x.pos.z)))) + RASTER * 0.6; zielPunkt.set(0, 2.5, 0); zielAbstand = 16 + r * 1.75; zielHoehe = 12 + r * 1.15; }
+      if (h) { zielPunkt.set(h.pos.x, h.hoehe * 0.45, h.pos.z); zielEntfernung = passend(Math.max(4.2, h.hoehe * 0.75)); winkel = Math.atan2(h.pos.z, h.pos.x) + 0.32; }
+      else {
+        const r = Math.max(RASTER, ...[...haeuser.values()].map((x) => Math.max(Math.abs(x.pos.x), Math.abs(x.pos.z)))) + RASTER * 0.35;
+        zielPunkt.set(0, 2, 0); zielEntfernung = passend(r);
+      }
+      zoom = 1;
+      for (const x of haeuser.values()) x.label.element.classList.toggle('aktiv', x.id === id);
     };
-    fokus(null); ziel.copy(zielPunkt); blick.copy(zielPunkt); abstand = zielAbstand + 30; hoeheKam = zielHoehe + 18;
 
     welt.current = {
       setzeObjekte: (liste) => {
         const sortiert = [...liste].sort((a, b) => a.id - b.id);
         const ids = new Set(sortiert.map((o) => o.id));
-        for (const [id, h] of haeuser) if (!ids.has(id)) { stadt.remove(h.gruppe); szene.remove(h.spur); haeuser.delete(id); }
+        for (const [id, h] of haeuser) if (!ids.has(id)) { entfernen(h); haeuser.delete(id); }
         let neuZahl = 0;
-        sortiert.forEach((o, i) => { if (!haeuser.has(o.id)) bauen(o, i, 0.4 + (ersteSicht ? i * 0.12 : bekannt.includes(o.id) ? i * 0.05 : 1.2 + neuZahl++ * 0.5)); });
-        const N = Math.max(2, ...sortiert.map((_, i) => Math.max(Math.abs(zelle(i)[0]), Math.abs(zelle(i)[1])))) + 1;
-        strassenBauen(N, new Set(sortiert.map((_, i) => zelle(i).join(','))));
+        sortiert.forEach((o, i) => {
+          const h = haeuser.get(o.id);
+          const [ci, cj] = zelle(i);
+          if (h && (h.pos.x !== ci * RASTER || h.pos.z !== cj * RASTER)) { entfernen(h); haeuser.delete(o.id); }
+          if (!haeuser.has(o.id)) bauen(o, i, 0.3 + (ersteSicht ? i * 0.1 : bekannt.includes(o.id) ? i * 0.04 : 1.0 + neuZahl++ * 0.5));
+        });
+        umgebungBauen(new Set(sortiert.map((_, i) => zelle(i).join(','))));
         try { localStorage.setItem(BEKANNT, JSON.stringify(sortiert.map((o) => o.id))); } catch { /* egal */ }
         fokus(wahl);
       },
       waehle: fokus,
     };
 
-    // Bedienung: ziehen dreht, Mausrad zoomt, Klick wählt ein Gebäude
+    // Nachbearbeitung: Umgebungsverdeckung für weiche Kontaktschatten, am Abend leichtes Leuchten
+    const komp = new EffectComposer(renderer);
+    komp.addPass(new RenderPass(szene, kamera));
+    if (renderer.capabilities.isWebGL2) {
+      try { const ao = new GTAOPass(szene, kamera, 1, 1); ao.blendIntensity = s.abend ? 0.6 : 0.9; ao.updateGtaoMaterial({ radius: 0.6, distanceFallOff: 1, thickness: 1.5 }); komp.addPass(ao); }
+      catch { /* ohne Verdeckung */ }
+    }
+    if (s.abend) komp.addPass(new UnrealBloomPass(new THREE.Vector2(1, 1), 0.75, 0.5, 0.82));
+    komp.addPass(new OutputPass());
+
+    // Bedienung: ziehen dreht, Mausrad zoomt, Klick wählt ein Haus
     const ray = new THREE.Raycaster(), maus = new THREE.Vector2();
     let zieh: { x: number; w: number; bewegt: boolean } | null = null;
     const runter = (e: PointerEvent) => { zieh = { x: e.clientX, w: winkel, bewegt: false }; };
@@ -329,100 +508,97 @@ export function Stadt3D({ objekte, gewaehlt, onWahl }: { objekte: StadtObjekt[];
       maus.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
       if (zieh) { const d = e.clientX - zieh.x; if (Math.abs(d) > 4) zieh.bewegt = true; winkel = zieh.w - d * 0.006; }
       ray.setFromCamera(maus, kamera);
-      const treffer = ray.intersectObjects([...haeuser.values()].map((h) => h.koerper))[0];
+      const ziele: THREE.Object3D[] = []; for (const h of haeuser.values()) h.gruppe.traverse((o) => { if (o.userData.id != null) ziele.push(o); });
+      const treffer = ray.intersectObjects(ziele, false)[0];
+      const neu = treffer ? (treffer.object.userData.id as number) : null;
+      if (neu !== ueber) { for (const h of haeuser.values()) h.label.element.classList.toggle('hover', h.id === neu); ueber = neu; }
       renderer.domElement.style.cursor = treffer ? 'pointer' : zieh ? 'grabbing' : 'grab';
-      ueber = treffer ? (treffer.object.userData.id as number) : null;
     };
-    const hoch = () => {
-      if (zieh && !zieh.bewegt) wahlRef.current(ueber ?? null);
-      zieh = null;
-    };
-    const rad = (e: WheelEvent) => { e.preventDefault(); zielAbstand = Math.max(10, Math.min(90, zielAbstand * (1 + e.deltaY * 0.001))); };
-    let ueber: number | null = null;
+    const hoch = () => { if (zieh && !zieh.bewegt) wahlRef.current(ueber ?? null); zieh = null; };
+    const rad = (e: WheelEvent) => { e.preventDefault(); zoom = Math.max(0.35, Math.min(1.8, zoom * (1 + e.deltaY * 0.001))); };
     renderer.domElement.addEventListener('pointerdown', runter);
     renderer.domElement.addEventListener('pointermove', bewegen);
     window.addEventListener('pointerup', hoch);
     renderer.domElement.addEventListener('wheel', rad, { passive: false });
 
     const groesse = () => {
-      const w = el.clientWidth, h = el.clientHeight;
-      renderer.setSize(w, h); kamera.aspect = w / Math.max(1, h); kamera.updateProjectionMatrix();
+      const w = Math.max(1, el.clientWidth), h = Math.max(1, el.clientHeight);
+      renderer.setSize(w, h); komp.setPixelRatio(renderer.getPixelRatio()); komp.setSize(w, h); css2d.setSize(w, h);
+      kamera.aspect = w / h; kamera.updateProjectionMatrix(); fokus(wahl);
     };
     const ro = new ResizeObserver(groesse); ro.observe(el); groesse();
+    fokus(null); ziel.copy(zielPunkt); entfernung = zielEntfernung * 1.5;
 
     let raf = 0, letzt = performance.now() / 1000, naechsterPuls = 0, naechsterWahlPuls = 0;
+    const weiss = new THREE.Color(s.abend ? 0xffe0b0 : 0xffffff), bronzeHell = new THREE.Color(0xffd08a);
     const lauf = () => {
       raf = requestAnimationFrame(lauf);
       const t = performance.now() / 1000, dt = Math.min(0.05, t - letzt); letzt = t;
-      if (!zieh && wahl == null) winkel += dt * 0.05;
-      ziel.lerp(zielPunkt, 0.045); abstand += (zielAbstand - abstand) * 0.045; hoeheKam += (zielHoehe - hoeheKam) * 0.045;
-      kamera.position.set(ziel.x + Math.cos(winkel) * abstand, hoeheKam, ziel.z + Math.sin(winkel) * abstand);
-      blick.lerp(ziel, 0.2); kamera.lookAt(blick);
+      if (!zieh && wahl == null) winkel += dt * 0.035;
+      ziel.lerp(zielPunkt, 0.05); entfernung += (zielEntfernung * zoom - entfernung) * 0.05;
+      kamera.position.set(ziel.x + Math.cos(winkel) * Math.cos(NEIGUNG) * entfernung, ziel.y + Math.sin(NEIGUNG) * entfernung, ziel.z + Math.sin(winkel) * Math.cos(NEIGUNG) * entfernung);
+      kamera.lookAt(ziel);
+      nebel.near = entfernung * 0.95; nebel.far = entfernung * 2.1;
+      sonne.position.set(ziel.x - 22, 34, ziel.z + 16); sonne.target.position.copy(ziel);
 
-      // HQ und O.S.A
-      osa.position.y = 12.8 + Math.sin(t * 1.6) * 0.25;
-      kern.rotation.y = Math.PI / 2 - winkel + Math.sin(t * 0.8) * 0.35;   // schaut immer zur Kamera, wiegt sich leicht
-      bahnen.forEach((b, i) => { b.rotation.z = t * (0.6 + i * 0.3); });
-      (sBuch.m.material as THREE.MeshStandardMaterial).emissiveIntensity = 0.25 + Math.sin(t * 3) * 0.12;
-      const wz = (t * 0.5) % 1; hqWelle.scale.setScalar(1 + wz * 3.5); (hqWelle.material as THREE.MeshBasicMaterial).opacity = 0.55 * (1 - wz);
-      hqLicht.intensity = 26 + Math.sin(t * 3) * 6;
+      // Agent O.S.A pulsiert
+      const p0 = (t * 0.6) % 1; osaRing.scale.setScalar(1 + p0 * 2.2); (osaRing.material as THREE.MeshBasicMaterial).opacity = 0.8 * (1 - p0);
+      osaLicht.intensity = (s.abend ? 6 : 2) * (0.75 + Math.sin(t * 3) * 0.25);
 
-      // Gebäude wachsen, gewähltes leuchtet
       for (const h of haeuser.values()) {
         const p = Math.max(0, Math.min(1, (t - h.start) / (h.neu ? 1.8 : 1.1)));
-        const e = p < 1 ? 1 + 2.4 * Math.pow(p - 1, 3) + 1.4 * Math.pow(p - 1, 2) : 1;   // wächst mit leichtem Überschwingen
+        const e = p < 1 ? 1 + 2.4 * Math.pow(p - 1, 3) + 1.4 * Math.pow(p - 1, 2) : 1;
         h.gruppe.scale.set(1, Math.max(0.001, p === 0 ? 0.001 : e), 1);
-        const an = wahl === h.id, hover = ueber === h.id;
-        const mat = h.koerper.material as THREE.MeshStandardMaterial;
-        const zielGlanz = an ? 0.32 + Math.sin(t * 4) * 0.12 : hover ? 0.2 : h.neu && p < 1 ? 0.35 : 0.04;
-        mat.emissiveIntensity += (zielGlanz - mat.emissiveIntensity) * 0.12;
-        const zielLinie = p < 0.6 ? 0 : wahl == null ? 0.95 : an ? 1 : 0.45;
+        h.label.visible = p > 0.85;
+        h.label.element.classList.toggle('leise', wahl != null && wahl !== h.id);
+        h.label.element.classList.toggle('klein', haeuser.size > 8 && wahl !== h.id);
+        const an = wahl === h.id;
+        const wm = h.wachsen.material as THREE.MeshBasicMaterial;
+        const zielRahmen = an ? 0.7 + Math.sin(t * 4) * 0.25 : h.neu && p > 0 && p < 1 ? 0.5 + Math.sin(t * 8) * 0.4 : ueber === h.id ? 0.45 : 0;
+        wm.opacity += (zielRahmen - wm.opacity) * 0.15;
+        const zielLinie = p < 0.6 ? 0 : wahl == null ? 0.7 : an ? 1 : 0.2;
         h.spurMat.opacity += (zielLinie - h.spurMat.opacity) * 0.08;
-        h.spurMat.color.lerp(new THREE.Color(an ? GOLD_HELL : 0xbfa877), 0.1);
-        const km2 = h.knoten.material as THREE.MeshBasicMaterial;
-        km2.opacity = h.spurMat.opacity; h.knoten.scale.setScalar(an ? 1.2 + Math.sin(t * 6) * 0.2 : 1 + Math.sin(t * 2 + h.id) * 0.08);
-        const bm = h.boden.material as THREE.MeshBasicMaterial;
-        if (an || (h.neu && p > 0 && p < 1)) { const z = (t * 0.9) % 1; h.boden.scale.setScalar(1 + z * 1.8); bm.opacity = 0.8 * (1 - z); }
-        else bm.opacity *= 0.9;
         if (h.neu && p >= 1) h.neu = false;
       }
-
-      // Pulse: immer wieder einzelne Signale ins Netz, zum gewählten Gebäude ein Strom in beide Richtungen
-      const liste = [...haeuser.values()].filter((h) => t > h.start + 1);
-      if (t > naechsterPuls && liste.length) {
-        naechsterPuls = t + (wahl == null ? 0.35 : 0.9);
-        const h = liste[Math.floor(Math.random() * liste.length)];
-        if (wahl == null || h.id !== wahl) puls(h, Math.random() < 0.4, Math.random() < 0.35 ? 0x6f7782 : GOLD_HELL, wahl == null ? 1 : 0.8);
+      // Lichtpunkte: ab und zu ins Netz, zum gewählten Haus ein ruhiger Strom
+      const fertig = [...haeuser.values()].filter((h) => t > h.start + 1.2);
+      if (t > naechsterPuls && fertig.length) {
+        naechsterPuls = t + (wahl == null ? 0.45 : 1.1);
+        const h = fertig[Math.floor(Math.random() * fertig.length)];
+        if (wahl == null || h.id !== wahl) puls(h, Math.random() < 0.4, Math.random() < 0.6 ? weiss.getHex() : bronzeHell.getHex(), 0.9);
       }
       const gw = wahl != null ? haeuser.get(wahl) : null;
-      if (gw && t > naechsterWahlPuls) { naechsterWahlPuls = t + 0.22; puls(gw, Math.random() < 0.3, GOLD_HELL, 1.35); }
+      if (gw && t > naechsterWahlPuls && t > gw.start + 1.2) { naechsterWahlPuls = t + 0.3; puls(gw, Math.random() < 0.35, bronzeHell.getHex(), 1.2); }
       for (let i = pulse.length - 1; i >= 0; i--) {
         const p = pulse[i]; p.s += dt * p.v;
         const g = p.h.pfad.gesamt;
-        if (p.s >= g) { szene.remove(p.m); (p.m.material as THREE.Material).dispose(); pulse.splice(i, 1); continue; }
-        const w = aufPfad(p.h.pfad, p.rueck ? g - p.s : p.s, p.m.position);
-        p.m.position.y = 0.11; p.m.rotation.y = -w;
-        (p.m.material as THREE.MeshBasicMaterial).opacity = Math.min(1, p.s / 1.2, (g - p.s) / 1.2);
+        if (p.s >= g || !haeuser.has(p.h.id)) { szene.remove(p.m); (p.m.material as THREE.Material).dispose(); pulse.splice(i, 1); continue; }
+        aufPfad(p.h.pfad, p.rueck ? g - p.s : p.s, p.m.position); p.m.position.y = 0.09;
+        (p.m.material as THREE.MeshBasicMaterial).opacity = Math.min(1, p.s / 1.0, (g - p.s) / 1.0);
       }
-      renderer.render(szene, kamera);
+      komp.render(); css2d.render(szene, kamera);
     };
     lauf();
 
     return () => {
       cancelAnimationFrame(raf); ro.disconnect();
       window.removeEventListener('pointerup', hoch);
+      for (const h of haeuser.values()) h.label.element.remove();
       szene.traverse((o) => {
         const m = o as THREE.Mesh;
         m.geometry?.dispose?.();
-        const mat = m.material as THREE.Material | THREE.Material[] | undefined;
-        (Array.isArray(mat) ? mat : mat ? [mat] : []).forEach((x) => { (x as THREE.SpriteMaterial).map?.dispose(); x.dispose(); });
+        const mt = m.material as THREE.Material | THREE.Material[] | undefined;
+        (Array.isArray(mt) ? mt : mt ? [mt] : []).forEach((x) => x.dispose());
       });
-      renderer.dispose(); renderer.domElement.remove(); welt.current = null;
+      texturen.forEach((x) => x.dispose());
+      umg.dispose(); komp.dispose(); renderer.dispose();
+      renderer.domElement.remove(); css2d.domElement.remove();
+      welt.current = null;
     };
-  }, []);
+  }, [abend]);
 
-  useEffect(() => { welt.current?.setzeObjekte(objekte); }, [objekte]);
-  useEffect(() => { welt.current?.waehle(gewaehlt); }, [gewaehlt, objekte]);
+  useEffect(() => { welt.current?.setzeObjekte(objekte); }, [objekte, abend]);
+  useEffect(() => { welt.current?.waehle(gewaehlt); }, [gewaehlt, objekte, abend]);
 
   return <div ref={box} className="stadt3d" />;
 }
