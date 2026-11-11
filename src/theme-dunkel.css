@@ -126,3 +126,9 @@ html[data-theme="dunkel"] .stammdaten-wert { color: #fff; }
 /* Sperrbildschirm: Carbon-Grund mit Bronze-Schimmer */
 html[data-theme="dunkel"] .sperre { background: radial-gradient(ellipse at 50% 32%, rgba(200,149,90,.12), transparent 55%), linear-gradient(rgba(8,9,10,.62), rgba(8,9,10,.8)), var(--carbon), #101113; }
 html[data-theme="dunkel"] .sperre-karte { border: 1px solid #34373c; box-shadow: 0 24px 70px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.04); }
+
+/* 3D-Stadt: Legende, Hinweis und Knopf auf dunklem Glas */
+html[data-theme="dunkel"] .leit-legende { color: #c9c6c0; }
+html[data-theme="dunkel"] .leit-legende span, html[data-theme="dunkel"] .leit-hinweis, html[data-theme="dunkel"] .leit-zurueck {
+  background: rgba(20,22,25,.82); border-color: rgba(200,149,90,.35); color: #d8d4cc; box-shadow: 0 2px 10px rgba(0,0,0,.35); }
+html[data-theme="dunkel"] .leit-zurueck:hover { background: #24272b; }
