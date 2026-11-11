@@ -521,14 +521,20 @@ export function Stadt3D({ objekte, gewaehlt, onWahl }: { objekte: StadtObjekt[];
     window.addEventListener('pointerup', hoch);
     renderer.domElement.addEventListener('wheel', rad, { passive: false });
 
+    let obenFrei = 10, hoehePx = 1;
     const groesse = () => {
       const w = Math.max(1, el.clientWidth), h = Math.max(1, el.clientHeight);
+      hoehePx = h;
+      const legende = el.parentElement?.querySelector('.leit-legende');
+      obenFrei = legende ? Math.max(10, legende.getBoundingClientRect().bottom - el.getBoundingClientRect().top + 6) : 10;
       renderer.setSize(w, h); komp.setPixelRatio(renderer.getPixelRatio()); komp.setSize(w, h); css2d.setSize(w, h);
       kamera.aspect = w / h; kamera.updateProjectionMatrix(); fokus(wahl);
     };
     const ro = new ResizeObserver(groesse); ro.observe(el); groesse();
     fokus(null); ziel.copy(zielPunkt); entfernung = zielEntfernung * 1.5;
 
+    const wp = new THREE.Vector3();
+    const alleSchilder = function* () { yield hqSchild; for (const h of haeuser.values()) yield h.label; };
     let raf = 0, letzt = performance.now() / 1000, naechsterPuls = 0, naechsterWahlPuls = 0;
     const weiss = new THREE.Color(s.abend ? 0xffe0b0 : 0xffffff), bronzeHell = new THREE.Color(0xffd08a);
     const lauf = () => {
@@ -577,6 +583,15 @@ export function Stadt3D({ objekte, gewaehlt, onWahl }: { objekte: StadtObjekt[];
         (p.m.material as THREE.MeshBasicMaterial).opacity = Math.min(1, p.s / 1.0, (g - p.s) / 1.0);
       }
       komp.render(); css2d.render(szene, kamera);
+      // Schilder nie unter der Legende: ragt eines oben hinein, rückt es nach unten
+      for (const l of alleSchilder()) {
+        if (!l.visible) continue;
+        l.getWorldPosition(wp).project(kamera);
+        const oben = (-wp.y * 0.5 + 0.5) * hoehePx - 15;
+        const schub = oben < obenFrei ? Math.round(obenFrei - oben) : 0;
+        const neu = schub ? schub + 'px' : '';
+        if (l.element.style.marginTop !== neu) l.element.style.marginTop = neu;
+      }
     };
     lauf();
 
