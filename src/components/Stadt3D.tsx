@@ -3,6 +3,7 @@
 // In der Mitte die KMS-Zentrale (Glas und Bronze) mit Agent O.S.A als Leuchtsignal auf dem Dach.
 // Helles Design: Stadt bei Tag. Dunkelmodus: dieselbe Stadt am Abend mit erleuchteten Fenstern und Laternen.
 // Bedienung wie bisher: Haus anklicken, Kamera fährt hin; neue Liegenschaften wachsen beim nächsten Öffnen aus dem Boden.
+import { LOGO_KM, LOGO_S } from './logoPfade';
 import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
@@ -210,9 +211,9 @@ export function Stadt3D({ objekte, gewaehlt, onWahl }: { objekte: StadtObjekt[];
       }
     }
     const lc = document.createElement('canvas'); lc.width = 512; lc.height = 160; const lgx = lc.getContext('2d')!;
-    lgx.font = '700 120px Montserrat, system-ui, sans-serif'; lgx.textBaseline = 'middle';
-    const kmB = lgx.measureText('KM').width, sB = lgx.measureText('S').width, x0 = 256 - (kmB + sB) / 2;
-    lgx.fillStyle = '#f2f2f0'; lgx.fillText('KM', x0, 84); lgx.fillStyle = '#d4a05a'; lgx.fillText('S', x0 + kmB, 84);
+    // Originales KMS-Zeichen als Vektor: KM hell, S bronze
+    { const f = Math.min(480 / 950, 146 / 380); lgx.save(); lgx.translate(256 - (110 + 475) * f, 80 - (18 + 190) * f); lgx.scale(f, f);
+      lgx.fillStyle = '#f2f2f0'; lgx.fill(new Path2D(LOGO_KM), 'evenodd'); lgx.fillStyle = '#d4a05a'; lgx.fill(new Path2D(LOGO_S), 'evenodd'); lgx.restore(); }
     const logoTex = merke(new THREE.CanvasTexture(lc)); logoTex.colorSpace = THREE.SRGBColorSpace;
     const logoMat = new THREE.MeshBasicMaterial({ map: logoTex, transparent: true, toneMapped: false });
     for (const r of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) {

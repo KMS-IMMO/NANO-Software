@@ -1140,3 +1140,13 @@ input, select, textarea, button { font-family: inherit; }
 @media (max-width: 1000px) { .us-reihe { grid-template-columns: 1fr; } }
 .card.objhead { position: relative; }
 .objhead-pdf { position: absolute; top: 14px; right: 14px; padding: 6px 12px; font-size: 13px; }
+
+/* Originales KMS-Logo (Vektor) */
+:root { --logo-grau: #747474; --logo-bronze: #AA8D5F; --logo-glanz: #a9adb3; }
+.logo-marke { display: block; width: 15em; height: auto; position: relative; z-index: 1; overflow: visible; }
+.logo-marke .logo-grau { fill: var(--logo-grau); }
+.logo-marke .logo-bronze { fill: var(--logo-bronze); }
+.logo-marke .logo-puls { fill: #ffe3a6; opacity: 0; mix-blend-mode: screen; animation: logo-puls 2.8s ease-in-out infinite; }
+@keyframes logo-puls { 0% { transform: translateX(0); opacity: 0; } 15%, 85% { opacity: .9; } 100% { transform: translateX(840px); opacity: 0; } }
+.logo-daten.aktiv .logo-puls { animation-duration: .8s; }
+@media (prefers-reduced-motion: reduce) { .logo-marke .logo-puls { animation: none; } }
