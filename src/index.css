@@ -1142,7 +1142,7 @@ input, select, textarea, button { font-family: inherit; }
 .objhead-pdf { position: absolute; top: 14px; right: 14px; padding: 6px 12px; font-size: 13px; }
 
 /* Originales KMS-Logo (Vektor) */
-:root { --logo-grau: #747474; --logo-bronze: #AA8D5F; --logo-glanz: #a9adb3; }
+:root { --logo-grau: #727272; --logo-bronze: #B08D57; --logo-glanz: #a9adb3; }
 .logo-marke { display: block; width: 15em; height: auto; position: relative; z-index: 1; overflow: visible; }
 .logo-marke .logo-grau { fill: var(--logo-grau); }
 .logo-marke .logo-bronze { fill: var(--logo-bronze); }
