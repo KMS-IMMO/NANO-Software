@@ -53,11 +53,13 @@ interface Props {
   onDelete?: (row: Row) => void;
   /** Ändert sich der Wert, wird die Liste neu geladen */
   version?: number;
+  /** Zusätzliche CSS-Klasse je Zeile, z. B. Farbe nach Rolle */
+  rowClass?: (row: Row) => string | undefined;
 }
 
 type Opt = { value: string | number; label: string };
 
-export function EntityTable({ title, table, fields, listSql, listParams = [], fixed, onOpen, emptyText, onChange, groupBy, newLabel, icon, onNew, onDelete, version }: Props) {
+export function EntityTable({ title, table, fields, listSql, listParams = [], fixed, onOpen, emptyText, onChange, groupBy, newLabel, icon, onNew, onDelete, version, rowClass }: Props) {
   const [rows, setRows] = useState<Row[]>([]);
   const [editing, setEditing] = useState<Row | null>(null);
   const [opts, setOpts] = useState<Record<string, Opt[]>>({});
@@ -164,7 +166,7 @@ export function EntityTable({ title, table, fields, listSql, listParams = [], fi
               groupBy && (i === 0 || visible[i - 1][groupBy] !== r[groupBy]) ? (
                 <tr key={'g' + r.id} className="group"><td colSpan={shown.length + 1}>{r[groupBy] ?? 'Ohne Gruppe'}</td></tr>
               ) : null,
-              <tr key={r.id} onClick={() => (onOpen ? onOpen(r) : setEditing(r))} className="clickable">
+              <tr key={r.id} onClick={() => (onOpen ? onOpen(r) : setEditing(r))} className={'clickable' + (rowClass?.(r) ? ' ' + rowClass(r) : '')}>
                 {shown.map((f) => <td key={f.key} className={f.type === 'number' ? 'num' + (f.geld && !f.minusNeutral && Number(r[f.key]) < -0.004 ? ' neg' : '') : ''}>{display(f, r)}</td>)}
                 <td className="actions">
                   <button className="icon-btn" title="Bearbeiten" onClick={(e) => { e.stopPropagation(); setEditing(r); }}><Pencil size={17} /></button>

@@ -86,7 +86,7 @@ export function EigentumDetailPage({ objektId, eigentumId }: { objektId: number;
         <div className="kpi"><span>Zahlweise</span><b>{(ei.zahlweise || ei.ruecklage_zahlweise) === 'getrennt' ? 'getrennt' : 'eine Summe'}</b></div>
         <div className="kpi"><span>Offen (fällig)</span><b className={offen > 0.005 ? 'neg' : ''}>{eur(offen)}</b></div>
       </div>
-      <StammdatenKarte key={ei.id} titel="Eigentümer und Eigentum" icon={<IdCard size={22} />} gruppen={gruppen}
+      <StammdatenKarte rolle="eigentuemer" key={ei.id} titel="Eigentümer und Eigentum" icon={<IdCard size={22} />} gruppen={gruppen}
         werte={{ ...personWerte(p), e_anteil: ei.anteil ?? 100, e_von: ei.von, e_bis: ei.bis, e_zahlweise: ei.zahlweise ?? '' }}
         onSpeichern={speichern} />
       <p className="muted small">Hausgeld und Rücklage änderst du unter <Link to={`/objekte/${objektId}/hausgeld`}>Hausgeld</Link>. Die Personendaten gelten für alle Objekte dieses Kontakts.</p>

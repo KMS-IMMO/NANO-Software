@@ -4,7 +4,7 @@ import { MieterAnlegen } from '../components/MieterAnlegen';
 import { useEffect, useMemo, useState } from 'react';
 import { BJ } from '../logic/buchung';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, BarChart3, CalendarClock, CalendarRange, BookOpen, Building2, ClipboardList, Coins, DoorOpen, FileSignature, FileText, FolderOpen, Gavel, Home, Landmark, Layers, ListChecks, Mail,
+import { ArrowLeft, BarChart3, CircleCheck, CalendarClock, CalendarRange, BookOpen, Building2, ClipboardList, Coins, DoorOpen, FileSignature, FileText, FolderOpen, Gavel, Home, Landmark, Layers, ListChecks, Mail,
   Maximize2, PiggyBank, Scale, Trash2, User, Users, Wallet, Wrench } from 'lucide-react';
 import { BeschluesseTab, RuecklagenTab, VorgaengeTab, WirtschaftsplanTab } from './Weg';
 import { EntityTable, datum, eur, num, type Field } from '../components/EntityTable';
@@ -22,6 +22,7 @@ import { NebenkostenPage } from './Nebenkosten';
 import { EigentuemerAbrechnungPage, WegAbrechnungPage } from './Jahresabrechnungen';
 import { DokumentePage } from './Dokumente';
 import { FristenPage } from './Fristen';
+import { TodoPage } from './Produktiv';
 import { db, type Row } from '../db';
 import { AKTIV, EINHEIT_TYPEN, einheitLabel, SCHLUESSEL, WARMWASSER, personLabel, personOptions, widSql } from '../db/labels';
 
@@ -104,6 +105,7 @@ const ebenen = (weg: boolean): Ebene[] => [
   { titel: 'Verwaltung', punkte: [
     weg && { slug: 'beschluesse', label: 'Beschlüsse', icon: FileSignature },
     { slug: 'instandhaltung', label: 'Instandhaltung', icon: Wrench },
+    { slug: 'aufgaben', label: 'Aufgaben', icon: CircleCheck },
     { slug: 'fristen', label: 'Fristen', icon: CalendarClock },
     weg && { slug: 'beirat', label: 'Verwaltungsbeirat', icon: Gavel },
     { slug: 'schluessel', label: 'Umlageschlüssel', icon: Scale },
@@ -198,6 +200,7 @@ function Bereich({ slug, rest, o, sum, weg, reload }: { slug: string; rest: stri
     case 'schluessel': return <SchluesselTab objektId={id} weg={weg} />;
     case 'dokumente': return <DokumentePage />;
     case 'fristen': return <FristenPage />;
+    case 'aufgaben': return <TodoPage objektId={id} />;
     default: return <p className="muted">Diese Seite gibt es nicht.</p>;
   }
 }
@@ -332,10 +335,10 @@ function EinheitenTab({ objektId, weg, onChange }: { objektId: number; weg: bool
         { key: 'personenzahl', label: 'Personenzahl (ohne Mietvertrag)', type: 'number', hideInTable: true },
         { key: 'personen', label: 'Personen', type: 'number', computed: true, format: (v) => num(v, 0), sum: true },
         { key: 'notiz', label: 'Notiz', type: 'textarea', hideInTable: true },
-        ...(weg ? [{ key: 'eigentuemer', label: 'Eigentümer', computed: true, format: (v: any) => v ?? '–' },
+        ...(weg ? [{ key: 'eigentuemer', label: 'Eigentümer', computed: true, format: (v: any) => v ? <span className="rolle-chip eigentuemer">{v}</span> : '–' },
           { key: 'eig_telefon', label: 'Telefon', computed: true, format: (v: any) => v || '–' },
           { key: 'eig_email', label: 'E-Mail', computed: true, format: (v: any) => v ? <a href={`mailto:${v}`}>{v}</a> : '–' }] : []),
-        { key: 'mieter', label: 'Mieter (aktuell)', computed: true, format: (v: any) => v ?? <span className="muted">–</span> },
+        { key: 'mieter', label: 'Mieter (aktuell)', computed: true, format: (v: any) => v ? <span className="rolle-chip mieter">{v}</span> : <span className="muted">–</span> },
         { key: 'monat', label: weg ? 'Hausgeld (Soll) / Monat' : 'Miete warm / Monat', type: 'number', geld: true, computed: true, format: eur, sum: true },
         ...(weg ? [{ key: 'nk_vz', label: 'NK-VZ Mieter / Monat', type: 'number', geld: true, computed: true, format: (v: any) => v != null ? eur(v) : '–', sum: true }] : []),
         { key: 'ist', label: `Zahlungseingang ${jahr}`, type: 'number', geld: true, computed: true, format: eur, sum: true },
@@ -480,6 +483,7 @@ function EigentuemerTab({ objektId, nurHausgeld }: { objektId: number; nurHausge
       </section>
       {nurHausgeld ? <HausgeldTab objektId={objektId} version={version} onChange={async () => { await hausgeldNeuStellen(objektId, '0000-00'); load(); }} /> : <EntityTable
         title="Eigentümer je Einheit"
+        rowClass={() => 'zeile-eig'}
         icon={<Users size={22} />}
         newLabel="Eigentümer zuordnen"
         table="eigentum"

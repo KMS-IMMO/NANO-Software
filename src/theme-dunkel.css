@@ -132,3 +132,9 @@ html[data-theme="dunkel"] .leit-legende { color: #c9c6c0; }
 html[data-theme="dunkel"] .leit-legende span, html[data-theme="dunkel"] .leit-hinweis, html[data-theme="dunkel"] .leit-zurueck {
   background: rgba(20,22,25,.82); border-color: rgba(200,149,90,.35); color: #d8d4cc; box-shadow: 0 2px 10px rgba(0,0,0,.35); }
 html[data-theme="dunkel"] .leit-zurueck:hover { background: #24272b; }
+
+/* Eigentümer blau, Mieter grün im Dunkelmodus */
+html[data-theme="dunkel"] { --eig: #8fb3f2; --eig-bg: rgba(95,137,216,.16); --eig-rand: rgba(95,137,216,.38); --mie: #84d39c; --mie-bg: rgba(91,176,111,.15); --mie-rand: rgba(91,176,111,.36); }
+html[data-theme="dunkel"] table.list tbody tr.zeile-eig:hover > td { background: rgba(95,137,216,.24); }
+html[data-theme="dunkel"] table.list tbody tr.zeile-mie:hover > td { background: rgba(91,176,111,.22); }
+html[data-theme="dunkel"] table.list tbody tr.zeile-eig > td, html[data-theme="dunkel"] table.list tbody tr.zeile-mie > td { border-bottom-color: var(--line); }

@@ -48,6 +48,7 @@ export function VertraegePage() {
     ? { ...f, optionsSql: `SELECT e.id AS value, ${einheitLabel('e')} || ' (' || e.typ || ')' AS label FROM einheiten e WHERE e.objekt_id = ${fix.id} ORDER BY e.lfd_nr, e.nummer` } : f) : vertragFields;
   return (
     <EntityTable
+      rowClass={() => 'zeile-mie'}
       title={fix ? 'Mieter und Mietverträge' : 'Mietverträge'}
       table="mietvertraege"
       fields={[...felder,
@@ -205,7 +206,7 @@ export function VertragDetailPage({ vertragId }: { vertragId?: number }) {
         <div className="kpi"><span>Gesamt / Monat</span><b>{eur(jetzt.kalt + jetzt.nk + jetzt.hk + jetzt.ust)}</b></div>
         <div className="kpi"><span>Kaution</span><b>{eur(v.kaution ?? 0)}</b></div>
       </div>
-      <StammdatenKarte key={id} titel="Mieter und Mietvertrag" icon={<IdCard size={22} />}
+      <StammdatenKarte rolle="mieter" key={id} titel="Mieter und Mietvertrag" icon={<IdCard size={22} />}
         gruppen={vertragGruppen(v, wo)}
         werte={{ ...personWerte(p1), m2_vorname: p2?.vorname ?? null, m2_nachname: p2?.nachname ?? null, ...vertragWerte(v) }}
         onSpeichern={async (neu) => { const t = await vertragSpeichern(v, neu); await reload(); return t; }} />
