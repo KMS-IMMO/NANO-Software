@@ -10,7 +10,7 @@ import { EntityTable, datum, eur, num } from '../components/EntityTable';
 import { db, insert, remove, update, type Row } from '../db';
 import { einheitLabel, personLabel } from '../db/labels';
 import { OP_SQL } from '../logic/soll';
-import { csv, dDatum, geld, listePdf } from '../lib/pdf';
+import { csv, dDatum, einnahmenAusgabenPdf, geld, listePdf } from '../lib/pdf';
 import { oeffnen, speichern } from '../lib/dateien';
 import { useObjektKontext } from '../logic/objektKontext';
 import { RechnungErfassen } from '../components/RechnungErfassen';
@@ -190,6 +190,15 @@ export function JournalPage() {
     const head = ['Bu.-Nr.', 'Datum', 'Liegenschaft', 'Konto', 'Unternehmen', 'Buchungstext', 'Soll', 'Haben'];
     if (art === 'csv') {
       await ablegen(csv(head, rows.map((r) => [r.id, datum(r.datum), r.objekt, `${r.nummer ?? ''} ${r.konto ?? ''}`.trim(), r.firma, r.text, r.betrag < 0 ? -r.betrag : null, r.betrag > 0 ? r.betrag : null])), `Buchungsjournal ${bez}.csv`);
+    } else if (objekt !== '') {
+      // Eine Liegenschaft: auf dem Briefpapier, nach Konten gegliedert, als Anlage zur Jahresabrechnung
+      const o = (await db.select('SELECT name, strasse, plz, ort, verwaltungsart FROM objekte WHERE id = $1', [Number(objekt)]))[0] ?? {};
+      const bis = monat ? new Date(jahr, Number(monat), 0).getDate() : 31, mm = monat ? String(monat).padStart(2, '0') : '';
+      const zeitraum = `Zeitraum ${monat ? `01.${mm}.${jahr} bis ${bis}.${mm}.${jahr}` : `01.01.${jahr} bis 31.12.${jahr}`}${kontoText ? ` · nur Konten ${kontoText}` : ''}`;
+      await ablegen(await einnahmenAusgabenPdf({ objekt: o.name ?? bez, adresse: [o.strasse, [o.plz, o.ort].filter(Boolean).join(' ')].filter(Boolean).join(', '), zeitraum,
+        anlage: monat ? '' : `Anlage zur ${o.verwaltungsart === 'WEG' ? 'Hausgeldabrechnung' : 'Eigentümerabrechnung'} ${jahr}`,
+        buchungen: rows.map((r) => ({ datum: r.datum, konto: r.nummer ? `${r.nummer} ${r.konto}` : 'ohne Konto', firma: r.firma, text: r.text, einheit: r.einheit, betrag: Number(r.betrag) })) }),
+        `Einnahmen und Ausgaben ${o.name ?? ''} ${monat ? mm + '-' : ''}${jahr}.pdf`.replace(/\s+/g, ' '));
     } else {
       await ablegen(await listePdf('Buchungsjournal', bez, head,
         rows.map((r) => [String(r.id), dDatum(r.datum), r.objekt ?? '', `${r.nummer ?? ''} ${r.konto ?? 'ohne Konto'}`, r.firma ?? '', r.text ?? '', r.betrag < 0 ? geld(-r.betrag) : '', r.betrag > 0 ? geld(r.betrag) : '']),

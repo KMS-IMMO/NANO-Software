@@ -1,8 +1,8 @@
 // Wiederverwendbare Liste mit Formular zum Anlegen, Bearbeiten und Löschen.
 import { BetragFeld } from './BetragFeld';
 import { betragZahl, euro } from '../lib/betrag';
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
-import { Pencil } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { FileDown, Pencil } from 'lucide-react';
 import { db, insert, remove, update, type Row } from '../db';
 
 export type FieldType = 'text' | 'number' | 'date' | 'time' | 'select' | 'textarea' | 'checkbox';
@@ -145,12 +145,31 @@ export function EntityTable({ title, table, fields, listSql, listParams = [], fi
     return v ?? '';
   };
 
+  // Liste als PDF: genau die sichtbaren Spalten und Zeilen (inkl. Suchfilter)
+  const karte = useRef<HTMLElement>(null);
+  const alsPdf = async () => {
+    const t = karte.current?.querySelector('table.list'); if (!t) return;
+    const txt = (el: Element) => (el as HTMLElement).innerText.replace(/\s*\n\s*/g, ' ').trim();
+    const ths = [...t.querySelectorAll('thead th')];
+    const nutz = ths.map((th, i) => (txt(th) && !th.classList.contains('wahl') ? i : -1)).filter((i) => i >= 0);
+    const zeile = (tr: Element) => { const c = [...tr.children]; return nutz.map((i) => (c[i] ? txt(c[i]) : '')); };
+    const rechts = nutz.map((i, j) => (ths[i].classList.contains('num') ? j : -1)).filter((j) => j >= 0);
+    const body = [...t.querySelectorAll('tbody tr')].filter((tr) => !tr.classList.contains('sum')).map(zeile);
+    const fuss = [...t.querySelectorAll('tfoot tr, tbody tr.sum')].map(zeile);
+    const { listePdf } = await import('../lib/pdf');
+    const { oeffnen, speichern } = await import('../lib/dateien');
+    const heute = new Date().toLocaleDateString('de-DE');
+    const bytes = await listePdf(title, `Stand ${heute} · ${body.length} Einträge${filter ? ` · Suche „${filter}“` : ''}`, nutz.map((i) => txt(ths[i])), body, fuss.length ? fuss : undefined, rechts);
+    oeffnen(await speichern(bytes, `${title} ${new Date().toISOString().slice(0, 10)}.pdf`, { bezug: 'Objekt', bezugId: 0, ordner: ['Berichte'] }));
+  };
+
   return (
-    <section className="card">
+    <section className="card" ref={karte}>
       <div className="card-head">
         <h2 className="title-ico">{icon}{title}</h2>
         <div className="row">
           <input className="search" placeholder="Suchen…" value={filter} onChange={(e) => setFilter(e.target.value)} />
+          {visible.length > 0 && <button onClick={alsPdf} title="Liste als PDF"><FileDown size={16} />PDF</button>}
           <button className="primary" onClick={() => (onNew ? onNew() : setEditing({}))}>+ {newLabel ?? 'Neu'}</button>
         </div>
       </div>
