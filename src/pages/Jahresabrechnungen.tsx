@@ -11,7 +11,7 @@ import { AbschlussKarte } from '../components/AbschlussKarte';
 import { useObjektKontext } from '../logic/objektKontext';
 import { eur, num, datum } from '../components/EntityTable';
 import { eigeneSchluessel, kostenErmitteln, nutzerErmitteln, verteilen, type Ergebnis, type Position } from '../logic/verteilung';
-import { Brief, EIGENTUEMER_HINWEIS, absender, dDatum, eigentuemerGruppen, geld } from '../lib/pdf';
+import { Brief, EIGENTUEMER_HINWEIS, HINWEIS_35A_VERMIETER, absender, dDatum, eigentuemerGruppen, geld } from '../lib/pdf';
 import { oeffnen, speichern } from '../lib/dateien';
 import { WerteJeEinheit } from '../components/WerteJeEinheit';
 import { ruecklageJahr } from '../logic/ruecklage';
@@ -233,7 +233,7 @@ export function WegAbrechnungPage() {
           : 'Die Nebenkostenabrechnung für Ihren Mieter erstellen und buchen wir gesondert.');
       }
       if (r.rueckstand > 0.005) b.absatz(`Hinweis: Aus dem Jahr ${jahr} sind noch Hausgeldzahlungen von ${geld(r.rueckstand)} offen. Diese sind unabhängig von der Abrechnungsspitze zu zahlen.`);
-      if (r.hdl || r.hwl) b.tabelle(['§ 35a EStG (Ihr Anteil)', 'Betrag'], [['Haushaltsnahe Dienstleistungen', geld(r.hdl)], ['Handwerkerleistungen', geld(r.hwl)]]);
+      if (r.hdl || r.hwl || r.hbg) b.steuer35a(r, 'eigentuemer');
       b.absatz('Die Abrechnung wird der Eigentümerversammlung zur Beschlussfassung über die Nachschüsse bzw. Anpassung der Vorschüsse vorgelegt (§ 28 Abs. 2 WEG).');
       b.gruss();
       if (!gesamt) await speichern(b.bytes(), `Einzelabrechnung ${jahr} ${r.einheit.nummer} ${r.nutzer.name}.pdf`, { bezug: 'Objekt', bezugId: o.id, ordner });
@@ -418,7 +418,8 @@ export function EigentuemerAbrechnungPage() {
         : `Kontostand laut Kontoauszug zum 31.12.${jahr}: ${geld(bank.ende)}. Differenz ${geld(differenz)}, z. B. durch Kautionen, offene Rechnungen oder Buchungen ohne Bankumsatz.`, 4);
       if (eig.length) b.absatz(EIGENTUEMER_HINWEIS, 6);
     }
-    b.tabelle(['Weitere Angaben', 'Betrag'], [['Offene Mietforderungen zum 31.12.', geld(offen)], ['§ 35a haushaltsnahe Dienstleistungen', geld(hdl)], ['§ 35a Handwerkerleistungen', geld(hwl)]]);
+    b.tabelle(['Weitere Angaben', 'Betrag'], [['Offene Mietforderungen zum 31.12.', geld(offen)], ['Arbeitskosten § 35a Abs. 2 (haushaltsnahe Dienstleistungen)', geld(hdl)], ['Arbeitskosten § 35a Abs. 3 (Handwerkerleistungen)', geld(hwl)]]);
+    if (hdl || hwl) b.absatz(HINWEIS_35A_VERMIETER, 6);
     b.gruss();
     const pfad = await speichern(b.bytes(), `Eigentümerabrechnung ${jahr} ${o.name}.pdf`, { bezug: 'Objekt', bezugId: o.id, ordner: [o.name, 'Eigentümerabrechnungen'] });
     setInfo(`Abrechnung abgelegt: ${pfad}`);
@@ -471,9 +472,10 @@ export function EigentuemerAbrechnungPage() {
           <div className="card-head"><h2>Weitere Angaben</h2></div>
           <table className="list"><tbody>
             <tr><td>Offene Mietforderungen zum 31.12.{jahr}</td><td className="num">{eur(offen)}</td></tr>
-            <tr><td>§ 35a haushaltsnahe Dienstleistungen</td><td className="num">{eur(hdl)}</td></tr>
-            <tr><td>§ 35a Handwerkerleistungen</td><td className="num">{eur(hwl)}</td></tr>
+            <tr><td>Arbeitskosten § 35a Abs. 2 (haushaltsnahe Dienstleistungen)</td><td className="num">{eur(hdl)}</td></tr>
+            <tr><td>Arbeitskosten § 35a Abs. 3 (Handwerkerleistungen)</td><td className="num">{eur(hwl)}</td></tr>
           </tbody></table>
+          {(hdl > 0 || hwl > 0) && <p className="muted small">{HINWEIS_35A_VERMIETER}</p>}
         </section>
       </div>
     </>

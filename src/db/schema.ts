@@ -662,4 +662,8 @@ INSERT OR IGNORE INTO buchungskonten (nummer, name, gruppe, art, euer, mwst, uml
  ('1700', 'Auszahlung an Eigentümer', 'Eigentümer-Verrechnung', 'Eigentümer', 0, 0, 0),
  ('1701', 'Einzahlung des Eigentümers', 'Eigentümer-Verrechnung', 'Eigentümer', 0, 0, 0);
 `,
+  // Migration 25: § 35a Abs. 1 EStG – Konten für geringfügige Beschäftigung im Haushalt (Minijob) getrennt ausweisen
+  `
+ALTER TABLE buchungskonten ADD COLUMN hbg INTEGER NOT NULL DEFAULT 0;
+`,
 ];

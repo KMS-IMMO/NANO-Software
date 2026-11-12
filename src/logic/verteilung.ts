@@ -32,7 +32,7 @@ export interface Nutzer {
 
 export interface Position {
   konto_id: number; nummer: string; name: string; gruppe: string;
-  umlagefaehig: boolean; hdl: boolean; hwl: boolean;
+  umlagefaehig: boolean; hdl: boolean; hwl: boolean; hbg?: boolean;   // § 35a Abs. 2 / Abs. 3 / Abs. 1 (Minijob)
   betrag: number;         // Kosten gesamt im Jahr (positiv = Kosten)
   betrag35a?: number;     // davon begünstigt nach § 35a (nur bei Konten mit HDL/HWL); ohne Angabe gilt der ganze Betrag
   schluessel: Schluessel;
@@ -44,7 +44,7 @@ export interface Ergebnis {
   einheit: Row;
   zeilen: { pos: Position; gesamtBasis: number; nutzerBasis: number; betrag: number }[];
   summe: number;
-  hdl: number; hwl: number;
+  hdl: number; hwl: number; hbg: number;
 }
 
 /**
@@ -59,7 +59,7 @@ export function verteilen(jahr: number, einheiten: Row[], nutzer: Nutzer[], posi
   werte: { verbrauch: Record<string, number>; messdienst: Record<number, number> }): Ergebnis[] {
   const T = tageImJahr(jahr);
   const res = new Map<string, Ergebnis>();
-  for (const n of nutzer) res.set(n.key, { nutzer: n, einheit: einheiten.find((e) => e.id === n.einheit_id)!, zeilen: [], summe: 0, hdl: 0, hwl: 0 });
+  for (const n of nutzer) res.set(n.key, { nutzer: n, einheit: einheiten.find((e) => e.id === n.einheit_id)!, zeilen: [], summe: 0, hdl: 0, hwl: 0, hbg: 0 });
 
   const basisEinheit = (e: Row, s: Schluessel, p: Position): number => {
     switch (s) {
@@ -106,6 +106,7 @@ export function verteilen(jahr: number, einheiten: Row[], nutzer: Nutzer[], posi
     const f = p.betrag ? (p.betrag35a ?? p.betrag) / p.betrag : 0;
     if (p.hdl) r.hdl = Math.round((r.hdl + b * f) * 100) / 100;
     if (p.hwl) r.hwl = Math.round((r.hwl + b * f) * 100) / 100;
+    if (p.hbg) r.hbg = Math.round((r.hbg + b * f) * 100) / 100;
   }
 }
 
@@ -180,7 +181,7 @@ export async function kostenErmitteln(objektId: number, jahr: number, nurUmlagef
     const direkt: Record<number, number> = {};
     for (const z of zeilen) if (z.einheit_id) direkt[z.einheit_id] = (direkt[z.einheit_id] ?? 0) + Number(z.kosten);
     const betrag35a = Math.round(zeilen.reduce((a, x) => a + Number(x.k35a ?? x.kosten), 0) * 100) / 100;
-    out.push({ konto_id: k.id, nummer: k.nummer, name: k.name, gruppe: k.gruppe ?? '', umlagefaehig: !!k.umlagefaehig, hdl: !!k.hdl, hwl: !!k.hwl,
+    out.push({ konto_id: k.id, nummer: k.nummer, name: k.name, gruppe: k.gruppe ?? '', umlagefaehig: !!k.umlagefaehig, hdl: !!k.hdl, hwl: !!k.hwl, hbg: !!k.hbg,
       betrag, betrag35a, schluessel: (k.objekt_schluessel ?? k.schluessel ?? 'Fläche') as Schluessel, direkt });
   }
   return out;
