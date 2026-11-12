@@ -262,7 +262,8 @@ function Kennzahlen({ objektId, weg }: { objektId: number; weg: boolean }) {
   useEffect(() => {
     (async () => {
       const b = (await db.select(`SELECT COALESCE(SUM(CASE WHEN betrag > 0 THEN betrag END), 0) AS ein, COALESCE(-SUM(CASE WHEN betrag < 0 THEN betrag END), 0) AS aus
-        FROM buchungen WHERE objekt_id = $1 AND ${BJ('')} = CAST($2 AS INTEGER)`, [objektId, jahr]))[0] ?? {};
+        FROM buchungen WHERE objekt_id = $1 AND ${BJ('')} = CAST($2 AS INTEGER)
+          AND COALESCE((SELECT art FROM buchungskonten WHERE id = buchungskonto_id), '') <> 'Eigentümer'`, [objektId, jahr]))[0] ?? {};
       const op = (await db.select(`SELECT COALESCE(SUM(betrag - bezahlt), 0) AS offen, COUNT(*) AS n FROM (${OP_SQL}) WHERE objekt_id = $1 AND betrag - bezahlt > 0.005 AND faellig < date('now')`, [objektId]))[0] ?? {};
       const bank = (await db.select(`SELECT COALESCE(SUM(b.anfangssaldo + COALESCE((SELECT SUM(u.betrag) FROM bankumsaetze u WHERE u.bankkonto_id = b.id
         AND (b.saldo_datum IS NULL OR u.datum > b.saldo_datum)), 0)), 0) AS saldo, COUNT(*) AS n FROM bankkonten b WHERE b.objekt_id = $1`, [objektId]))[0] ?? {};

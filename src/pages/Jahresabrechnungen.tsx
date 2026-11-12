@@ -11,7 +11,7 @@ import { AbschlussKarte } from '../components/AbschlussKarte';
 import { useObjektKontext } from '../logic/objektKontext';
 import { eur, num, datum } from '../components/EntityTable';
 import { eigeneSchluessel, kostenErmitteln, nutzerErmitteln, verteilen, type Ergebnis, type Position } from '../logic/verteilung';
-import { Brief, absender, dDatum, geld } from '../lib/pdf';
+import { Brief, EIGENTUEMER_HINWEIS, absender, dDatum, eigentuemerGruppen, geld } from '../lib/pdf';
 import { oeffnen, speichern } from '../lib/dateien';
 import { WerteJeEinheit } from '../components/WerteJeEinheit';
 import { ruecklageJahr } from '../logic/ruecklage';
@@ -363,6 +363,8 @@ export function EigentuemerAbrechnungPage() {
   const [aus, setAus] = useState<Position[]>([]);
   const [offen, setOffen] = useState(0);
   const [info, setInfo] = useState('');
+  const [eig, setEig] = useState<Row[]>([]);
+  const [bank, setBank] = useState<{ n: number; anfang: number; ende: number }>({ n: 0, anfang: 0, ende: 0 });
 
   useEffect(() => {
     if (objekt === '') return;
@@ -372,12 +374,23 @@ export function EigentuemerAbrechnungPage() {
       setAus(await kostenErmitteln(Number(objekt), jahr, false));
       setOffen(Number((await db.select(`SELECT COALESCE(SUM(s.betrag - COALESCE((SELECT SUM(b.betrag) FROM buchungen b WHERE b.sollstellung_id = s.id), 0)), 0) AS x
         FROM sollstellungen s JOIN einheiten e ON e.id = s.einheit_id WHERE e.objekt_id = $1 AND s.faellig <= $2`, [objekt, `${jahr}-12-31`]))[0].x));
+      // Auszahlungen an / Einzahlungen vom Eigentümer: keine Einnahmen oder Kosten, nur Kontobewegung
+      setEig(await db.select(`SELECT b.datum, b.betrag, b.text, k.nummer, k.name FROM buchungen b JOIN buchungskonten k ON k.id = b.buchungskonto_id
+        WHERE b.objekt_id = $1 AND k.art = 'Eigentümer' AND ${BJ('b')} = CAST($2 AS INTEGER) ORDER BY k.nummer, b.datum`, [objekt, String(jahr)]));
+      const saldo = async (bis: string) => Number((await db.select(`SELECT COALESCE(SUM(k.anfangssaldo + COALESCE((SELECT SUM(u.betrag) FROM bankumsaetze u WHERE u.bankkonto_id = k.id
+        AND u.datum <= $2 AND (k.saldo_datum IS NULL OR u.datum > k.saldo_datum)), 0)), 0) AS s, COUNT(*) AS n FROM bankkonten k WHERE k.objekt_id = $1`, [objekt, bis]))[0]?.s ?? 0);
+      const n = Number((await db.select('SELECT COUNT(*) AS n FROM bankkonten WHERE objekt_id = $1', [objekt]))[0]?.n ?? 0);
+      setBank({ n, anfang: n ? await saldo(`${jahr - 1}-12-31`) : 0, ende: n ? await saldo(`${jahr}-12-31`) : 0 });
     })();
   }, [objekt, jahr]);
 
   const summeEin = ein.reduce((a, x) => a + Number(x.betrag), 0);
   const uml = aus.filter((p) => p.umlagefaehig), nicht = aus.filter((p) => !p.umlagefaehig);
   const sU = uml.reduce((a, p) => a + p.betrag, 0), sN = nicht.reduce((a, p) => a + p.betrag, 0);
+  const ueberschuss = summeEin - sU - sN;
+  const sEig = eig.reduce((a, x) => a + Number(x.betrag), 0);   // Auszahlungen negativ, Einzahlungen positiv
+  const eigBuch = eig.map((x) => ({ datum: String(x.datum), konto: `${x.nummer} ${x.name}`, text: x.text, betrag: Number(x.betrag) }));
+  const endeRechnerisch = r2(bank.anfang + ueberschuss + sEig), differenz = r2(bank.ende - endeRechnerisch);
   const hdl = aus.filter((p) => p.hdl).reduce((a, p) => a + (p.betrag35a ?? p.betrag), 0), hwl = aus.filter((p) => p.hwl).reduce((a, p) => a + (p.betrag35a ?? p.betrag), 0);
 
   async function pdf() {
@@ -391,6 +404,20 @@ export function EigentuemerAbrechnungPage() {
     b.tabelle(['Umlagefähige Kosten', 'Betrag'], uml.map((x) => [`${x.nummer} ${x.name}`, geld(x.betrag)]), [['Summe umlagefähig', geld(sU)]]);
     b.tabelle(['Nicht umlagefähige Kosten', 'Betrag'], nicht.map((x) => [`${x.nummer} ${x.name}`, geld(x.betrag)]), [['Summe nicht umlagefähig', geld(sN)]]);
     b.tabelle(['Ergebnis', 'Betrag'], [['Einnahmen', geld(summeEin)], ['Ausgaben gesamt', geld(-(sU + sN))]], [['Überschuss / Fehlbetrag', geld(summeEin - sU - sN)]]);
+    if (eig.length) {
+      b.abschnitt('Auszahlungen an den Eigentümer');
+      b.gruppenTabelle(['Monat', 'Überwiesen am', 'Buchungstext', 'Betrag'], eigentuemerGruppen(eigBuch), geld(-sEig), [34, 30, 80, 26], [91, 104, 140]);
+    }
+    if (eig.length || bank.n) {
+      const kz: [string, string][] = bank.n ? [[`Kontostand am 01.01.${jahr}`, geld(bank.anfang)]] : [];
+      kz.push(['Überschuss / Fehlbetrag', geld(ueberschuss)]);
+      if (eig.length) kz.push([eig.some((x) => Number(x.betrag) > 0) ? 'Auszahlungen und Einzahlungen Eigentümer' : 'Auszahlungen an den Eigentümer', geld(sEig)]);
+      b.platz(kz.length * 8 + 34);   // Kontoentwicklung mit Abgleich nicht über zwei Seiten
+      b.tabelle(['Kontoentwicklung', 'Betrag'], kz, [[bank.n ? `Kontostand am 31.12.${jahr} (rechnerisch)` : 'Veränderung des Kontostands', geld(bank.n ? endeRechnerisch : ueberschuss + sEig)]]);
+      if (bank.n) b.absatz(Math.abs(differenz) < 0.01 ? `Der Kontostand stimmt mit dem Kontoauszug zum 31.12.${jahr} überein (${geld(bank.ende)}).`
+        : `Kontostand laut Kontoauszug zum 31.12.${jahr}: ${geld(bank.ende)}. Differenz ${geld(differenz)}, z. B. durch Kautionen, offene Rechnungen oder Buchungen ohne Bankumsatz.`, 4);
+      if (eig.length) b.absatz(EIGENTUEMER_HINWEIS, 6);
+    }
     b.tabelle(['Weitere Angaben', 'Betrag'], [['Offene Mietforderungen zum 31.12.', geld(offen)], ['§ 35a haushaltsnahe Dienstleistungen', geld(hdl)], ['§ 35a Handwerkerleistungen', geld(hwl)]]);
     b.gruss();
     const pfad = await speichern(b.bytes(), `Eigentümerabrechnung ${jahr} ${o.name}.pdf`, { bezug: 'Objekt', bezugId: o.id, ordner: [o.name, 'Eigentümerabrechnungen'] });
@@ -410,7 +437,9 @@ export function EigentuemerAbrechnungPage() {
         <div className="kpi"><span>Umlagefähige Kosten</span><b className="neg">{eur(sU)}</b></div>
         <div className="kpi"><span>Nicht umlagefähige Kosten</span><b className="neg">{eur(sN)}</b></div>
         <div className="kpi"><span>Überschuss</span><b className={summeEin - sU - sN < 0 ? 'neg' : ''}>{eur(summeEin - sU - sN)}</b></div>
+        {eig.length > 0 && <div className="kpi"><span>An Eigentümer ausgezahlt</span><b>{eur(-sEig)}</b><small>{eig.filter((x) => Number(x.betrag) < 0).length} Auszahlungen</small></div>}
       </div>
+      {bank.n > 0 && endeRechnerisch < 0 && <p className="warn">Achtung: Nach den Auszahlungen an den Eigentümer ist das Objektkonto zum 31.12.{jahr} rechnerisch im Minus ({eur(endeRechnerisch)}). Es fehlt Geld für laufende Kosten.</p>}
       <div className="grid2">
         {[['Einnahmen', ein.map((x) => ({ k: x.nummer, n: x.name, b: Number(x.betrag) }))], ['Umlagefähige Kosten', uml.map((x) => ({ k: x.nummer, n: x.name, b: x.betrag }))],
           ['Nicht umlagefähige Kosten', nicht.map((x) => ({ k: x.nummer, n: x.name, b: x.betrag }))]].map(([t, rows]: any) => (
@@ -419,6 +448,25 @@ export function EigentuemerAbrechnungPage() {
             {rows.length === 0 ? <p className="muted">Keine Buchungen im Jahr {jahr}.</p> : (
               <table className="list"><tbody>{rows.map((x: any) => <tr key={x.k}><td>{x.k}</td><td>{x.n}</td><td className="num">{eur(x.b)}</td></tr>)}</tbody></table>)}
           </section>))}
+        {eig.length > 0 && <section className="card">
+          <div className="card-head"><h2>Auszahlungen an den Eigentümer</h2></div>
+          <table className="list"><tbody>
+            <tr className="sum"><td colSpan={2}>Gesamt {jahr}</td><td className="num">{eur(-sEig)}</td></tr>
+            {eig.map((x, i) => <tr key={i}><td>{datum(x.datum)}</td><td>{x.nummer === '1701' ? 'Einzahlung · ' : ''}{x.text || x.name}</td><td className={'num ' + (Number(x.betrag) > 0 ? 'pos' : '')}>{eur(Math.abs(Number(x.betrag)))}</td></tr>)}
+          </tbody></table>
+          <p className="muted small">{EIGENTUEMER_HINWEIS}</p>
+        </section>}
+        {(eig.length > 0 || bank.n > 0) && <section className="card">
+          <div className="card-head"><h2>Kontoentwicklung</h2></div>
+          <table className="list"><tbody>
+            {bank.n > 0 && <tr><td>Kontostand am 01.01.{jahr}</td><td className="num">{eur(bank.anfang)}</td></tr>}
+            <tr><td>+ Überschuss / Fehlbetrag</td><td className={'num ' + (ueberschuss < 0 ? 'neg' : '')}>{eur(ueberschuss)}</td></tr>
+            {eig.length > 0 && <tr><td>− Auszahlungen an den Eigentümer{eig.some((x) => Number(x.betrag) > 0) ? ' (abzüglich Einzahlungen)' : ''}</td><td className="num neg">{eur(-sEig)}</td></tr>}
+            <tr className="sum"><td>{bank.n > 0 ? `Kontostand am 31.12.${jahr} (rechnerisch)` : 'Veränderung des Kontostands'}</td><td className={'num ' + ((bank.n ? endeRechnerisch : ueberschuss + sEig) < 0 ? 'neg' : '')}>{eur(bank.n ? endeRechnerisch : ueberschuss + sEig)}</td></tr>
+            {bank.n > 0 && <tr><td>Kontostand laut Bank am 31.12.{jahr}</td><td className="num">{eur(bank.ende)}{Math.abs(differenz) < 0.01 ? ' ✓' : ''}</td></tr>}
+          </tbody></table>
+          {bank.n > 0 && Math.abs(differenz) >= 0.01 && <p className="muted small">Differenz {eur(differenz)}, z. B. durch Kautionen, offene Rechnungen oder Buchungen ohne Bankumsatz.</p>}
+        </section>}
         <section className="card">
           <div className="card-head"><h2>Weitere Angaben</h2></div>
           <table className="list"><tbody>

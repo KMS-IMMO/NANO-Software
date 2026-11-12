@@ -126,6 +126,7 @@ export function BuchenDialog({ vorlage, onClose, onSaved }: { vorlage: BuchenVor
   const [konten, setKonten] = useState<Row[]>([]);
   const [objekte, setObjekte] = useState<Row[]>([]);
   const [objekt, setObjekt] = useState<number | ''>(vorlage.objektId ?? '');
+  const [weg, setWeg] = useState(false);
   const [einheiten, setEinheiten] = useState<Row[]>([]);
   const [richtung, setRichtung] = useState<'Einnahme' | 'Ausgabe'>(u ? (u.betrag > 0 ? 'Einnahme' : 'Ausgabe') : vorlage.richtung ?? 'Ausgabe');
   const [datum, setDatum] = useState<string>(u?.datum ?? heute());
@@ -151,15 +152,18 @@ export function BuchenDialog({ vorlage, onClose, onSaved }: { vorlage: BuchenVor
   }, []);
   useEffect(() => {
     setWahl([]); setAnteile({});
-    if (objekt === '') { setEinheiten([]); return; }
+    if (objekt === '') { setEinheiten([]); setWeg(false); return; }
+    db.select('SELECT verwaltungsart FROM objekte WHERE id = $1', [Number(objekt)]).then((r) => setWeg(r[0]?.verwaltungsart === 'WEG'));
     db.select(`SELECT e.id, e.nummer, ${einheitPerson('e')} AS person, ${einheitLabel('e')} AS label FROM einheiten e WHERE e.objekt_id = $1 ORDER BY e.lfd_nr, e.nummer`, [Number(objekt)]).then(setEinheiten);
   }, [objekt]);
 
   // Einnahmen zeigen Einnahme- und Ertragskonten zuerst, Ausgaben die Aufwandskonten
   const liste = useMemo(() => {
-    const passt = (k: Row) => richtung === 'Einnahme' ? ['Einnahme', 'Ertrag'].includes(k.art) : ['Aufwand', 'Ertrag'].includes(k.art);
-    return [...konten.filter(passt), ...konten.filter((k) => !passt(k))];
-  }, [konten, richtung]);
+    // Eigentümer-Verrechnung (Auszahlung an / Einzahlung vom Eigentümer) gibt es nur in der Mietverwaltung
+    const da = konten.filter((k) => k.art !== 'Eigentümer' || !weg);
+    const passt = (k: Row) => richtung === 'Einnahme' ? ['Einnahme', 'Ertrag'].includes(k.art) || k.nummer === '1701' : ['Aufwand', 'Ertrag'].includes(k.art) || k.nummer === '1700';
+    return [...da.filter(passt), ...da.filter((k) => !passt(k))];
+  }, [konten, richtung, weg]);
   const k = konten.find((x) => Number(x.id) === konto);
   const mit35 = !!k && !!(k.hdl || k.hwl) && richtung === 'Ausgabe';
   const mitRg = !!k?.rechnung_pflicht;
