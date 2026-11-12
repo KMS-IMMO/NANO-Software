@@ -33,8 +33,10 @@ function anzeigen(f: SFeld, v: any): ReactNode {
   }
 }
 
-export function StammdatenKarte({ titel, icon, gruppen, werte, onSpeichern }: {
+export function StammdatenKarte({ titel, icon, gruppen, werte, onSpeichern, rolle }: {
   titel: string; icon?: ReactNode; gruppen: SGruppe[]; werte: Row;
+  /** Farbe nach Rolle: Eigentümer blau, Mieter grün */
+  rolle?: 'eigentuemer' | 'mieter';
   /** Bekommt nur die geänderten Felder; gibt einen Hinweistext zurück */
   onSpeichern: (neu: Row, alt: Row) => Promise<string | void>;
 }) {
@@ -70,9 +72,9 @@ export function StammdatenKarte({ titel, icon, gruppen, werte, onSpeichern }: {
   };
 
   return (
-    <section className="card stammdaten">
+    <section className={'card stammdaten' + (rolle ? ' rolle-' + rolle : '')}>
       <div className="card-head">
-        <h2 className="title-ico">{icon}{titel}</h2>
+        <h2 className="title-ico">{icon}{titel}{rolle && <span className={'rolle-chip ' + rolle}>{rolle === 'eigentuemer' ? 'Eigentümer' : 'Mieter'}</span>}</h2>
         {bearbeiten
           ? <div className="row"><button onClick={() => { setBearbeiten(false); setFehler(''); }}><X size={16} />Abbrechen</button>
               <button className="primary" disabled={busy} onClick={speichern}><Save size={16} />{busy ? 'Speichere …' : 'Speichern'}</button></div>

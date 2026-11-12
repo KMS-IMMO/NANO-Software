@@ -329,43 +329,81 @@ export function TicketBoardsPage() {
 
 /* =================== Todo =================== */
 
-export function TodoPage() {
+// Aufgaben: frei oder einer Liegenschaft zugeordnet. Mit objektId erscheint die Liste als Reiter „Aufgaben“ in der Immobilie.
+export function TodoPage({ objektId }: { objektId?: number } = {}) {
   const objekte = useObjekte();
   const [rows, setRows] = useState<Row[]>([]);
+  const [termine, setTermine] = useState<Row[]>([]);
   const [text, setText] = useState('');
   const [faellig, setFaellig] = useState('');
-  const [objekt, setObjekt] = useState<number | null>(null);
+  const [objekt, setObjekt] = useState<number | null>(objektId ?? null);
   const [filter, setFilter] = useState<'offen' | 'erledigt' | 'alle'>('offen');
-  const load = () => db.select(`SELECT t.*, o.name AS objekt FROM todos t LEFT JOIN objekte o ON o.id = t.objekt_id ORDER BY t.erledigt, t.faellig IS NULL, t.faellig, t.id DESC`).then(setRows);
-  useEffect(() => { load(); }, []);
+  const [nachObjekt, setNachObjekt] = useState<string>('');
+  const [edit, setEdit] = useState<Row | null>(null);
+  const load = () => {
+    const wo = objektId ? `WHERE t.objekt_id = ${Number(objektId)}` : '';
+    db.select(`SELECT t.*, o.name AS objekt FROM todos t LEFT JOIN objekte o ON o.id = t.objekt_id ${wo} ORDER BY t.erledigt, t.faellig IS NULL, t.faellig, t.id DESC`).then(setRows);
+    if (objektId) db.select(`SELECT 'Erinnerung' AS art, r.id, r.titel, r.faellig, '/erinnerungen' AS ziel FROM erinnerungen r WHERE r.objekt_id = $1 AND NOT r.erledigt
+      UNION ALL SELECT 'Ticket' AS art, t.id, t.titel, t.faellig, '/tickets' AS ziel FROM tickets t WHERE t.objekt_id = $1 AND COALESCE(t.status, '') NOT IN ('Erledigt', 'Geschlossen')
+      ORDER BY 4 IS NULL, 4`, [objektId]).then(setTermine).catch(() => setTermine([]));
+  };
+  useEffect(() => { load(); }, [objektId]);
   async function anlegen() {
     if (!text.trim()) return;
-    await insert('todos', { text: text.trim(), faellig: faellig || null, objekt_id: objekt });
+    await insert('todos', { text: text.trim(), faellig: faellig || null, objekt_id: objektId ?? objekt });
     setText(''); setFaellig(''); load();
   }
-  const liste = rows.filter((r) => filter === 'alle' || (filter === 'offen' ? !r.erledigt : r.erledigt));
+  async function speichern() {
+    if (!edit || !edit.text?.trim()) return;
+    await update('todos', edit.id, { text: edit.text.trim(), faellig: edit.faellig || null, objekt_id: edit.objekt_id ?? null });
+    setEdit(null); load();
+  }
+  const passt = (r: Row) => !nachObjekt || (nachObjekt === 'ohne' ? !r.objekt_id : String(r.objekt_id) === nachObjekt);
+  const basis = rows.filter(passt);
+  const liste = basis.filter((r) => filter === 'alle' || (filter === 'offen' ? !r.erledigt : r.erledigt));
   const h = heute();
   return (
     <>
-      <div className="page-head"><h1 className="title-ico"><CircleCheck size={26} />Todo</h1><p className="muted">Deine Aufgaben: eintippen, Enter, erledigt abhaken.</p></div>
-      <section className="card row">
-        <input style={{ flex: 2, minWidth: 240 }} placeholder="Neue Aufgabe …" value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && anlegen()} />
+      <div className="page-head"><h1 className="title-ico"><CircleCheck size={26} />{objektId ? 'Aufgaben' : 'Todo'}</h1>
+        <p className="muted">{objektId ? 'Aufgaben, Erinnerungen und Tickets dieser Liegenschaft.' : 'Deine Aufgaben: eintippen, Enter, erledigt abhaken. Mit der Liegenschaft ordnest du sie einer Immobilie zu.'}</p></div>
+      <section className={'card aufgabe-neu' + (objektId ? ' ohne-objekt' : '')}>
+        <input placeholder="Neue Aufgabe …" value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && anlegen()} />
         <input type="date" value={faellig} onChange={(e) => setFaellig(e.target.value)} title="Fällig bis" />
-        <div style={{ width: 220 }}><ObjektWahl value={objekt} objekte={objekte} onChange={setObjekt} /></div>
+        {!objektId && <ObjektWahl value={objekt} objekte={objekte} onChange={setObjekt} />}
         <button className="primary" onClick={anlegen}><Plus size={16} />Hinzufügen</button>
       </section>
       <section className="card">
         <div className="card-head"><h2>Aufgaben</h2>
-          <div className="seg">{(['offen', 'erledigt', 'alle'] as const).map((f) => <button key={f} className={filter === f ? 'on' : ''} onClick={() => setFilter(f)}>{f[0].toUpperCase() + f.slice(1)} ({rows.filter((r) => f === 'alle' || (f === 'offen' ? !r.erledigt : r.erledigt)).length})</button>)}</div></div>
+          <div className="row" style={{ gap: 10 }}>
+            {!objektId && <select value={nachObjekt} onChange={(e) => setNachObjekt(e.target.value)} title="Nach Liegenschaft filtern" style={{ width: 210 }}>
+              <option value="">Alle Liegenschaften</option><option value="ohne">Ohne Liegenschaft</option>
+              {objekte.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}</select>}
+            <div className="seg">{(['offen', 'erledigt', 'alle'] as const).map((f) => <button key={f} className={filter === f ? 'on' : ''} onClick={() => setFilter(f)}>{f[0].toUpperCase() + f.slice(1)} ({basis.filter((r) => f === 'alle' || (f === 'offen' ? !r.erledigt : r.erledigt)).length})</button>)}</div></div></div>
         {liste.length === 0 ? <p className="muted">Nichts zu tun.</p> : (
           <ul className="checkliste">{liste.map((r) => (
             <li key={r.id} className={r.erledigt ? 'fertig' : ''}>
               <input type="checkbox" checked={!!r.erledigt} onChange={async () => { await update('todos', r.id, { erledigt: r.erledigt ? 0 : 1 }); load(); }} />
-              <span className="grow">{r.text}{r.objekt && <span className="muted small"> · {r.objekt}</span>}</span>
+              <span className="grow">{r.text}{!objektId && r.objekt && <Link className="aufgabe-objekt" to={`/objekte/${r.objekt_id}/aufgaben`}>{r.objekt}</Link>}</span>
               {r.faellig && <span className={'small ' + (!r.erledigt && r.faellig < h ? 'neg' : 'muted')}>bis {datum(r.faellig)}</span>}
+              <button className="icon-btn" title="Bearbeiten und Liegenschaft zuordnen" onClick={() => setEdit({ ...r })}><SquarePen size={15} /></button>
               <button className="icon-btn" title="Löschen" onClick={async () => { await remove('todos', r.id); load(); }}><Trash2 size={15} /></button>
             </li>))}</ul>)}
       </section>
+      {objektId && termine.length > 0 && (
+        <section className="card">
+          <div className="card-head"><h2>Offene Erinnerungen und Tickets</h2></div>
+          <ul className="checkliste">{termine.map((t) => (
+            <li key={t.art + t.id}><span className="tag">{t.art}</span><span className="grow"><Link to={t.ziel}>{t.titel}</Link></span>
+              {t.faellig && <span className={'small ' + (t.faellig < h ? 'neg' : 'muted')}>bis {datum(t.faellig)}</span>}</li>))}</ul>
+        </section>)}
+      {edit && <Modal titel="Aufgabe bearbeiten" onClose={() => setEdit(null)}>
+        <div className="form">
+          <label className="wide"><span>Aufgabe</span><input value={edit.text ?? ''} onChange={(e) => setEdit({ ...edit, text: e.target.value })} autoFocus /></label>
+          <label><span>Fällig bis</span><input type="date" value={edit.faellig ?? ''} onChange={(e) => setEdit({ ...edit, faellig: e.target.value })} /></label>
+          <label><span>Liegenschaft</span><ObjektWahl value={edit.objekt_id} objekte={objekte} onChange={(v) => setEdit({ ...edit, objekt_id: v })} /></label>
+        </div>
+        <div className="row end"><span className="grow" /><button onClick={() => setEdit(null)}>Abbrechen</button><button className="primary" onClick={speichern}>Speichern</button></div>
+      </Modal>}
     </>
   );
 }

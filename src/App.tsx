@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { HashRouter, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import {
   AlarmClock, Banknote, CalendarClock, Bell, Building2, Calendar, ChevronRight, CircleCheck, Columns3, Contact, CreditCard, FolderOpen, LayoutDashboard, Landmark, Lock,
-  Network, Receipt, Search, Settings, SquarePen, UserCog, Users,
+  Network, Receipt, Search, Settings, SquarePen, UserCog, UserRound, Users,
 } from 'lucide-react';
 import { db, mehrplatz, sicherheit, type Row } from './db';
 import { personLabel } from './db/labels';
@@ -40,6 +40,7 @@ const NAV: Abschnitt[] = [
     { to: '/', label: 'Dashboard', icon: <LayoutDashboard size={I} /> },
     { to: '/objekte', label: 'Immobilien', icon: <Building2 size={I} /> },
     { to: '/eigentuemer', label: 'Eigentümer', icon: <Users size={I} /> },
+    { to: '/mieter', label: 'Mieter', icon: <UserRound size={I} /> },
     { to: '/verwalter', label: 'Verwalter', icon: <UserCog size={I} /> },
     { to: '/kontakte', label: 'Kontakte', icon: <Contact size={I} /> },
     { to: '/ablage', label: 'Dateimanager', icon: <FolderOpen size={I} /> },

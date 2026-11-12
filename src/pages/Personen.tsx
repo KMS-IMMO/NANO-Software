@@ -12,6 +12,7 @@ export function PersonenPage({ rolle, titel }: { rolle?: 'Eigentümer' | 'Mieter
   return (
     <EntityTable
       key={rolle ?? 'alle'}
+      rowClass={(r) => (rolle === 'Eigentümer' || (!rolle && r.rolle === 'Eigentümer') ? 'zeile-eig' : rolle === 'Mieter' || (!rolle && r.rolle === 'Mieter') ? 'zeile-mie' : undefined)}
       title={titel ?? rolle ?? 'Eigentümer und Mieter'}
       icon={rolle === 'Mieter' ? <User size={22} /> : <Users size={22} />}
       newLabel={rolle ? `${rolle} hinzufügen` : 'Person hinzufügen'}
@@ -26,7 +27,7 @@ export function PersonenPage({ rolle, titel }: { rolle?: 'Eigentümer' | 'Mieter
         { key: 'firma', label: 'Firma (falls Gewerbe)', hideInTable: true },
         { key: 'strasse', label: 'Straße', hideInTable: true },
         { key: 'plz', label: 'PLZ', hideInTable: true },
-        { key: 'ort', label: 'Ort' },
+        { key: 'ort', label: 'Ort', hideInTable: rolle === 'Mieter' },
         { key: 'telefon', label: 'Telefon' },
         { key: 'mobil', label: 'Mobil', hideInTable: true },
         { key: 'email', label: 'E-Mail' },
@@ -36,8 +37,10 @@ export function PersonenPage({ rolle, titel }: { rolle?: 'Eigentümer' | 'Mieter
         { key: 'notiz', label: 'Notiz', type: 'textarea', hideInTable: true },
         { key: 'objekte', label: 'Objekte / Einheiten', computed: true },
         ...(rolle === 'Mieter' ? [
-          { key: 'nk_vz', label: 'NK-Vorauszahlung / Monat', type: 'number' as const, geld: true, computed: true, sum: true, format: (v: any) => v != null ? eur(v) : '–' },
-          { key: 'hk_vz', label: 'HK-Vorauszahlung / Monat', type: 'number' as const, geld: true, computed: true, sum: true, format: (v: any) => v != null ? eur(v) : '–' }] : []),
+          { key: 'seit', label: 'Mieter seit', type: 'date' as const, computed: true, format: (v: any) => v ? new Date(v + 'T00:00').toLocaleDateString('de-DE') : '–' },
+          { key: 'kalt', label: 'Kaltmiete / Monat', type: 'number' as const, geld: true, computed: true, sum: true, format: (v: any) => v != null ? eur(v) : '–' },
+          { key: 'nk_vz', label: 'NK-Vorausz. / Monat', type: 'number' as const, geld: true, computed: true, sum: true, format: (v: any) => v != null ? eur(v) : '–' },
+          { key: 'hk_vz', label: 'HK-Vorausz. / Monat', type: 'number' as const, geld: true, computed: true, sum: true, format: (v: any) => v != null ? eur(v) : '–' }] : []),
       ]}
       listSql={`SELECT p.*, ${personLabel('p')} AS anzeigename,
           (SELECT GROUP_CONCAT(x, '; ') FROM (
@@ -46,6 +49,9 @@ export function PersonenPage({ rolle, titel }: { rolle?: 'Eigentümer' | 'Mieter
             UNION ALL SELECT o.name || ' (Eigentümer)' FROM objekte o WHERE o.eigentuemer_id = p.id
             UNION ALL SELECT o.name || ' ' || e.nummer || ' (Mieter)' FROM mietvertraege v JOIN einheiten e ON e.id = v.einheit_id
                JOIN objekte o ON o.id = e.objekt_id WHERE (v.mieter_id = p.id OR v.mieter2_id = p.id) AND (v.ende IS NULL OR v.ende >= date('now')))) AS objekte${rolle === 'Mieter' ? `,
+          (SELECT MIN(v.beginn) FROM mietvertraege v WHERE (v.mieter_id = p.id OR v.mieter2_id = p.id) AND (v.ende IS NULL OR v.ende >= date('now'))) AS seit,
+          (SELECT SUM(COALESCE((SELECT a.kaltmiete FROM mietanpassungen a WHERE a.vertrag_id = v.id AND a.kaltmiete IS NOT NULL AND a.gueltig_ab <= date('now') ORDER BY a.gueltig_ab DESC LIMIT 1), v.kaltmiete, 0))
+            FROM mietvertraege v WHERE v.mieter_id = p.id AND v.beginn <= date('now') AND (v.ende IS NULL OR v.ende >= date('now'))) AS kalt,
           (SELECT SUM(COALESCE((SELECT a.nk_vorauszahlung FROM mietanpassungen a WHERE a.vertrag_id = v.id AND a.nk_vorauszahlung IS NOT NULL AND a.gueltig_ab <= date('now') ORDER BY a.gueltig_ab DESC LIMIT 1), v.nk_vorauszahlung, 0))
             FROM mietvertraege v WHERE v.mieter_id = p.id AND v.beginn <= date('now') AND (v.ende IS NULL OR v.ende >= date('now'))) AS nk_vz,
           (SELECT SUM(COALESCE((SELECT a.hk_vorauszahlung FROM mietanpassungen a WHERE a.vertrag_id = v.id AND a.hk_vorauszahlung IS NOT NULL AND a.gueltig_ab <= date('now') ORDER BY a.gueltig_ab DESC LIMIT 1), v.hk_vorauszahlung, 0))
