@@ -4,13 +4,14 @@ import autoTable, { type RowInput } from 'jspdf-autotable';
 import { db } from '../db';
 import { briefpapierLaden, type Briefpapier } from './briefpapier';
 import { unterschriftLaden, type Unterschrift } from './unterschrift';
+import { logoPng } from '../components/logoPfade';
 
-export interface Absender { name: string; strasse?: string; plz?: string; ort?: string; telefon?: string; email?: string; briefpapier?: Briefpapier | null; unterschrift?: Unterschrift | null }
+export interface Absender { name: string; strasse?: string; plz?: string; ort?: string; telefon?: string; email?: string; briefpapier?: Briefpapier | null; unterschrift?: Unterschrift | null; logo?: string | null }
 
 export async function absender(): Promise<Absender> {
   const e = Object.fromEntries((await db.select('SELECT * FROM einstellungen')).map((r) => [r.schluessel, r.wert ?? '']));
   return { name: e.firma_name || 'KMS Immobilien', strasse: e.firma_strasse, plz: e.firma_plz, ort: e.firma_ort, telefon: e.firma_telefon, email: e.firma_email,
-    briefpapier: await briefpapierLaden().catch(() => null), unterschrift: await unterschriftLaden().catch(() => null) };
+    briefpapier: await briefpapierLaden().catch(() => null), unterschrift: await unterschriftLaden().catch(() => null), logo: await logoPng(1200).catch(() => null) };
 }
 
 export const geld = (n: number) => (Math.abs(n) < 0.005 ? 0 : n).toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €';
@@ -65,8 +66,7 @@ export class Brief {
     const d = this.doc;
     const bp = this.abs.briefpapier;
     if (!bp || bp.kopfDrucken) {
-      d.setFont('helvetica', 'bold'); d.setFontSize(16); d.setTextColor(80); d.text(this.abs.name, 20, 20);
-      d.setDrawColor(176, 138, 74); d.setLineWidth(0.6); d.line(20, 22, 20 + d.getTextWidth(this.abs.name), 22);
+      this.firmenkopf();
       d.setFont('helvetica', 'normal'); d.setFontSize(8.5); d.setTextColor(90);
       const zeile = [this.abs.strasse, [this.abs.plz, this.abs.ort].filter(Boolean).join(' '), this.abs.telefon, this.abs.email].filter(Boolean).join(' · ');
       if (zeile) d.text(zeile, 20, 25);
@@ -145,13 +145,20 @@ export class Brief {
     this.y = unten + 6 + zeilen.length * 4;
   }
 
+  /** Ohne Briefpapier: originales Logo oben rechts, sonst der Firmenname */
+  private firmenkopf() {
+    const d = this.doc;
+    if (this.abs.logo) { d.addImage(this.abs.logo, 'PNG', 148, 10, 42, 42 * 616 / 1182, 'kms-logo', 'FAST'); return; }
+    d.setFont('helvetica', 'bold'); d.setFontSize(16); d.setTextColor(80); d.text(this.abs.name, 20, 20);
+    d.setDrawColor(176, 138, 74); d.setLineWidth(0.6); d.line(20, 22, 20 + d.getTextWidth(this.abs.name), 22);
+  }
+
   /** Kopf für Berichte und Stammblätter: Titel statt Anschriftfeld */
   berichtKopf(titel: string, zeilen: string[], datum: string) {
     const d = this.doc, bp = this.abs.briefpapier;
     let y = bp ? 47 : 50;
     if (!bp || bp.kopfDrucken) {
-      d.setFont('helvetica', 'bold'); d.setFontSize(16); d.setTextColor(80); d.text(this.abs.name, 20, 20);
-      d.setDrawColor(176, 138, 74); d.setLineWidth(0.6); d.line(20, 22, 20 + d.getTextWidth(this.abs.name), 22);
+      this.firmenkopf();
       d.setFont('helvetica', 'normal'); d.setFontSize(8.5); d.setTextColor(90);
       const zeile = [this.abs.strasse, [this.abs.plz, this.abs.ort].filter(Boolean).join(' '), this.abs.telefon, this.abs.email].filter(Boolean).join(' · ');
       if (zeile) d.text(zeile, 20, 25);

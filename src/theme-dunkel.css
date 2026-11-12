@@ -141,3 +141,6 @@ html[data-theme="dunkel"] table.list tbody tr.zeile-eig > td, html[data-theme="d
 /* Unterschrift: Feld bleibt weiß wie Papier */
 html[data-theme="dunkel"] .us-leer { background: var(--panel-2); border-color: #3a3d42; color: var(--muted); }
 html[data-theme="dunkel"] .us-flaeche, html[data-theme="dunkel"] .us-vorschau { border-color: #3a3d42; }
+
+/* Logo im Dunkelmodus: Grau aufgehellt, Bronze etwas leuchtender */
+html[data-theme="dunkel"] { --logo-grau: #d9d5cd; --logo-bronze: #c9a46c; --logo-glanz: #ffffff; }

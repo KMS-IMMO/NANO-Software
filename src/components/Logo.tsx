@@ -1,8 +1,30 @@
-// KMS Immobilienverwaltung Wortmarke (Text, keine Bilddatei nötig).
+// KMS Immobilienverwaltung: originales Logo als Vektor (logoPfade.ts).
 // Mit `daten` laufen Datenpakete als Lichtpunkte über Leiterbahnen rund um das Logo.
 // Bei jedem Speichern in der Datenbank wird der Datenverkehr kurz stärker.
 import { useEffect, useState } from 'react';
 import { DATEN_EVENT } from '../db';
+import { LOGO_BOX, LOGO_KM, LOGO_LINIEN, LOGO_S, LOGO_TEXT } from './logoPfade';
+
+/** Das Logo selbst: Farben über CSS (--logo-grau, --logo-bronze), damit es im Dunkelmodus lesbar bleibt */
+export function LogoMarke({ glanz = false, className = '' }: { glanz?: boolean; className?: string }) {
+  return (
+    <svg className={'logo-marke ' + className} viewBox={LOGO_BOX} role="img" aria-label="KMS Immobilienverwaltung">
+      {glanz && (
+        <defs>
+          <linearGradient id="logo-glanz" x1="-1" x2="0" y1="0" y2="0" gradientUnits="objectBoundingBox">
+            <stop offset="0.4" stopColor="var(--logo-grau)" /><stop offset="0.5" stopColor="var(--logo-glanz)" /><stop offset="0.6" stopColor="var(--logo-grau)" />
+            <animate attributeName="x1" values="-1;-1;1" keyTimes="0;0.55;1" dur="6s" repeatCount="indefinite" />
+            <animate attributeName="x2" values="0;0;2" keyTimes="0;0.55;1" dur="6s" repeatCount="indefinite" />
+          </linearGradient>
+        </defs>
+      )}
+      <path className="logo-grau" fillRule="evenodd" d={LOGO_KM + LOGO_TEXT} style={glanz ? { fill: 'url(#logo-glanz)' } : undefined} />
+      <path className="logo-bronze" fillRule="evenodd" d={LOGO_S} />
+      {LOGO_LINIEN.map((l, i) => <rect key={i} className="logo-bronze" x={l.x} y={l.y} width={l.w} height={l.h} rx={l.h / 2} />)}
+      {glanz && <rect className="logo-puls" x={LOGO_LINIEN[0].x} y={LOGO_LINIEN[0].y - 2} width={300} height={LOGO_LINIEN[0].h + 4} rx={6} />}
+    </svg>
+  );
+}
 
 // Leiterbahnen links und rechts vom Logo (Koordinaten im Logo-Bereich 250 × 100)
 const BAHNEN = [
@@ -35,8 +57,7 @@ export function Logo({ size = 1, daten = false }: { size?: number; daten?: boole
           {ENDEN.map(([x, y], i) => <circle key={'k' + i} cx={x} cy={y} r={1.8} className={'knoten k' + i} />)}
         </svg>
       )}
-      <div className="logo-kms">KM<span>S</span></div>
-      <div className="logo-sub">IMMOBILIENVERWALTUNG</div>
+      <LogoMarke glanz={daten} />
     </div>
   );
 }
