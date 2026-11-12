@@ -148,22 +148,25 @@ export class Brief {
   /** Kopf für Berichte und Stammblätter: Titel statt Anschriftfeld */
   berichtKopf(titel: string, zeilen: string[], datum: string) {
     const d = this.doc, bp = this.abs.briefpapier;
-    let y = 50;
+    let y = bp ? 47 : 50;
     if (!bp || bp.kopfDrucken) {
       d.setFont('helvetica', 'bold'); d.setFontSize(16); d.setTextColor(80); d.text(this.abs.name, 20, 20);
       d.setDrawColor(176, 138, 74); d.setLineWidth(0.6); d.line(20, 22, 20 + d.getTextWidth(this.abs.name), 22);
       d.setFont('helvetica', 'normal'); d.setFontSize(8.5); d.setTextColor(90);
       const zeile = [this.abs.strasse, [this.abs.plz, this.abs.ort].filter(Boolean).join(' '), this.abs.telefon, this.abs.email].filter(Boolean).join(' · ');
       if (zeile) d.text(zeile, 20, 25);
-      if (!bp) y = 38;
+      if (!bp) y = 32;
     }
-    d.setFont('helvetica', 'normal'); d.setFontSize(9); d.setTextColor(90);
-    d.text(`${this.abs.ort ? this.abs.ort + ', ' : ''}${dDatum(datum)}`, 190, y, { align: 'right' });
+    // Titel links im Anschriftbereich, Ort und Datum darunter: rechts bleibt Platz für den Informationsblock des Briefpapiers
+    const z = [...zeilen.filter(Boolean), `${this.abs.ort ? this.abs.ort + ', ' : ''}${dDatum(datum)}`];
     d.setFont('helvetica', 'bold'); d.setFontSize(16); d.setTextColor(30);
-    d.text(titel, 20, y + 9);
+    const t = d.splitTextToSize(titel, bp ? 100 : 170) as string[];
+    d.text(t, 20, y + 6);
+    y += (t.length - 1) * 6.5;
     d.setFont('helvetica', 'normal'); d.setFontSize(10); d.setTextColor(85);
-    d.text(zeilen.filter(Boolean), 20, y + 16);
-    this.y = y + 16 + zeilen.filter(Boolean).length * 5 + 4;
+    const zl = z.flatMap((x) => d.splitTextToSize(x, bp ? 100 : 170) as string[]);
+    d.text(zl, 20, y + 13);
+    this.y = Math.max(y + 13 + zl.length * 5 + 2, bp ? 86 : 0);
     d.setDrawColor(176, 138, 74); d.setLineWidth(0.4); d.line(20, this.y - 2, 190, this.y - 2);
     d.setTextColor(0); d.setFontSize(10.5);
     this.y += 6;
@@ -241,7 +244,7 @@ export class Brief {
     if (n < 2) return this;
     for (let i = 1; i <= n; i++) {
       d.setPage(i); d.setFontSize(7.5); d.setTextColor(130);
-      d.text(`Seite ${i} von ${n}`, 190, this.grenzeUnten + 4, { align: 'right' });
+      d.text(`Seite ${i} von ${n}`, 190, this.grenzeUnten + 3.2, { align: 'right' });
     }
     d.setTextColor(0); d.setFontSize(10.5);
     return this;
