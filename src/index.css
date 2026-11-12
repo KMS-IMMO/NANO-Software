@@ -1123,3 +1123,20 @@ input, select, textarea, button { font-family: inherit; }
 .card.aufgabe-neu > * { width: 100%; min-width: 0; margin: 0; }
 .card.aufgabe-neu > button { width: auto; white-space: nowrap; }
 @media (max-width: 900px) { .card.aufgabe-neu, .card.aufgabe-neu.ohne-objekt { grid-template-columns: 1fr 1fr; } .card.aufgabe-neu > input:first-child { grid-column: 1 / -1; } }
+
+/* Unterschrift */
+.us-reihe { display: grid; grid-template-columns: minmax(320px, 460px) 1fr; gap: 24px; align-items: start; }
+.us-feld { position: relative; }
+.us-flaeche { display: block; width: 100%; height: 170px; background: #fff; border: 1px solid #e6e0d6; border-radius: 10px; touch-action: none; cursor: crosshair; box-shadow: 0 6px 18px rgba(60,45,20,.08); }
+.us-feld .us-linie { position: absolute; left: 24px; right: 24px; top: 128px; border-bottom: 1px solid #c9bfae; pointer-events: none; }
+.us-hinweis { position: absolute; left: 0; right: 0; top: 64px; text-align: center; color: #b5ab9b; font-size: 14px; pointer-events: none; }
+.us-vorschau { position: relative; height: 170px; background: #fff; border: 1px solid #e6e0d6; border-radius: 10px; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; padding: 12px 24px 10px; box-shadow: 0 6px 18px rgba(60,45,20,.08); }
+.us-vorschau img { max-height: 104px; max-width: 100%; object-fit: contain; margin-bottom: 18px; }
+.us-vorschau .us-linie { position: absolute; left: 24px; right: 24px; top: auto; bottom: 34px; }
+.us-vorschau small { color: #6b665d; font-size: 12.5px; }
+.us-leer { width: 100%; height: 170px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; border: 1px dashed #d8cfbf; border-radius: 10px; background: #fff; color: #8a8478; cursor: pointer; }
+.us-leer:hover { border-color: #b08a4a; color: #b08a4a; background: #fdf9f2; }
+.us-leer small { font-size: 11.5px; opacity: .8; }
+@media (max-width: 1000px) { .us-reihe { grid-template-columns: 1fr; } }
+.card.objhead { position: relative; }
+.objhead-pdf { position: absolute; top: 14px; right: 14px; padding: 6px 12px; font-size: 13px; }

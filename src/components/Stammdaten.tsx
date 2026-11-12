@@ -1,6 +1,8 @@
 // Stammdaten einer Person mit Vertrag bzw. Eigentum: alle Angaben wie beim Anlegen, zum Ansehen und Bearbeiten
-import { useState, type ReactNode } from 'react';
-import { Pencil, Save, X } from 'lucide-react';
+import { useRef, useState, type ReactNode } from 'react';
+import { FileDown, Pencil, Save, X } from 'lucide-react';
+import { stammblattPdf } from '../lib/pdf';
+import { oeffnen, speichern as dateiSpeichern } from '../lib/dateien';
 import type { Row } from '../db';
 import { datum, eur } from './EntityTable';
 import { BetragFeld } from './BetragFeld';
@@ -33,8 +35,12 @@ function anzeigen(f: SFeld, v: any): ReactNode {
   }
 }
 
-export function StammdatenKarte({ titel, icon, gruppen, werte, onSpeichern, rolle }: {
+/** Angaben für das Stammblatt als PDF */
+export type StammblattPdf = { titel: string; zeilen: string[]; datei: string; vorab?: { titel: string; felder: [string, string][] } };
+
+export function StammdatenKarte({ titel, icon, gruppen, werte, onSpeichern, rolle, pdf }: {
   titel: string; icon?: ReactNode; gruppen: SGruppe[]; werte: Row;
+  pdf?: StammblattPdf;
   /** Farbe nach Rolle: Eigentümer blau, Mieter grün */
   rolle?: 'eigentuemer' | 'mieter';
   /** Bekommt nur die geänderten Felder; gibt einen Hinweistext zurück */
@@ -45,6 +51,7 @@ export function StammdatenKarte({ titel, icon, gruppen, werte, onSpeichern, roll
   const [info, setInfo] = useState('');
   const [fehler, setFehler] = useState('');
   const [busy, setBusy] = useState(false);
+  const karte = useRef<HTMLElement>(null);
   const felder = gruppen.flatMap((g) => g.felder).filter((f) => !f.nurLesen && f.anzeige === undefined);
 
   const start = () => {
@@ -71,14 +78,27 @@ export function StammdatenKarte({ titel, icon, gruppen, werte, onSpeichern, roll
     finally { setBusy(false); }
   };
 
+  // Stammblatt: genau das, was die Karte anzeigt, auf dem Briefpapier
+  const alsPdf = async () => {
+    if (!pdf || !karte.current) return;
+    const gr = [...karte.current.querySelectorAll('.stammdaten-gruppe')].map((g) => ({
+      titel: (g.querySelector('.erin-label') as HTMLElement)?.innerText.trim() ?? '',
+      felder: [...g.querySelectorAll('.mieter-raster > label')].map((l) => [(l.querySelector('span') as HTMLElement)?.innerText.trim() ?? '', ((l.querySelector('.stammdaten-wert') as HTMLElement)?.innerText ?? '').trim() || '–'] as [string, string]),
+    }));
+    try {
+      const bytes = await stammblattPdf(pdf.titel, pdf.zeilen, pdf.vorab ? [pdf.vorab, ...gr] : gr);
+      oeffnen(await dateiSpeichern(bytes, pdf.datei, { bezug: 'Objekt', bezugId: 0, ordner: ['Berichte'] }));
+    } catch (e) { setFehler(String((e as Error)?.message ?? e)); }
+  };
+
   return (
-    <section className={'card stammdaten' + (rolle ? ' rolle-' + rolle : '')}>
+    <section ref={karte} className={'card stammdaten' + (rolle ? ' rolle-' + rolle : '')}>
       <div className="card-head">
         <h2 className="title-ico">{icon}{titel}{rolle && <span className={'rolle-chip ' + rolle}>{rolle === 'eigentuemer' ? 'Eigentümer' : 'Mieter'}</span>}</h2>
         {bearbeiten
           ? <div className="row"><button onClick={() => { setBearbeiten(false); setFehler(''); }}><X size={16} />Abbrechen</button>
               <button className="primary" disabled={busy} onClick={speichern}><Save size={16} />{busy ? 'Speichere …' : 'Speichern'}</button></div>
-          : <button onClick={start}><Pencil size={16} />Bearbeiten</button>}
+          : <div className="row">{pdf && <button onClick={alsPdf} title="Stammblatt als PDF auf dem Briefpapier"><FileDown size={16} />PDF</button>}<button onClick={start}><Pencil size={16} />Bearbeiten</button></div>}
       </div>
       {info && <p className="info">{info}</p>}
       {fehler && <p className="error">{fehler}</p>}

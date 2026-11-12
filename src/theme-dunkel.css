@@ -138,3 +138,6 @@ html[data-theme="dunkel"] { --eig: #8fb3f2; --eig-bg: rgba(95,137,216,.16); --ei
 html[data-theme="dunkel"] table.list tbody tr.zeile-eig:hover > td { background: rgba(95,137,216,.24); }
 html[data-theme="dunkel"] table.list tbody tr.zeile-mie:hover > td { background: rgba(91,176,111,.22); }
 html[data-theme="dunkel"] table.list tbody tr.zeile-eig > td, html[data-theme="dunkel"] table.list tbody tr.zeile-mie > td { border-bottom-color: var(--line); }
+/* Unterschrift: Feld bleibt weiß wie Papier */
+html[data-theme="dunkel"] .us-leer { background: var(--panel-2); border-color: #3a3d42; color: var(--muted); }
+html[data-theme="dunkel"] .us-flaeche, html[data-theme="dunkel"] .us-vorschau { border-color: #3a3d42; }

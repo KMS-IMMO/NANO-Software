@@ -4,7 +4,7 @@ import { MieterAnlegen } from '../components/MieterAnlegen';
 import { useEffect, useMemo, useState } from 'react';
 import { BJ } from '../logic/buchung';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, BarChart3, CircleCheck, CalendarClock, CalendarRange, BookOpen, Building2, ClipboardList, Coins, DoorOpen, FileSignature, FileText, FolderOpen, Gavel, Home, Landmark, Layers, ListChecks, Mail,
+import { ArrowLeft, BarChart3, CircleCheck, FileDown, CalendarClock, CalendarRange, BookOpen, Building2, ClipboardList, Coins, DoorOpen, FileSignature, FileText, FolderOpen, Gavel, Home, Landmark, Layers, ListChecks, Mail,
   Maximize2, PiggyBank, Scale, Trash2, User, Users, Wallet, Wrench } from 'lucide-react';
 import { BeschluesseTab, RuecklagenTab, VorgaengeTab, WirtschaftsplanTab } from './Weg';
 import { EntityTable, datum, eur, num, type Field } from '../components/EntityTable';
@@ -24,6 +24,8 @@ import { DokumentePage } from './Dokumente';
 import { FristenPage } from './Fristen';
 import { TodoPage } from './Produktiv';
 import { db, type Row } from '../db';
+import { stammblattPdf } from '../lib/pdf';
+import { oeffnen, speichern as dateiSpeichern } from '../lib/dateien';
 import { AKTIV, EINHEIT_TYPEN, einheitLabel, SCHLUESSEL, WARMWASSER, personLabel, personOptions, widSql } from '../db/labels';
 
 const adresse = (o: Row) => [o.strasse, [o.plz, o.ort].filter(Boolean).join(' ')].filter(Boolean).join(', ');
@@ -205,11 +207,31 @@ function Bereich({ slug, rest, o, sum, weg, reload }: { slug: string; rest: stri
   }
 }
 
+/** Stammblatt der Liegenschaft mit allen Einheiten, Eigentümern und Mietern auf dem Briefpapier */
+async function objektStammblatt(o: Row, sum: Row, weg: boolean) {
+  const e = await db.select(`SELECT e.*, ${widSql('e', 'o')} AS wid,
+      (SELECT GROUP_CONCAT(${personLabel('p')}, '; ') FROM eigentum ei JOIN personen p ON p.id = ei.person_id WHERE ei.einheit_id = e.id AND (ei.bis IS NULL OR ei.bis >= date('now'))) AS eigentuemer,
+      (SELECT ${personLabel('p')} FROM mietvertraege v JOIN personen p ON p.id = v.mieter_id WHERE v.einheit_id = e.id AND ${AKTIV()} LIMIT 1) AS mieter
+    FROM einheiten e JOIN objekte o ON o.id = e.objekt_id WHERE e.objekt_id = $1 ORDER BY e.lfd_nr, e.nummer`, [o.id]);
+  const bank = await db.select('SELECT name, bank, iban FROM bankkonten WHERE objekt_id = $1 ORDER BY id', [o.id]);
+  const felder: [string, string][] = [['Bezeichnung', o.name], ['Anschrift', adresse(o) || '–'], ['Verwaltungsart', weg ? 'WEG (Wohnungseigentum)' : 'Mietverwaltung'], ['H-ID', String(o.objekt_nr ?? '–')],
+    ['Baujahr', o.baujahr ? String(o.baujahr) : '–'], ['Heizung', o.heizungsart || '–'], ['Einheiten', String(sum.n ?? 0)], ['Gesamtfläche', `${num(sum.fl)} m²`],
+    ['Gesamt-MEA', num(o.gesamt_mea ?? sum.mea, 0)], ['Personen', num(sum.pers, 0)]];
+  if (!weg && o.eigentuemer) felder.push(['Eigentümer', o.eigentuemer], ['Kontakt', [o.telefon, o.email].filter(Boolean).join(' · ') || '–']);
+  const head = ['W-ID', 'Nr.', 'Art', 'Lage', 'm²', ...(weg ? ['MEA', 'Eigentümer'] : []), 'Mieter'];
+  const body = e.map((x) => [x.wid, x.nummer, x.typ, x.lage ?? '', x.flaeche != null ? num(x.flaeche) : '', ...(weg ? [x.mea != null ? num(x.mea, 0) : '', x.eigentuemer ?? '–'] : []), x.mieter ?? (weg ? '–' : 'Leerstand')]);
+  const bytes = await stammblattPdf('Stammblatt Liegenschaft', [o.name, adresse(o)], [{ titel: 'Liegenschaft', felder },
+    ...(bank.length ? [{ titel: 'Bankkonten', felder: bank.map((b) => [b.name, [b.bank, b.iban].filter(Boolean).join(' · ') || '–'] as [string, string]) }] : [])],
+    [{ titel: 'Einheiten', head, body }]);
+  oeffnen(await dateiSpeichern(bytes, `Stammblatt ${o.name}.pdf`, { bezug: 'Objekt', bezugId: o.id, ordner: ['Berichte'] }));
+}
+
 function ObjektKopf({ o, sum, weg }: { o: Row; sum: Row; weg: boolean }) {
   const meaWarn = o.gesamt_mea && sum.mea && Math.abs(o.gesamt_mea - sum.mea) > 0.001;
   return (
     <>
       <section className="card objhead">
+        <button className="objhead-pdf" title="Stammblatt der Liegenschaft als PDF auf dem Briefpapier" onClick={() => objektStammblatt(o, sum, weg)}><FileDown size={16} />Stammblatt</button>
         <div className="thumb"><Building2 size={44} /></div>
         <div>
           <h2 style={{ fontSize: 22 }}>{o.name}</h2>

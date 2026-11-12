@@ -209,7 +209,10 @@ export function VertragDetailPage({ vertragId }: { vertragId?: number }) {
       <StammdatenKarte rolle="mieter" key={id} titel="Mieter und Mietvertrag" icon={<IdCard size={22} />}
         gruppen={vertragGruppen(v, wo)}
         werte={{ ...personWerte(p1), m2_vorname: p2?.vorname ?? null, m2_nachname: p2?.nachname ?? null, ...vertragWerte(v) }}
-        onSpeichern={async (neu) => { const t = await vertragSpeichern(v, neu); await reload(); return t; }} />
+        onSpeichern={async (neu) => { const t = await vertragSpeichern(v, neu); await reload(); return t; }}
+        pdf={{ titel: 'Stammblatt Mieter', zeilen: [String(v.mieter_id_label ?? ''), `${v.einheit_id_label} · Einzug ${datum(v.beginn)}${v.ende ? ` · Auszug ${datum(v.ende)}` : ''}`],
+          datei: `Stammblatt ${v.mieter_id_label} ${v.einheit_id_label}.pdf`,
+          vorab: { titel: 'Miete aktuell', felder: [['Kaltmiete', eur(jetzt.kalt)], ['NK / HK-Vorauszahlung', `${eur(jetzt.nk)} / ${eur(jetzt.hk)}`], ...(jetzt.ust > 0 ? [[`USt ${v.ust_satz} %`, eur(jetzt.ust)] as [string, string]] : []), ['Gesamt / Monat', eur(jetzt.kalt + jetzt.nk + jetzt.hk + jetzt.ust)], ['Kaution', eur(v.kaution ?? 0)]] } }} />
       <VertragDokumente vertragId={id} />
       {hinweis && <p className="info">{hinweis}</p>}
       <EntityTable
