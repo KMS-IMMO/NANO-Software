@@ -111,32 +111,29 @@ export class Brief {
     if (this.y + mm > this.grenzeUnten) { this.doc.addPage(); this.y = this.obenFolge; }
   }
 
-  /** Angaben nach § 35a EStG mit den Hinweisen nach Gesetz (Abs. 1 bis 5) und BMF-Schreiben vom 9. November 2016 */
+  /** Angaben nach § 35a EStG, kompakt: Abs. 1 bis 3 getrennt, darunter die Hinweise nach Gesetz und BMF-Schreiben vom 9. November 2016 */
   steuer35a(w: { hbg?: number; hdl: number; hwl: number }, fuer: 'eigentuemer' | 'mieter') {
     const zeilen: string[][] = [];
-    if (w.hbg) zeilen.push(['Geringfügige Beschäftigung im Haushalt (§ 35a Abs. 1 EStG)', geld(w.hbg)]);
-    zeilen.push(['Haushaltsnahe Dienstleistungen und Beschäftigungsverhältnisse (§ 35a Abs. 2 EStG)', geld(w.hdl)]);
-    zeilen.push(['Handwerkerleistungen für Renovierung, Erhaltung und Modernisierung (§ 35a Abs. 3 EStG)', geld(w.hwl)]);
-    this.platz(95);
-    this.tabelle(['Bescheinigung nach § 35a EStG: Ihr Anteil an den Arbeitskosten', 'Betrag'], zeilen);
+    if (w.hbg) zeilen.push(['Minijob im Haushalt (Abs. 1)', geld(w.hbg)]);
+    zeilen.push(['Haushaltsnahe Dienstleistungen, z. B. Reinigung, Garten, Winterdienst (Abs. 2)', geld(w.hdl)], ['Handwerkerleistungen, z. B. Reparatur, Wartung (Abs. 3)', geld(w.hwl)]);
+    this.platz(70);
+    this.tabelle(['Steuerermäßigung § 35a EStG: Ihr Anteil an den Arbeitskosten', 'Betrag'], zeilen);
     this.y -= 4;
     const d = this.doc;
     d.setFontSize(8); d.setTextColor(85);
     const hinweise = [
-      'Angegeben sind nur Arbeitskosten einschließlich der in Rechnung gestellten Maschinen- und Fahrtkosten und der darauf entfallenden Umsatzsteuer. Material und gelieferte Waren sind nicht begünstigt (§ 35a Abs. 5 Satz 2 EStG).',
-      'Für alle Aufwendungen liegen Rechnungen vor, die Zahlungen sind unbar auf das Konto der Leistungserbringer erfolgt (§ 35a Abs. 5 Satz 3 EStG).',
-      'Die Einkommensteuer ermäßigt sich auf Antrag um 20 % der Aufwendungen, höchstens um 510 € (Abs. 1), 4.000 € (Abs. 2) und 1.200 € (Abs. 3) im Jahr. Leben zwei Alleinstehende in einem Haushalt zusammen, gelten die Höchstbeträge nur einmal (Abs. 5 Satz 4).',
-      'Ausgeschlossen ist die Ermäßigung, soweit die Aufwendungen Betriebsausgaben oder Werbungskosten sind (z. B. bei einer vermieteten Wohnung) oder als Sonderausgaben oder außergewöhnliche Belastungen berücksichtigt werden (Abs. 5 Satz 1), und bei öffentlich geförderten Maßnahmen mit zinsverbilligten Darlehen oder steuerfreien Zuschüssen (Abs. 3 Satz 2). Die Leistung muss in einem Haushalt in der EU oder im EWR erbracht werden (Abs. 4).',
+      'Enthalten sind nur Arbeits-, Maschinen- und Fahrtkosten inkl. Umsatzsteuer, kein Material. Für alle Beträge liegen Rechnungen vor, gezahlt wurde per Überweisung.',
+      'Die Steuer sinkt um 20 % dieser Beträge, höchstens um 510 € (Abs. 1), 4.000 € (Abs. 2) und 1.200 € (Abs. 3) im Jahr, je Haushalt nur einmal.',
+      'Nicht möglich, soweit die Kosten Werbungskosten oder Betriebsausgaben sind (z. B. bei Vermietung) oder öffentlich gefördert wurden.',
       fuer === 'eigentuemer'
-        ? 'Maßgeblich ist grundsätzlich das Jahr der Zahlung. Nach dem BMF-Schreiben vom 9. November 2016 können Wohnungseigentümer ihren Anteil auch insgesamt in dem Jahr geltend machen, in dem die Eigentümerversammlung die Jahresabrechnung beschlossen hat.'
-        : 'Als Mieter können Sie Ihren Anteil mit dieser Nebenkostenabrechnung geltend machen (BMF-Schreiben vom 9. November 2016; BFH, Urteil vom 20. April 2023, VI R 24/20). Maßgeblich ist grundsätzlich das Jahr der Zahlung.',
-      'Diese Angaben ersetzen keine Steuerberatung. Ob und in welcher Höhe die Ermäßigung zusteht, entscheidet das Finanzamt.',
+        ? 'Absetzbar im Jahr der Zahlung oder, nach dem BMF-Schreiben vom 9. November 2016, im Jahr des Beschlusses über die Jahresabrechnung.'
+        : 'Diese Abrechnung genügt dem Finanzamt als Nachweis (BFH, Urteil vom 20. April 2023, VI R 24/20). Absetzbar im Jahr der Zahlung.',
     ];
     for (const h of hinweise) {
       const l = d.splitTextToSize(h, 166);
       this.platz(l.length * 3.5 + 1);
       d.text('•', 20, this.y); d.text(l, 24, this.y);
-      this.y += l.length * 3.5 + 1.2;
+      this.y += l.length * 3.5 + 1;
     }
     d.setFontSize(10.5); d.setTextColor(0);
     this.y += 5;
