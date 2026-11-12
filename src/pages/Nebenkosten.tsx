@@ -245,10 +245,7 @@ function abrechnungPdf(b: Brief, o: Row, jahr: number, r: NkErgebnis, eigentueme
     : (r.saldo > 0
       ? `Bitte überweisen Sie die Nachzahlung von ${geld(r.saldo)} innerhalb von 30 Tagen nach Erhalt dieser Abrechnung.`
       : `Ihr Guthaben von ${geld(Math.abs(r.saldo))} erstatten wir Ihnen bzw. verrechnen es mit der nächsten Miete.`));
-  if (r.hdl || r.hwl) {
-    b.absatz('Bescheinigung nach § 35a EStG: In Ihren Kosten sind folgende Anteile enthalten (Arbeitskosten laut Rechnungen):', 2);
-    b.tabelle(['Art', 'Betrag'], [['Haushaltsnahe Dienstleistungen (§ 35a Abs. 2)', geld(r.hdl)], ['Handwerkerleistungen (§ 35a Abs. 3)', geld(r.hwl)]]);
-  }
+  if (r.hdl || r.hwl || r.hbg) b.steuer35a(r, 'mieter');
   b.absatz('Belege können nach Terminvereinbarung bei uns eingesehen werden. Einwendungen gegen diese Abrechnung sind innerhalb von zwölf Monaten nach Zugang mitzuteilen.');
   b.gruss();
   return b;

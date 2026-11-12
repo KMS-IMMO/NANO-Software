@@ -111,6 +111,37 @@ export class Brief {
     if (this.y + mm > this.grenzeUnten) { this.doc.addPage(); this.y = this.obenFolge; }
   }
 
+  /** Angaben nach § 35a EStG mit den Hinweisen nach Gesetz (Abs. 1 bis 5) und BMF-Schreiben vom 9. November 2016 */
+  steuer35a(w: { hbg?: number; hdl: number; hwl: number }, fuer: 'eigentuemer' | 'mieter') {
+    const zeilen: string[][] = [];
+    if (w.hbg) zeilen.push(['Geringfügige Beschäftigung im Haushalt (§ 35a Abs. 1 EStG)', geld(w.hbg)]);
+    zeilen.push(['Haushaltsnahe Dienstleistungen und Beschäftigungsverhältnisse (§ 35a Abs. 2 EStG)', geld(w.hdl)]);
+    zeilen.push(['Handwerkerleistungen für Renovierung, Erhaltung und Modernisierung (§ 35a Abs. 3 EStG)', geld(w.hwl)]);
+    this.platz(95);
+    this.tabelle(['Bescheinigung nach § 35a EStG: Ihr Anteil an den Arbeitskosten', 'Betrag'], zeilen);
+    this.y -= 4;
+    const d = this.doc;
+    d.setFontSize(8); d.setTextColor(85);
+    const hinweise = [
+      'Angegeben sind nur Arbeitskosten einschließlich der in Rechnung gestellten Maschinen- und Fahrtkosten und der darauf entfallenden Umsatzsteuer. Material und gelieferte Waren sind nicht begünstigt (§ 35a Abs. 5 Satz 2 EStG).',
+      'Für alle Aufwendungen liegen Rechnungen vor, die Zahlungen sind unbar auf das Konto der Leistungserbringer erfolgt (§ 35a Abs. 5 Satz 3 EStG).',
+      'Die Einkommensteuer ermäßigt sich auf Antrag um 20 % der Aufwendungen, höchstens um 510 € (Abs. 1), 4.000 € (Abs. 2) und 1.200 € (Abs. 3) im Jahr. Leben zwei Alleinstehende in einem Haushalt zusammen, gelten die Höchstbeträge nur einmal (Abs. 5 Satz 4).',
+      'Ausgeschlossen ist die Ermäßigung, soweit die Aufwendungen Betriebsausgaben oder Werbungskosten sind (z. B. bei einer vermieteten Wohnung) oder als Sonderausgaben oder außergewöhnliche Belastungen berücksichtigt werden (Abs. 5 Satz 1), und bei öffentlich geförderten Maßnahmen mit zinsverbilligten Darlehen oder steuerfreien Zuschüssen (Abs. 3 Satz 2). Die Leistung muss in einem Haushalt in der EU oder im EWR erbracht werden (Abs. 4).',
+      fuer === 'eigentuemer'
+        ? 'Maßgeblich ist grundsätzlich das Jahr der Zahlung. Nach dem BMF-Schreiben vom 9. November 2016 können Wohnungseigentümer ihren Anteil auch insgesamt in dem Jahr geltend machen, in dem die Eigentümerversammlung die Jahresabrechnung beschlossen hat.'
+        : 'Als Mieter können Sie Ihren Anteil mit dieser Nebenkostenabrechnung geltend machen (BMF-Schreiben vom 9. November 2016; BFH, Urteil vom 20. April 2023, VI R 24/20). Maßgeblich ist grundsätzlich das Jahr der Zahlung.',
+      'Diese Angaben ersetzen keine Steuerberatung. Ob und in welcher Höhe die Ermäßigung zusteht, entscheidet das Finanzamt.',
+    ];
+    for (const h of hinweise) {
+      const l = d.splitTextToSize(h, 166);
+      this.platz(l.length * 3.5 + 1);
+      d.text('•', 20, this.y); d.text(l, 24, this.y);
+      this.y += l.length * 3.5 + 1.2;
+    }
+    d.setFontSize(10.5); d.setTextColor(0);
+    this.y += 5;
+  }
+
   gruss() {
     const u = this.abs.unterschrift;
     if (!u || !u.drucken || (!u.bild && !u.name)) {
@@ -347,6 +378,7 @@ export async function einnahmenAusgabenPdf(p: { objekt: string; adresse?: string
   return b.seitenzahlen().bytes();
 }
 
+export const HINWEIS_35A_VERMIETER = 'Für eine vermietete Wohnung sind diese Kosten beim Vermieter Werbungskosten. Eine Steuerermäßigung nach § 35a EStG ist dafür ausgeschlossen (§ 35a Abs. 5 Satz 1 EStG). Begünstigt sind die Mieter mit ihrem Anteil; er wird ihnen in der Nebenkostenabrechnung bescheinigt.';
 export const EIGENTUEMER_HINWEIS = 'Auszahlungen an den Eigentümer sind Entnahmen und keine Kosten. Sie mindern das Ergebnis nicht, gehören nicht in die Nebenkostenabrechnung und sind keine Werbungskosten.';
 const MONATE = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'];
 /** Auszahlungen an / Einzahlungen vom Eigentümer: je Konto oben die Summe, darunter jeder Monat mit Überweisungsdatum (Auszahlung positiv) */
