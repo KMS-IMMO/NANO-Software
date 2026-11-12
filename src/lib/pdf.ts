@@ -303,12 +303,16 @@ export function csv(head: string[], rows: (string | number | null | undefined)[]
 }
 
 /** Einnahmen und Ausgaben einer Liegenschaft auf dem Briefpapier, gegliedert nach Buchungskonten (Anlage zur Jahresabrechnung) */
-export async function einnahmenAusgabenPdf(p: { objekt: string; adresse?: string; zeitraum: string; anlage?: string; buchungen: { datum: string; konto: string; firma?: string | null; text?: string | null; einheit?: string | null; betrag: number }[] }): Promise<Uint8Array> {
+export async function einnahmenAusgabenPdf(p: { objekt: string; adresse?: string; zeitraum: string; anlage?: string; buchungen: { datum: string; konto: string; firma?: string | null; text?: string | null; einheit?: string | null; betrag: number; eigentuemer?: boolean }[] }): Promise<Uint8Array> {
   const b = new Brief(await absender()).neuerBrief();
   b.berichtKopf('Einnahmen und Ausgaben', [[p.objekt, p.adresse].filter(Boolean).join(', '), p.zeitraum, p.anlage ?? ''], new Date().toISOString().slice(0, 10));
-  const ein = p.buchungen.filter((x) => x.betrag > 0), aus = p.buchungen.filter((x) => x.betrag < 0);
+  // Auszahlungen an den Eigentümer (Mietverwaltung) sind keine Ausgaben: eigener Block unter dem Ergebnis
+  const eig = p.buchungen.filter((x) => x.eigentuemer), rest = p.buchungen.filter((x) => !x.eigentuemer);
+  const ein = rest.filter((x) => x.betrag > 0), aus = rest.filter((x) => x.betrag < 0);
   const summe = (l: typeof ein) => l.reduce((a, x) => a + Math.abs(x.betrag), 0);
-  b.kennzahlen([['Einnahmen', geld(summe(ein))], ['Ausgaben', geld(summe(aus))], ['Ergebnis', geld(summe(ein) - summe(aus))]]);
+  const sEig = eig.reduce((a, x) => a + x.betrag, 0);
+  b.kennzahlen([['Einnahmen', geld(summe(ein))], ['Ausgaben', geld(summe(aus))], ['Ergebnis', geld(summe(ein) - summe(aus))],
+    ...(eig.length ? [['An Eigentümer ausgezahlt', geld(-sEig)] as [string, string]] : [])]);
   const nachKonto = (l: typeof ein) => {
     const m = new Map<string, typeof ein>();
     for (const x of [...l].sort((a, c) => a.konto.localeCompare(c.konto, 'de', { numeric: true }) || a.datum.localeCompare(c.datum))) { if (!m.has(x.konto)) m.set(x.konto, []); m.get(x.konto)!.push(x); }
@@ -328,11 +332,29 @@ export async function einnahmenAusgabenPdf(p: { objekt: string; adresse?: string
     zeilen: z.map((x) => [dDatum(x.datum), [x.firma, x.text].filter(Boolean).join(' · ') || '–', x.einheit ?? '', geld(Math.abs(x.betrag))]) }));
   if (ein.length) { b.abschnitt('Einnahmen'); b.gruppenTabelle(['Zahlmonat', 'Zahlungen', 'Einheiten', 'Betrag'], einGruppen, geld(summe(ein)), [34, 30, 80, 26], [91, 140, 104]); }
   if (aus.length) { b.abschnitt('Ausgaben'); b.gruppenTabelle(['Datum', 'Unternehmen / Buchungstext', 'Einheit', 'Betrag'], ausGruppen, geld(summe(aus)), [22, 98, 24, 26], [176, 138, 74]); }
-  if (!ein.length && !aus.length) b.absatz('Im Zeitraum gibt es keine Buchungen.');
+  if (eig.length) {
+    b.abschnitt('Auszahlungen an den Eigentümer');
+    b.gruppenTabelle(['Monat', 'Überwiesen am', 'Buchungstext', 'Betrag'], eigentuemerGruppen(eig), geld(-sEig), [34, 30, 80, 26], [91, 104, 140]);
+    b.platz(50);
+    b.tabelle(['Kontoentwicklung', 'Betrag'], [['Ergebnis (Einnahmen − Ausgaben)', geld(summe(ein) - summe(aus))], [eig.some((x) => x.betrag > 0) ? 'Auszahlungen und Einzahlungen Eigentümer' : 'Auszahlungen an den Eigentümer', geld(sEig)]],
+      [['Veränderung des Kontostands', geld(summe(ein) - summe(aus) + sEig)]]);
+    b.absatz(EIGENTUEMER_HINWEIS, 6);
+  }
+  if (!rest.length && !eig.length) b.absatz('Im Zeitraum gibt es keine Buchungen.');
   b.platz(45);
   b.absatz(`Aufgestellt für ${p.objekt}. Die Belege liegen in der Verwaltung zur Einsicht bereit.`, 6);
   b.unterschrift(20, b.y + 2);
   return b.seitenzahlen().bytes();
+}
+
+export const EIGENTUEMER_HINWEIS = 'Auszahlungen an den Eigentümer sind Entnahmen und keine Kosten. Sie mindern das Ergebnis nicht, gehören nicht in die Nebenkostenabrechnung und sind keine Werbungskosten.';
+const MONATE = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'];
+/** Auszahlungen an / Einzahlungen vom Eigentümer: je Konto oben die Summe, darunter jeder Monat mit Überweisungsdatum (Auszahlung positiv) */
+export function eigentuemerGruppen(l: { datum: string; konto: string; text?: string | null; betrag: number }[]) {
+  const m = new Map<string, typeof l>();
+  for (const x of [...l].sort((a, c) => a.konto.localeCompare(c.konto, 'de', { numeric: true }) || a.datum.localeCompare(c.datum))) { if (!m.has(x.konto)) m.set(x.konto, []); m.get(x.konto)!.push(x); }
+  return [...m].map(([titel, z]) => ({ titel, summe: geld(Math.abs(z.reduce((a, x) => a + x.betrag, 0))),
+    zeilen: z.map((x) => [`${MONATE[Number(x.datum.slice(5, 7)) - 1]} ${x.datum.slice(0, 4)}`, dDatum(x.datum), x.text || '–', geld(Math.abs(x.betrag))]) }));
 }
 
 /** Stammblatt (Person, Eigentum, Mietvertrag, Liegenschaft) auf dem Briefpapier */

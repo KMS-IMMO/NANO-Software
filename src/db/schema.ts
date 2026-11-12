@@ -655,4 +655,11 @@ ALTER TABLE objekte ADD COLUMN miete_zahlweise TEXT NOT NULL DEFAULT 'zusammen';
   `
 ALTER TABLE mietvertraege ADD COLUMN zahlweise TEXT;  -- zusammen | getrennt | leer
 `,
+  // Migration 24: Mietverwaltung – Auszahlungen an den Eigentümer und Einzahlungen des Eigentümers. Kontoart „Eigentümer“:
+  // keine Einnahme und keine Ausgabe, ändert nur den Kontostand. Erscheint in der Abrechnung getrennt unter dem Ergebnis.
+  `
+INSERT OR IGNORE INTO buchungskonten (nummer, name, gruppe, art, euer, mwst, umlagefaehig) VALUES
+ ('1700', 'Auszahlung an Eigentümer', 'Eigentümer-Verrechnung', 'Eigentümer', 0, 0, 0),
+ ('1701', 'Einzahlung des Eigentümers', 'Eigentümer-Verrechnung', 'Eigentümer', 0, 0, 0);
+`,
 ];

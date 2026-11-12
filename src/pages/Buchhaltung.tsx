@@ -88,7 +88,7 @@ export function JournalPage() {
     if (monat) w.push(`substr(b.datum, 6, 2) = '${monat}'`);
     if (objekt !== '') w.push(`b.objekt_id = ${Number(objekt)}`);
     if (kontoWahl.length) w.push(`b.buchungskonto_id IN (${kontoWahl.map(Number).join(',')})`);
-    setRows(await db.select(`SELECT b.*, k.nummer, k.name AS konto, o.name AS objekt, e.nummer AS einheit, COALESCE(f.name, rf.name) AS firma, COALESCE(b.rechnungsnr, r.rechnungsnr) AS rechnungsnr, ${BELEGE_SQL} AS belege
+    setRows(await db.select(`SELECT b.*, k.nummer, k.name AS konto, k.art AS kontoart, o.name AS objekt, e.nummer AS einheit, COALESCE(f.name, rf.name) AS firma, COALESCE(b.rechnungsnr, r.rechnungsnr) AS rechnungsnr, ${BELEGE_SQL} AS belege
       FROM buchungen b LEFT JOIN buchungskonten k ON k.id = b.buchungskonto_id LEFT JOIN objekte o ON o.id = b.objekt_id LEFT JOIN einheiten e ON e.id = b.einheit_id
       LEFT JOIN firmen f ON f.id = b.firma_id LEFT JOIN rechnungen r ON r.id = b.rechnung_id LEFT JOIN firmen rf ON rf.id = r.firma_id
       WHERE ${w.join(' AND ')} ORDER BY b.datum, b.id`));
@@ -197,7 +197,7 @@ export function JournalPage() {
       const zeitraum = `Zeitraum ${monat ? `01.${mm}.${jahr} bis ${bis}.${mm}.${jahr}` : `01.01.${jahr} bis 31.12.${jahr}`}${kontoText ? ` · nur Konten ${kontoText}` : ''}`;
       await ablegen(await einnahmenAusgabenPdf({ objekt: o.name ?? bez, adresse: [o.strasse, [o.plz, o.ort].filter(Boolean).join(' ')].filter(Boolean).join(', '), zeitraum,
         anlage: monat ? '' : `Anlage zur ${o.verwaltungsart === 'WEG' ? 'Hausgeldabrechnung' : 'Eigentümerabrechnung'} ${jahr}`,
-        buchungen: rows.map((r) => ({ datum: r.datum, konto: r.nummer ? `${r.nummer} ${r.konto}` : 'ohne Konto', firma: r.firma, text: r.text, einheit: r.einheit, betrag: Number(r.betrag) })) }),
+        buchungen: rows.map((r) => ({ datum: r.datum, konto: r.nummer ? `${r.nummer} ${r.konto}` : 'ohne Konto', firma: r.firma, text: r.text, einheit: r.einheit, betrag: Number(r.betrag), eigentuemer: r.kontoart === 'Eigentümer' })) }),
         `Einnahmen und Ausgaben ${o.name ?? ''} ${monat ? mm + '-' : ''}${jahr}.pdf`.replace(/\s+/g, ' '));
     } else {
       await ablegen(await listePdf('Buchungsjournal', bez, head,
@@ -455,7 +455,7 @@ function Jahresuebersicht({ objektId, weg }: { objektId: number; weg: boolean })
       const monate = async (j: number) => {
         const r = await db.select(`SELECT CAST(substr(b.datum, 6, 2) AS INTEGER) AS m, SUM(CASE WHEN b.betrag > 0 THEN b.betrag ELSE 0 END) AS e, SUM(CASE WHEN b.betrag < 0 THEN -b.betrag ELSE 0 END) AS a,
           SUM(CASE WHEN k.nummer = '1010' THEN b.betrag ELSE 0 END) AS hg
-          FROM buchungen b LEFT JOIN buchungskonten k ON k.id = b.buchungskonto_id WHERE b.objekt_id = $1 AND substr(b.datum, 1, 4) = $2
+          FROM buchungen b LEFT JOIN buchungskonten k ON k.id = b.buchungskonto_id WHERE b.objekt_id = $1 AND substr(b.datum, 1, 4) = $2 AND COALESCE(k.art, '') <> 'Eigentümer'
           ${weg ? `AND COALESCE(k.nummer, '') NOT IN ('1260', '1261', '1262')` : ''} GROUP BY m`, [objektId, String(j)]);
         // WEG: Rücklagenanteil des Hausgelds ist keine Einnahme der Bewirtschaftung. Wie in der GuV wird der Jahresanteil
         // laut Hausgeld-Soll aus den Hausgeldeingängen (Konto 1010) herausgerechnet, in der Reihenfolge der Eingänge.
@@ -470,7 +470,7 @@ function Jahresuebersicht({ objektId, weg }: { objektId: number; weg: boolean })
         WHERE e.objekt_id = $1 AND substr(s.monat, 1, 4) = $2 GROUP BY m`, [objektId, String(jahr)]);
       const rlSoll = weg ? await ruecklageMonate(objektId, jahr) : Array(12).fill(0);
       const top = await db.select(`SELECT k.nummer, k.name, -SUM(b.betrag) AS summe FROM buchungen b JOIN buchungskonten k ON k.id = b.buchungskonto_id
-        WHERE b.objekt_id = $1 AND substr(b.datum, 1, 4) = $2 AND b.betrag < 0 ${weg ? `AND k.nummer NOT IN ('1260', '1261', '1262')` : ''} GROUP BY k.id ORDER BY summe DESC LIMIT 5`, [objektId, String(jahr)]);
+        WHERE b.objekt_id = $1 AND substr(b.datum, 1, 4) = $2 AND b.betrag < 0 AND k.art <> 'Eigentümer' ${weg ? `AND k.nummer NOT IN ('1260', '1261', '1262')` : ''} GROUP BY k.id ORDER BY summe DESC LIMIT 5`, [objektId, String(jahr)]);
       setD({ ist: await monate(jahr), vj: await monate(jahr - 1), sollRest: Array.from({ length: 12 }, (_, i) => Math.max(0, (Number(soll.find((y) => Number(y.m) === i + 1)?.b) || 0) - rlSoll[i])), top });
     })();
   }, [objektId, jahr, weg]);
@@ -542,7 +542,7 @@ export function AuswertungPage() {
   useEffect(() => { if (objekte.length && objekt === '') setObjekt(objekte[0].id); }, [objekte]);
   useEffect(() => {
     if (objekt === '') return;
-    db.select(`SELECT k.nummer, k.name, k.gruppe, SUM(b.betrag) AS summe FROM buchungen b LEFT JOIN buchungskonten k ON k.id = b.buchungskonto_id
+    db.select(`SELECT k.nummer, k.name, k.gruppe, k.art, SUM(b.betrag) AS summe FROM buchungen b LEFT JOIN buchungskonten k ON k.id = b.buchungskonto_id
       WHERE b.objekt_id = $1 AND b.datum BETWEEN $2 AND $3 GROUP BY b.buchungskonto_id ORDER BY k.nummer`, [objekt, von, bis]).then(setRows);
     db.select(`SELECT b.*, b.anfangssaldo + COALESCE((SELECT SUM(u.betrag) FROM bankumsaetze u WHERE u.bankkonto_id = b.id
       AND u.datum <= $2 AND (b.saldo_datum IS NULL OR u.datum > b.saldo_datum)), 0) AS saldo FROM bankkonten b WHERE b.objekt_id = $1`, [objekt, bis]).then(setBanken);
@@ -557,7 +557,9 @@ export function AuswertungPage() {
   // und erscheint mit Entnahmen und Zinsen nur im Ausweis der Erhaltungsrücklage.
   const hgSumme = Number(rows.find((r) => r.nummer === '1010')?.summe) || 0;
   const rlZahlung = weg && rl ? Math.min(Math.max(0, hgSumme), rl.zufuehrung) : 0;
-  const guvRows = !weg ? rows : rows.filter((r) => !RL_KONTEN.includes(r.nummer)).map((r) => r.nummer === '1010'
+  const eigRows = rows.filter((r) => r.art === 'Eigentümer' && Math.abs(r.summe) > 0.004);
+  const sEig = eigRows.reduce((a, r) => a + Number(r.summe), 0);
+  const guvRows = !weg ? rows.filter((r) => r.art !== 'Eigentümer') : rows.filter((r) => !RL_KONTEN.includes(r.nummer)).map((r) => r.nummer === '1010'
     ? { ...r, name: 'Hausgeld ohne Rücklagenanteil', summe: r.summe - rlZahlung } : r).filter((r) => Math.abs(r.summe) > 0.004);
   const ertraege = guvRows.filter((r) => r.summe > 0), aufwand = guvRows.filter((r) => r.summe < 0);
   const sE = ertraege.reduce((a, r) => a + r.summe, 0), sA = aufwand.reduce((a, r) => a - r.summe, 0);
@@ -592,6 +594,17 @@ export function AuswertungPage() {
           </tbody>
           <tfoot><tr><td colSpan={2}>{weg ? 'Ergebnis der Bewirtschaftung (ohne Rücklage)' : 'Ergebnis'}</td><td className={'num ' + (sE - sA < 0 ? 'neg' : '')}>{eur(sE - sA)}</td></tr></tfoot>
         </table>
+        {!weg && eigRows.length > 0 && <>
+          <div className="card-head" style={{ marginTop: 18 }}><h2>Auszahlungen an den Eigentümer</h2></div>
+          <table className="list">
+            <tbody>
+              <tr><td>–</td><td>Ergebnis</td><td className="num">{eur(sE - sA)}</td></tr>
+              {eigRows.map((r) => <tr key={r.nummer}><td>{r.nummer}</td><td>{Number(r.summe) < 0 ? '− ' : '+ '}{r.name}</td><td className={'num ' + (Number(r.summe) < 0 ? 'neg' : '')}>{eur(Math.abs(Number(r.summe)))}</td></tr>)}
+            </tbody>
+            <tfoot><tr><td colSpan={2}>Veränderung des Kontostands</td><td className={'num ' + (sE - sA + sEig < 0 ? 'neg' : '')}>{eur(sE - sA + sEig)}</td></tr></tfoot>
+          </table>
+          <p className="muted small">Auszahlungen an den Eigentümer sind keine Ausgaben. Sie mindern das Ergebnis nicht, nur den Kontostand.</p>
+        </>}
         {weg && rl && <>
           <div className="card-head" style={{ marginTop: 18 }}><h2 className="title-ico"><PiggyBank size={22} />Erhaltungsrücklage {datum(von)} – {datum(bis)}</h2></div>
           <table className="list">
