@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { HashRouter, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import {
   AlarmClock, Banknote, CalendarClock, Bell, Building2, Calendar, ChevronRight, CircleCheck, Columns3, Contact, CreditCard, FolderOpen, LayoutDashboard, Landmark, Lock,
-  Network, Receipt, Search, Settings, SquarePen, UserCog, UserRound, Users,
+  Network, Receipt, Search, Settings, SquarePen, Trash2, UserCog, UserRound, Users,
 } from 'lucide-react';
 import { db, mehrplatz, sicherheit, type Row } from './db';
 import { personLabel } from './db/labels';
@@ -22,6 +22,7 @@ import { NebenkostenPage } from './pages/Nebenkosten';
 import { DokumentePage } from './pages/Dokumente';
 import { EigentuemerAbrechnungPage, WegAbrechnungPage } from './pages/Jahresabrechnungen';
 import { EinstellungenPage, KontenPage, RechnungenPage } from './pages/Konten';
+import { PapierkorbPage } from './pages/Papierkorb';
 import { BeschluessePage, InstandhaltungPage } from './pages/Weg';
 import { AuswertungPage, BerichtePage, JournalPage, RegelnPage } from './pages/Buchhaltung';
 import { ObjektAssistentPage } from './pages/ObjektAssistent';
@@ -201,11 +202,14 @@ function Rahmen() {
   useEffect(() => {
     const f = (e: Event) => { const t = String((e as CustomEvent).detail); setHinweis((h) => [...h, t]); setTimeout(() => setHinweis((h) => h.filter((x) => x !== t)), 12000); };
     window.addEventListener(BANK_INFO, f);
+    // Tägliche Sicherung: beim Start und, falls die App über Mitternacht läuft, stündlich prüfen
+    const sichern = () => { if (sicherheit.aktiv) sicherheit.autoSichern().then((w) => w && f(new CustomEvent(BANK_INFO, { detail: w }))).catch(() => {}); };
     const t = setTimeout(() => {
-      autoAbruf();
+      autoAbruf(); sichern();
       wiederkehrendErzeugen().then((n) => n && f(new CustomEvent(BANK_INFO, { detail: `${n} wiederkehrende Rechnung${n > 1 ? 'en' : ''} angelegt` }))).catch(() => {});
     }, 1500);
-    return () => { window.removeEventListener(BANK_INFO, f); clearTimeout(t); };
+    const stunde = setInterval(sichern, 3600e3);
+    return () => { window.removeEventListener(BANK_INFO, f); clearTimeout(t); clearInterval(stunde); };
   }, []);
   return (
       <div className={'app' + (kompakt ? ' kompakt' : '')}>
@@ -219,9 +223,10 @@ function Rahmen() {
                   ? <NavGroup key={n.label} g={n} kompakt={kompakt} />
                   : <NavEintrag key={n.to} n={n} kompakt={kompakt} />)}
               </div>))}
-            <div className="nav-unten"><NavEintrag n={{ to: '/einstellungen', label: 'Einstellungen', icon: <Settings size={I} /> }} kompakt={kompakt} /></div>
+            <div className="nav-unten"><NavEintrag n={{ to: '/papierkorb', label: 'Papierkorb', icon: <Trash2 size={I} /> }} kompakt={kompakt} />
+              <NavEintrag n={{ to: '/einstellungen', label: 'Einstellungen', icon: <Settings size={I} /> }} kompakt={kompakt} /></div>
           </nav>
-          {hinweis.length > 0 && <div className="toasts">{hinweis.map((t) => <NavLink key={t} to={t.includes("wiederkehrend") ? "/journal" : "/bank"} className="toast" onClick={() => setHinweis((h) => h.filter((x) => x !== t))}><Landmark size={16} />{t}</NavLink>)}</div>}
+          {hinweis.length > 0 && <div className="toasts">{hinweis.map((t) => <NavLink key={t} to={t.includes("wiederkehrend") ? "/journal" : t.includes("Sicherung") ? "/einstellungen" : "/bank"} className="toast" onClick={() => setHinweis((h) => h.filter((x) => x !== t))}><Landmark size={16} />{t}</NavLink>)}</div>}
           <div className="side-foot"><Landmark size={13} /> KMS Immobilienverwaltung · Version 0.2</div>
         </aside>
         <div className="content">
@@ -244,6 +249,7 @@ function Rahmen() {
               <Route path="/rechnungen" element={<RechnungenPage />} />
               <Route path="/konten" element={<KontenPage />} />
               <Route path="/einstellungen" element={<EinstellungenPage />} />
+              <Route path="/papierkorb" element={<PapierkorbPage />} />
               <Route path="/bank" element={<BankPage />} />
               <Route path="/mahnungen" element={<MahnungenPage />} />
               <Route path="/nebenkosten" element={<NebenkostenPage />} />

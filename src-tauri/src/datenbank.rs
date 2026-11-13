@@ -316,6 +316,33 @@ pub fn db_sicherung_erstellen(app: AppHandle, state: tauri::State<'_, DbState>, 
   Ok(ziel.to_string_lossy().into_owned())
 }
 
+/// Tägliche Sicherung zusätzlich in einen gewählten Ordner (USB-Stick, NAS). Der Ordner muss schon da sein
+/// (ist der Stick nicht eingesteckt, wird nichts angelegt). Dort bleiben die letzten `behalten` NEOSS-Sicherungen.
+#[tauri::command]
+pub fn db_sicherung_extern(state: tauri::State<'_, DbState>, ordner_pfad: String, behalten: usize) -> Result<String, String> {
+  let d = PathBuf::from(&ordner_pfad);
+  if ordner_pfad.is_empty() || !d.is_dir() {
+    return Err(format!("Der Sicherungsordner ist nicht erreichbar: {ordner_pfad}"));
+  }
+  let ziel = d.join(format!("NEOSS-Sicherung_{}.nanosicherung", zeitstempel()));
+  {
+    let g = state.0.lock().unwrap();
+    let o = g.as_ref().ok_or("Die Datenbank ist gesperrt.")?;
+    sichern_nach(o, &ziel)?;
+  }
+  let mut alte: Vec<PathBuf> = fs::read_dir(&d).map_err(|e| e.to_string())?
+    .filter_map(|e| e.ok().map(|e| e.path()))
+    .filter(|p| p.extension().map_or(false, |x| x == "nanosicherung")
+      && p.file_name().map_or(false, |n| n.to_string_lossy().starts_with("NEOSS-Sicherung_")))
+    .collect();
+  alte.sort_by_key(|p| zeit_schluessel(&p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()));
+  let behalten = behalten.max(1);
+  while alte.len() > behalten {
+    let _ = fs::remove_file(alte.remove(0));
+  }
+  Ok(ziel.to_string_lossy().into_owned())
+}
+
 #[tauri::command]
 pub fn db_sicherungen(app: AppHandle) -> Result<Vec<Sicherung>, String> {
   let d = sicherungsordner(&app)?;

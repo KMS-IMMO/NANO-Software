@@ -221,7 +221,26 @@ export const sicherheit = {
     // Ablageordner aus den Einstellungen für Dateizugriff freigeben, tägliche Sicherung anlegen
     const a = (await d.select(`SELECT wert FROM einstellungen WHERE schluessel = 'ablage_pfad'`, []))[0]?.wert;
     if (a) await invoke('ablage_freigeben', { pfad: String(a) }).catch(() => {});
-    await invoke('db_auto_sicherung').catch(() => {});
+    await sicherheit.autoSichern().catch(() => null);
+    import('./papierkorb').then((m) => m.aufraeumen()).catch(() => {});
+  },
+  /** Tägliche Sicherung: im App-Ordner und, falls eingestellt, zusätzlich auf USB-Stick/NAS. Gibt eine Warnung zurück, wenn etwas nicht klappt. */
+  async autoSichern(): Promise<string | null> {
+    await invoke('db_auto_sicherung');
+    const e = Object.fromEntries((await db.select(`SELECT schluessel, wert FROM einstellungen WHERE schluessel IN ('sicherung_extern_pfad', 'sicherung_extern_letzte')`)).map((r) => [r.schluessel, r.wert]));
+    const pfad = String(e.sicherung_extern_pfad ?? '').trim();
+    const heute = new Date().toLocaleDateString('sv-SE');
+    if (!pfad || e.sicherung_extern_letzte === heute) return null;
+    const merken = (k: string, v: string) => db.execute(`INSERT INTO einstellungen (schluessel, wert) VALUES ($1, $2) ON CONFLICT (schluessel) DO UPDATE SET wert = excluded.wert`, [k, v]);
+    try {
+      await invoke('db_sicherung_extern', { ordnerPfad: pfad, behalten: 30 });
+      await merken('sicherung_extern_letzte', heute); await merken('sicherung_extern_fehler', '');
+      return null;
+    } catch (x) {
+      await merken('sicherung_extern_fehler', String((x as Error)?.message ?? x));
+      const tage = e.sicherung_extern_letzte ? Math.round((Date.parse(heute) - Date.parse(String(e.sicherung_extern_letzte))) / 864e5) : 0;
+      return tage >= 3 || !e.sicherung_extern_letzte ? `Sicherung auf USB-Stick/NAS nicht möglich${tage ? ` (seit ${tage} Tagen)` : ''}: Ordner nicht erreichbar` : null;
+    }
   },
   async sperren() {
     ready = null;
@@ -267,8 +286,10 @@ export async function update(table: string, id: number, values: Row) {
   const sql = `UPDATE ${table} SET ${keys.map((k, i) => `${k} = $${i + 1}`).join(', ')} WHERE id = $${keys.length + 1}`;
   await db.execute(sql, [...keys.map((k) => values[k]), id]);
 }
+/** Löschen über den Papierkorb: 30 Tage wiederherstellbar */
 export async function remove(table: string, id: number) {
-  await db.execute(`DELETE FROM ${table} WHERE id = $1`, [id]);
+  const { loeschen } = await import('./papierkorb');
+  await loeschen(table, id);
 }
 
 // Beispieldaten nur für die Browser-Vorschau

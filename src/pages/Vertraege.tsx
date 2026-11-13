@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { loeschen as inPapierkorb } from '../db/papierkorb';
 import { FileText, FileUp, Paperclip, Trash2, IdCard } from 'lucide-react';
 import { StammdatenKarte, personFelder, personWerte, personAenderungen, type SGruppe } from '../components/Stammdaten';
 import { speichern } from '../lib/dateien';
@@ -270,7 +271,7 @@ function VertragDokumente({ vertragId }: { vertragId: number }) {
   }
   async function loeschen(d: Row) {
     if (!confirm(`„${d.dateiname}“ aus der Liste entfernen? Die Datei in der Ablage bleibt erhalten.`)) return;
-    await db.execute('DELETE FROM dokumente WHERE id = $1', [d.id]); load();
+    await inPapierkorb('dokumente', d.id); load();
   }
   return (
     <section className="card">

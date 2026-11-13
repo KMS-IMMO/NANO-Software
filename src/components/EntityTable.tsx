@@ -155,7 +155,7 @@ export function EntityTable({ title, table, fields, listSql, listParams = [], fi
   async function del() {
     if (!editing?.id) return;
     if (onDelete) { const r = editing; setEditing(null); onDelete(r); return; }
-    if (!window.confirm('Datensatz wirklich löschen?')) return;
+    if (!window.confirm('Datensatz löschen? Er liegt danach 30 Tage im Papierkorb und lässt sich dort wiederherstellen.')) return;
     try {
       await remove(table, editing.id);
       setEditing(null);

@@ -1,6 +1,7 @@
 // Eigentümerversammlung (WEG): Liste, Einberufen-Assistent (Termin → Tagesordnung → Einladung)
 // und Live-Versammlung (Anwesenheit → Abstimmung → Niederschrift mit Unterschrift zur Kenntnisnahme).
 import './versammlung.css';
+import { loeschen as inPapierkorb } from '../db/papierkorb';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { ArrowDown, ArrowUp, CalendarDays, Check, Eye, FileDown, Mail, Pencil, Play, Plus, Printer, Trash2, X } from 'lucide-react';
@@ -63,7 +64,7 @@ export function VersammlungListe({ objektId, umlauf }: { objektId: number; umlau
   useEffect(() => { laden(); }, [objektId, umlauf]);
   async function loeschen(r: Row) {
     if (!confirm(`${r.art} vom ${dDatum(r.datum)} löschen? Beschlüsse in der Beschluss-Sammlung bleiben erhalten.`)) return;
-    await db.execute('DELETE FROM versammlungen WHERE id = $1', [r.id]); laden();
+    await inPapierkorb('versammlungen', r.id, 'Eigentümerversammlung', `${r.art} vom ${dDatum(r.datum)}`); laden();
   }
   return (
     <div className="ev ev-anim">

@@ -1,5 +1,6 @@
 // Dokumentenablage je Objekt, Einheit, Person, Mietvertrag oder Firma mit eigenen Ordnervorlagen.
 import { useEffect, useRef, useState } from 'react';
+import { loeschen as inPapierkorb } from '../db/papierkorb';
 import { db, type Row } from '../db';
 import { useObjektKontext } from '../logic/objektKontext';
 import { datum } from '../components/EntityTable';
@@ -106,7 +107,7 @@ export function DokumentePage() {
 
   async function entfernen(d: Row) {
     if (!window.confirm(`„${d.dateiname}“ aus der Liste entfernen? Die Datei selbst bleibt im Ordner erhalten.`)) return;
-    await db.execute('DELETE FROM dokumente WHERE id = $1', [d.id]);
+    await inPapierkorb('dokumente', d.id);
     load();
   }
 

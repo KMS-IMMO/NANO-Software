@@ -1,6 +1,7 @@
 // Bankimport: Kontoauszüge aus dem Online-Banking (CAMT.053/.052 als XML, oder CSV)
 // einlesen und Zahlungen automatisch offenen Posten bzw. Rechnungen zuordnen.
 import { db, insert, type Row } from '../db';
+import { ablegen, erfassen } from '../db/papierkorb';
 import { KONTO_FUER_ART, OP_SQL } from './soll';
 
 export interface Umsatz {
@@ -361,6 +362,12 @@ export async function umsaetzeLoeschen(ids: number[]) {
     await invoke('db_sicherung_erstellen', { ordnerPfad: null }).catch(() => {});
   }
   const konten = new Set<number>();
+  const L = ids.map((x) => Math.trunc(Number(x))).join(',') || 'NULL';
+  const inhalt = await erfassen([{ t: 'bankumsaetze', where: `id IN (${L})` }, { t: 'buchungen', where: `bankumsatz_id IN (${L})` }]);
+  inhalt.wieder = (await db.select(`SELECT id, anfangssaldo, saldo_datum FROM bankkonten WHERE id IN (SELECT bankkonto_id FROM bankumsaetze WHERE id IN (${L}))`))
+    .map((k) => ({ sql: 'UPDATE bankkonten SET anfangssaldo = $1, saldo_datum = $2 WHERE id = $3', params: [k.anfangssaldo, k.saldo_datum, k.id] }));
+  for (const r of await db.select(`SELECT id, bezahlt_am FROM rechnungen WHERE id IN (SELECT rechnung_id FROM buchungen WHERE bankumsatz_id IN (${L}))`))
+    inhalt.wieder.push({ sql: 'UPDATE rechnungen SET bezahlt_am = $1 WHERE id = $2', params: [r.bezahlt_am, r.id] });
   for (const id of ids) {
     const k = (await db.select('SELECT bankkonto_id FROM bankumsaetze WHERE id = $1', [id]))[0]?.bankkonto_id;
     if (k) konten.add(k);
@@ -371,6 +378,8 @@ export async function umsaetzeLoeschen(ids: number[]) {
     const rest = await db.select('SELECT 1 FROM bankumsaetze WHERE bankkonto_id = $1 LIMIT 1', [k]);
     if (!rest.length) await db.execute('UPDATE bankkonten SET anfangssaldo = 0, saldo_datum = NULL WHERE id = $1', [k]);
   }
+  const u = inhalt.gruppen[0]?.rows ?? [];
+  await ablegen(u.length > 1 ? `Bankumsätze (${u.length})` : 'Bankumsatz', u.length === 1 ? [u[0].gegenpartei, u[0].verwendungszweck].filter(Boolean).join(' · ') : `${u.length} Umsätze`, inhalt);
 }
 
 /** Startsaldo aus dem Kontoauszug übernehmen, wenn das Konto noch keine Umsätze hat (erster Import oder nach dem Löschen) */

@@ -3,6 +3,7 @@
 // Der Verteilerschlüssel wird je Konto für das Abrechnungsjahr gewählt.
 // Beträge lassen sich hier direkt ändern, löschen und neu hinzufügen (als Buchung auf das Konto der Liegenschaft).
 import { BetragFeld } from './BetragFeld';
+import { loeschen as inPapierkorb } from '../db/papierkorb';
 import { Fragment, useEffect, useState, type ReactNode } from 'react';
 import { Check, ChevronDown, ChevronRight, Pencil, Plus, Trash2, X } from 'lucide-react';
 import { db, type Row } from '../db';
@@ -47,7 +48,7 @@ async function belegSpeichern(b: Row, e: Entwurf, ausgabe: boolean) {
   else await db.execute('UPDATE buchungen SET betrag = $1, text = $2, datum = $3 WHERE id = $4', [ausgabe ? -betrag : betrag, e.text || null, e.datum, b.id]);
 }
 async function belegLoeschen(b: Row) {
-  if (keyVon(b)[0] === 'r') await db.execute('DELETE FROM rechnungen WHERE id = $1', [b.id]);
+  if (keyVon(b)[0] === 'r') await inPapierkorb('rechnungen', Number(b.id));
   else await buchungLoeschen(Number(b.id), { mitRechnung: true });   // Kosten verschwinden ganz aus der Abrechnung
 }
 

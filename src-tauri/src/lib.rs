@@ -24,7 +24,7 @@ pub fn run() {
       bank::bank_start, bank::bank_abholen, bank::bank_abbrechen, bank::bank_pin_vorhanden, bank::bank_pin_loeschen,
       datenbank::db_status, datenbank::db_einrichten, datenbank::db_oeffnen, datenbank::db_sperren,
       datenbank::db_passwort_aendern, datenbank::db_select, datenbank::db_select_lesend, datenbank::db_execute,
-      datenbank::db_auto_sicherung, datenbank::db_sicherung_erstellen, datenbank::db_sicherungen, datenbank::db_wiederherstellen,
+      datenbank::db_auto_sicherung, datenbank::db_sicherung_erstellen, datenbank::db_sicherung_extern, datenbank::db_sicherungen, datenbank::db_wiederherstellen,
       ablage_freigeben, server::server_anfrage, ocr::ocr_bild
     ])
     .setup(|app| {

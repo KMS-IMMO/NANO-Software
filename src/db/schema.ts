@@ -731,4 +731,14 @@ INSERT INTO top_vorlagen (art, nr, titel, antrag, beschluss, bedingung) VALUES
  ('Außerordentliche Versammlung', 2, 'Verschiedenes', NULL, 0, NULL),
  ('Umlaufbeschluss', 1, 'Beschluss im Umlaufverfahren', 'Die Eigentümer beschließen in Textform (§ 23 Abs. 3 WEG): …', 1, NULL);
 `,
+  // 27: Papierkorb – gelöschte Datensätze 30 Tage wiederherstellbar
+  `
+CREATE TABLE papierkorb (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  art TEXT NOT NULL,                   -- z. B. Mietvertrag, Kontakt, Liegenschaft
+  bezeichnung TEXT,
+  geloescht_am TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+  daten TEXT NOT NULL                  -- JSON: gelöschte Zeilen je Tabelle und geleerte Verweise
+);
+`,
 ];
