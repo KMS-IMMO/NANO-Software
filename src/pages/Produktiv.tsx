@@ -69,7 +69,7 @@ export function KalenderPage() {
         .map((t) => ({ datum: t.datum, titel: t.titel + (t.objekt ? ` · ${t.objekt}` : ''), art: t.art || 'Termin', termin: t, uhrzeit: t.uhrzeit, cls: terminKlasse(t.art) })),
       ...(await q(`SELECT * FROM erinnerungen WHERE erledigt = 0 AND faellig BETWEEN $1 AND $2`)).map((r) => ({ datum: r.faellig, titel: r.titel, art: 'Erinnerung', ziel: '/erinnerungen', uhrzeit: r.uhrzeit })),
       ...(await q(`SELECT v.*, o.name AS objekt FROM versammlungen v JOIN objekte o ON o.id = v.objekt_id WHERE v.datum BETWEEN $1 AND $2`))
-        .map((v) => ({ datum: v.datum, titel: `${v.art} ${v.objekt}${v.status === 'Durchgeführt' ? ' ✓' : ''}`, art: 'Eigentümerversammlung', ziel: `/objekte/${v.objekt_id}/beschluesse`, uhrzeit: v.uhrzeit, cls: 'ta-versammlung' })),
+        .map((v) => ({ datum: v.datum, titel: `${v.art} ${v.objekt}${v.status === 'Durchgeführt' ? ' ✓' : ''}`, art: 'Eigentümerversammlung', ziel: `/objekte/${v.objekt_id}/versammlungen/${v.id}`, uhrzeit: v.uhrzeit, cls: 'ta-versammlung' })),
       ...(await q(`SELECT v.*, o.name AS objekt FROM vorgaenge v JOIN objekte o ON o.id = v.objekt_id WHERE v.status <> 'Erledigt' AND v.faellig BETWEEN $1 AND $2`))
         .map((v) => ({ datum: v.faellig, titel: `${v.betreff} · ${v.objekt}`, art: 'Instandhaltung', ziel: `/objekte/${v.objekt_id}/instandhaltung` })),
       ...(await q(`SELECT r.*, f.name AS firma FROM rechnungen r LEFT JOIN firmen f ON f.id = r.firma_id WHERE r.bezahlt_am IS NULL AND r.faellig BETWEEN $1 AND $2`))
