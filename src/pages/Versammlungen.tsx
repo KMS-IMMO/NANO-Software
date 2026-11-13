@@ -9,7 +9,7 @@ import { EntityTable, datum as fDatum } from '../components/EntityTable';
 import { dDatum } from '../lib/pdf';
 import { freistellen } from '../lib/unterschrift';
 import { oeffnen, speichern as dateiSpeichern } from '../lib/dateien';
-import { einladungPdf, niederschriftPdf } from '../lib/versammlungPdf';
+import { einladungPdf, niederschriftPdf, vollmachtPdf } from '../lib/versammlungPdf';
 import {
   ARTEN, abschliessen, beschlussFesthalten, einladenBis, ergebnis, nummerieren, plusMonate, stimmeSetzen, tagesordnungVorschlag,
   teilnehmerAbgleichen, versammlungLaden, versammlungSpeichern, type Stimme, type Top, type Versammlung,
@@ -109,6 +109,7 @@ function Einberufen({ objektId, id }: { objektId: number; id?: number }) {
   const [info, setInfo] = useState('');
   const [busy, setBusy] = useState(false);
   const [vorlageArt, setVorlageArt] = useState('');
+  const [dateien, setDateien] = useState<Record<number, { einladung: string; vollmacht?: string }>>({});
 
   useEffect(() => {
     (async () => {
@@ -148,22 +149,32 @@ function Einberufen({ objektId, id }: { objektId: number; id?: number }) {
     setBusy(false);
   }
   async function vorschau() { if (vs) setPdf(pdfUrl(await einladungPdf(vs))); }
+  async function vollmachtVorschau(pid?: number) { if (vs) setPdf(pdfUrl(await vollmachtPdf(vs, pid))); }
   async function versenden() {
     if (!vs || !vid) return;
     setBusy(true);
     try {
-      const bytes = await einladungPdf(vs);
-      const name = `Einladung ${w.art} ${dDatum(w.datum)} ${vs.v.objekt}.pdf`;
-      const pfad = await dateiSpeichern(bytes, name, { bezug: 'Objekt', bezugId: objektId, ordner: [vs.v.objekt, 'Eigentümerversammlung', w.datum] });
+      const ablage = { bezug: 'Objekt' as const, bezugId: objektId, ordner: [vs.v.objekt, 'Eigentümerversammlung', w.datum] };
+      // Sammel-PDF zum Drucken (Einladung und Vollmacht je Eigentümer) und je Eigentümer zwei Dateien zum Versenden
+      const pfad = await dateiSpeichern(await einladungPdf(vs), `Einladungen ${w.art} ${dDatum(w.datum)} ${vs.v.objekt} (zum Drucken).pdf`, ablage);
+      const neu: Record<number, { einladung: string; vollmacht?: string }> = {};
+      for (const t of vs.teilnehmer) {
+        const n = nameKurz(t);
+        neu[t.person_id] = {
+          einladung: await dateiSpeichern(await einladungPdf(vs, t.person_id, false), `Einladung ${dDatum(w.datum)} ${n}.pdf`, ablage),
+          vollmacht: umlauf ? undefined : await dateiSpeichern(await vollmachtPdf(vs, t.person_id), `Vollmacht ${dDatum(w.datum)} ${n}.pdf`, ablage),
+        };
+      }
+      setDateien(neu);
       await db.execute(`UPDATE versammlungen SET status = CASE WHEN status = 'Geplant' THEN 'Eingeladen' ELSE status END, eingeladen_am = $1 WHERE id = $2`, [heute(), vid]);
-      setInfo(`Einladung abgelegt unter ${vs.v.objekt}/Eigentümerversammlung/${w.datum}. Eigentümer mit E-Mail kannst du direkt anschreiben, für alle anderen ist das PDF zum Drucken geöffnet.`);
+      setInfo(`Abgelegt unter ${vs.v.objekt}/Eigentümerversammlung/${w.datum}: je Eigentümer die Einladung${umlauf ? '' : ' und die Vollmacht als eigene Datei zum Anhängen an die E-Mail'}, dazu ein Sammel-PDF zum Drucken für den Postversand (jetzt geöffnet).`);
       oeffnen(pfad);
       setVs(await versammlungLaden(vid));
     } catch (e: any) { setInfo('Fehler: ' + (e?.message ?? e)); }
     setBusy(false);
   }
   const mail = (t: Row) => `mailto:${t.email}?subject=${encodeURIComponent(`Einladung ${w.art} ${vs?.v.objekt ?? ''} am ${dDatum(w.datum)}`)}&body=${encodeURIComponent(
-    `Guten Tag,\n\nanbei erhalten Sie die Einladung zur ${w.art} am ${dDatum(w.datum)}${w.uhrzeit ? ` um ${w.uhrzeit} Uhr` : ''}${w.ort ? ` (${w.ort})` : ''} mit Tagesordnung und Vollmacht.\n\nMit freundlichen Grüßen`)}`;
+    `Guten Tag,\n\nanbei erhalten Sie die Einladung zur ${w.art} am ${dDatum(w.datum)}${w.uhrzeit ? ` um ${w.uhrzeit} Uhr` : ''}${w.ort ? ` (${w.ort})` : ''} mit Tagesordnung.${umlauf ? '' : '\n\nSollten Sie nicht teilnehmen können, nutzen Sie bitte das beigefügte Vollmachtsformular. Die Vollmacht bedarf nur der Textform (§ 25 Abs. 3 WEG): Ein ausgefülltes Foto, ein Scan oder eine Antwort auf diese E-Mail genügt.'}\n\nMit freundlichen Grüßen`)}`;
 
   const steps = ['Termin', 'Tagesordnung', umlauf ? 'Anschreiben' : 'Einladung'];
   return (
@@ -224,9 +235,13 @@ function Einberufen({ objektId, id }: { objektId: number; id?: number }) {
       {schritt === 3 && vs && <div className="ev-vorl ev-anim">
         <section className="ev-glas">
           <h3 style={{ marginTop: 0 }}>{umlauf ? 'Anschreiben an die Eigentümer' : 'Einladung an die Eigentümer'}</h3>
-          <p className="ev-sub">Für jeden Eigentümer entsteht ein Brief auf dem Briefpapier mit Tagesordnung und Beschlussanträgen{umlauf ? '' : ', dazu eine vorausgefüllte Vollmacht'}. Alle Briefe liegen in einem PDF.</p>
+          <p className="ev-sub">Für jeden Eigentümer entsteht die Einladung auf dem Briefpapier mit Tagesordnung und Beschlussanträgen{umlauf ? '' : <>, dazu eine <b>vorausgefüllte Vollmacht als eigene Datei</b> (Textform nach § 25 Abs. 3 WEG, mit Weisungen je TOP)</>}. Für den Postversand gibt es alles zusätzlich in einem PDF zum Drucken.</p>
           <div className="ev-empf">{vs.teilnehmer.map((t) => (
-            <div key={t.id}><span className="ev-av s">{kuerzel(t)}</span><b>{t.name}</b><span>{t.einheiten} · {t.email ? <a href={mail(t)}><Mail size={13} /> E-Mail</a> : 'Post (PDF drucken)'}</span></div>))}
+            <div key={t.id}><span className="ev-av s">{kuerzel(t)}</span><b>{t.name}</b><span>{t.einheiten} · {t.email ? <a href={mail(t)}><Mail size={13} /> E-Mail</a> : 'Post (PDF drucken)'}</span>
+              {dateien[t.person_id] ? <>
+                <button className="ev-tag i" title="Einladung öffnen" onClick={() => oeffnen(dateien[t.person_id].einladung)}>Einladung</button>
+                {dateien[t.person_id].vollmacht && <button className="ev-tag i" title="Vollmacht öffnen" onClick={() => oeffnen(dateien[t.person_id].vollmacht!)}>Vollmacht</button>}</>
+                : !umlauf && <button className="ev-tag i" title="Vollmacht ansehen" onClick={() => vollmachtVorschau(t.person_id)}>Vollmacht</button>}</div>))}
             {vs.teilnehmer.length === 0 && <p className="ev-hinweis">Für diesen Tag sind keine Eigentümer eingetragen. Bitte zuerst unter „Eigentümer“ die Einheiten zuordnen.</p>}
           </div>
           {vs.v.eingeladen_am && <p className="ev-hinweis" style={{ marginTop: 12 }}>Eingeladen am {dDatum(vs.v.eingeladen_am)}.</p>}
@@ -234,6 +249,7 @@ function Einberufen({ objektId, id }: { objektId: number; id?: number }) {
             <button className="ev-ghost" onClick={() => setSchritt(2)}>← Tagesordnung</button>
             <span style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
               <button className="ev-ghost" onClick={vorschau}><Eye size={15} />PDF-Vorschau</button>
+              {!umlauf && <button className="ev-ghost" onClick={() => vollmachtVorschau()}><Eye size={15} />Vollmachten</button>}
               <button className="ev-cta" disabled={busy || !vs.teilnehmer.length} onClick={versenden}><FileDown size={16} />{umlauf ? 'Anschreiben erstellen' : 'Einladung erstellen'}</button>
               {vs.v.eingeladen_am && <button className="ev-ghost" onClick={() => nav(`/objekte/${objektId}/versammlungen/${vid}`)}>Zur Versammlung →</button>}
             </span>

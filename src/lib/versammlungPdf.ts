@@ -1,7 +1,8 @@
 // PDFs zur Eigentümerversammlung auf dem Briefpapier: Einladung mit Tagesordnung und Vollmacht,
 // Protokoll und Beschluss-Niederschrift je Eigentümer mit Feld zur Kenntnisnahme.
+import autoTable from 'jspdf-autotable';
 import type { Row } from '../db';
-import { Brief, absender, dDatum } from './pdf';
+import { Brief, absender, dDatum, type Absender } from './pdf';
 import { ergebnis, einladenBis, type Versammlung } from '../logic/versammlung';
 
 const anschrift = (p: Row, o: Row) => {
@@ -14,18 +15,19 @@ const weg = (v: Row) => String(v.objekt).replace(/^WEG\s+/i, 'WEG ');
 const anredeZeile = (p: Row) => p.anrede === 'Herr' ? `Sehr geehrter Herr ${p.nachname ?? ''},` : p.anrede === 'Frau' ? `Sehr geehrte Frau ${p.nachname ?? ''},` : 'Sehr geehrte Damen und Herren,';
 
 /** Farbig hinterlegter Kasten (z. B. Beschluss), Text bricht um */
-function kasten(b: Brief, zeilen: { text: string; fett?: boolean; farbe?: [number, number, number]; klein?: boolean }[], fill: [number, number, number], rand: [number, number, number]) {
+function kasten(b: Brief, zeilen: { text: string; fett?: boolean; farbe?: [number, number, number]; klein?: boolean }[], fill: [number, number, number], rand: [number, number, number], fein = false) {
   const d = b.doc;
-  const teile = zeilen.map((z) => { d.setFont('helvetica', z.fett ? 'bold' : 'normal'); d.setFontSize(z.klein ? 8.5 : 9.8); return { ...z, l: d.splitTextToSize(z.text, 160) as string[] }; });
-  const h = teile.reduce((a, t) => a + t.l.length * (t.klein ? 4 : 4.6), 0) + 5;
-  b.platz(h + 3);
+  const gr = (k?: boolean) => fein ? 7.6 : k ? 8.5 : 9.8, zh = (k?: boolean) => fein ? 3.4 : k ? 4 : 4.6;
+  const teile = zeilen.map((z) => { d.setFont('helvetica', z.fett ? 'bold' : 'normal'); d.setFontSize(gr(z.klein)); return { ...z, l: d.splitTextToSize(z.text, fein ? 162 : 160) as string[] }; });
+  const h = teile.reduce((a, t) => a + t.l.length * zh(t.klein), 0) + 5;
+  b.platz(fein ? h - 3 : h + 3);
   d.setFillColor(...fill); d.roundedRect(20, b.y - 4, 170, h, 1.5, 1.5, 'F');
   d.setFillColor(...rand); d.rect(20, b.y - 4, 1.2, h, 'F');
   let y = b.y + 0.4;
   for (const t of teile) {
-    d.setFont('helvetica', t.fett ? 'bold' : 'normal'); d.setFontSize(t.klein ? 8.5 : 9.8);
+    d.setFont('helvetica', t.fett ? 'bold' : 'normal'); d.setFontSize(gr(t.klein));
     d.setTextColor(...(t.farbe ?? [25, 25, 25]));
-    d.text(t.l, 25, y); y += t.l.length * (t.klein ? 4 : 4.6);
+    d.text(t.l, 25, y); y += t.l.length * zh(t.klein);
   }
   d.setFont('helvetica', 'normal'); d.setFontSize(10.5); d.setTextColor(0);
   b.y += h + 2;
@@ -49,7 +51,7 @@ function klein(b: Brief, text: string, farbe = 85) {
 }
 
 /* ============ Einladung ============ */
-export async function einladungPdf(vs: Versammlung, nurPerson?: number): Promise<Uint8Array> {
+export async function einladungPdf(vs: Versammlung, nurPerson?: number, mitVollmacht = true): Promise<Uint8Array> {
   const abs = await absender();
   const b = new Brief(abs);
   const { v } = vs;
@@ -75,23 +77,11 @@ export async function einladungPdf(vs: Versammlung, nurPerson?: number): Promise
       b.y += 1;
     }
     if (!umlauf) {
-      b.absatz('Sollten Sie nicht teilnehmen können, können Sie sich durch eine Person Ihres Vertrauens vertreten lassen. Bitte geben Sie ihr die beiliegende Vollmacht in Textform mit.', 4);
+      b.absatz('Sollten Sie nicht teilnehmen können, können Sie sich durch eine Person Ihres Vertrauens vertreten lassen. Dafür liegt dieser Einladung ein vorausgefülltes Vollmachtsformular bei (§ 25 Abs. 3 WEG: Textform genügt).', 4);
       b.absatz('Die Unterlagen zu den Tagesordnungspunkten (z. B. Jahresabrechnung, Wirtschaftsplan, Angebote) senden wir Ihnen mit oder legen sie in der Versammlung vor.');
     }
     b.gruss();
-    if (!umlauf) {
-      // Vollmacht
-      b.doc.addPage(); b.y = b.obenFolge + 8;
-      b.doc.setFont('helvetica', 'bold'); b.doc.setFontSize(15); b.doc.text('Vollmacht', 20, b.y); b.y += 10;
-      b.doc.setFont('helvetica', 'normal'); b.doc.setFontSize(10.5);
-      b.absatz(`Ich, ${[t.vorname, t.nachname].filter(Boolean).join(' ') || t.name}, Eigentümer${t.einheiten ? ` von ${t.einheiten}` : ''} in der ${weg(v)}, bevollmächtige`);
-      b.y += 12; b.doc.setDrawColor(120); b.doc.line(20, b.y, 190, b.y); b.y += 4;
-      klein(b, 'Name und Anschrift der bevollmächtigten Person');
-      b.absatz(`mich in der Eigentümerversammlung am ${dDatum(v.datum)} zu vertreten und mein Stimmrecht zu allen Tagesordnungspunkten auszuüben.`);
-      b.absatz('Weisungen (optional): ________________________________________________', 14);
-      b.doc.line(20, b.y, 85, b.y); b.doc.line(105, b.y, 190, b.y); b.y += 4;
-      b.doc.setFontSize(8.5); b.doc.setTextColor(95); b.doc.text('Ort, Datum', 20, b.y); b.doc.text('Unterschrift', 105, b.y); b.doc.setTextColor(0); b.doc.setFontSize(10.5);
-    }
+    if (!umlauf && mitVollmacht) vollmachtSeite(b, vs, t, abs);
   }
   return b.seitenzahlen().bytes();
 }
@@ -179,6 +169,75 @@ export async function niederschriftPdf(vs: Versammlung, nurPersonen?: number[]):
     d.setTextColor(0); d.setFontSize(10.5);
     b.y += hK + 4;
   }
+  return b.seitenzahlen().bytes();
+}
+
+/* ============ Vollmacht (§ 25 Abs. 3 WEG) ============ */
+const art = (v: Row) => v.art === 'Außerordentliche Versammlung' ? 'außerordentlichen Eigentümerversammlung' : 'ordentlichen Eigentümerversammlung';
+
+function kaestchen(b: Brief, x: number, y: number) { b.doc.setDrawColor(90); b.doc.setLineWidth(0.3); b.doc.rect(x, y - 3.2, 3.6, 3.6); }
+
+/** Vorausgefüllte Vollmacht je Eigentümer: Bevollmächtigter zum Ankreuzen, Weisungen je Beschluss-TOP, Hinweise zur Textform */
+function vollmachtSeite(b: Brief, vs: Versammlung, t: Row, abs: Absender) {
+  const { v } = vs, d = b.doc;
+  const name = [t.vorname, t.nachname].filter(Boolean).join(' ') || t.firma || t.name;
+  b.neuerBrief();
+  b.berichtKopf('Vollmacht', [`für die ${art(v)}`, `${weg(v)}, ${[v.o_strasse, [v.o_plz, v.o_ort].filter(Boolean).join(' ')].filter(Boolean).join(', ')}`,
+    `am ${dDatum(v.datum)}${v.uhrzeit ? `, ${v.uhrzeit} Uhr` : ''}${v.ort ? `, ${v.ort}` : ''}`], new Date().toISOString().slice(0, 10));
+  b.abschnitt('Vollmachtgeber');
+  b.y += 1;
+  b.felder([['Eigentümer', name], ['Einheit', t.einheiten || '–'], ['Anschrift', [t.strasse, [t.plz, t.ort].filter(Boolean).join(' ')].filter(Boolean).join(', ') || '–'], ['Miteigentumsanteil', t.mea ? `${zahl(Number(t.mea))} MEA` : '–']]);
+  b.abschnitt('Ich bevollmächtige');
+  b.y += 3;
+  const wahl = [
+    `die Verwaltung (${abs.name}${abs.unterschrift?.name ? `, ${abs.unterschrift.name}` : ''})`,
+    'den Vorsitz des Verwaltungsbeirats',
+    'folgende Person:',
+  ];
+  for (const w of wahl) { b.platz(8); kaestchen(b, 20, b.y); d.setFontSize(10); d.text(w, 26, b.y); b.y += 6; }
+  d.setDrawColor(130); d.setLineWidth(0.2);
+  b.y += 4; d.line(26, b.y, 190, b.y); b.y += 3.5; d.setFontSize(8); d.setTextColor(110); d.text('Vor- und Nachname, Anschrift der bevollmächtigten Person', 26, b.y); d.setTextColor(0); d.setFontSize(10.5);
+  b.y += 6;
+  b.absatz(`mich in der ${art(v)} am ${dDatum(v.datum)} zu vertreten und mein Stimmrecht zu allen Tagesordnungspunkten auszuüben. Die Vollmacht gilt auch für eine Fortsetzung oder Wiederholung dieser Versammlung mit derselben Tagesordnung.`, 4);
+  const beschl = vs.tops.filter((x) => x.beschluss);
+  if (beschl.length) {
+    b.abschnitt('Weisungen (optional)');
+    b.y += 1;
+    autoTable(d, {
+      startY: b.y, head: [['TOP', 'Ja', 'Nein', 'Enth.', 'frei']],
+      body: beschl.map((x) => [`TOP ${x.nr} · ${x.titel}`, '', '', '', '']),
+      margin: { left: 20, right: 20, top: b.abs.briefpapier ? b.obenFolge : 18, bottom: b.abs.briefpapier ? 297 - b.grenzeUnten : 18 },
+      theme: 'grid', styles: { font: 'helvetica', fontSize: 8.6, cellPadding: 1.3, lineColor: [228, 222, 211], lineWidth: 0.15, textColor: 25 },
+      headStyles: { fillColor: [176, 138, 74], textColor: 255, fontStyle: 'bold', halign: 'center' },
+      columnStyles: { 0: { cellWidth: 118 }, 1: { cellWidth: 13 }, 2: { cellWidth: 13 }, 3: { cellWidth: 13 }, 4: { cellWidth: 13 } },
+      didParseCell: (h) => { if (h.section === 'head' && h.column.index === 0) h.cell.styles.halign = 'left'; },
+      didDrawCell: (h) => {
+        if (h.section !== 'body' || h.column.index === 0) return;
+        d.setDrawColor(90); d.setLineWidth(0.3); d.rect(h.cell.x + h.cell.width / 2 - 1.8, h.cell.y + h.cell.height / 2 - 1.8, 3.6, 3.6);
+      },
+    });
+    b.y = (d as any).lastAutoTable.finalY + 3;
+    klein(b, '„frei“ oder ohne Kreuz: Die bevollmächtigte Person entscheidet nach eigenem Ermessen. Angekreuzte Weisungen sind für sie verbindlich.');
+  }
+  b.platz(14); kaestchen(b, 20, b.y); d.setFontSize(10); d.text('Die bevollmächtigte Person darf Untervollmacht erteilen.', 26, b.y); b.y += 4;
+  // Unterschrift
+  b.platz(24); b.y += 8;
+  d.setDrawColor(60); d.setLineWidth(0.25); d.line(20, b.y, 80, b.y); d.line(95, b.y, 190, b.y);
+  d.setFontSize(8); d.setTextColor(95); d.text('Ort, Datum', 20, b.y + 4); d.text(`${name} (Unterschrift oder Name)`, 95, b.y + 4); d.setTextColor(0); d.setFontSize(10.5);
+  b.y += 11;
+  kasten(b, [
+    { text: 'Rechtliche Hinweise', fett: true, klein: true, farbe: [150, 112, 52] },
+    { text: '• Form: Textform genügt (§ 25 Abs. 3 WEG, § 126b BGB). Ihr Name muss erkennbar sein, eine eigenhändige Unterschrift ist nicht nötig; Foto, Scan, Fax oder E-Mail reichen aus.', klein: true },
+    { text: `• Vorlage: Bitte senden Sie die Vollmacht vor der Versammlung an ${abs.name}${abs.email ? ` (${abs.email})` : ''} oder geben Sie sie der bevollmächtigten Person mit. Ohne Nachweis kann die Versammlungsleitung den Vertreter zurückweisen.`, klein: true },
+    { text: '• Vertreter: Ihre Gemeinschaftsordnung kann den Kreis möglicher Vertreter beschränken, z. B. auf Ehegatten, Miteigentümer oder die Verwaltung.', klein: true },
+    { text: '• Geltung: Nur für diese Versammlung, jederzeit widerruflich. Ein Stimmrechtsausschluss (§ 25 Abs. 4 WEG) gilt auch für die bevollmächtigte Person.', klein: true },
+  ], [250, 246, 238], [176, 138, 74], true);
+}
+
+export async function vollmachtPdf(vs: Versammlung, nurPerson?: number): Promise<Uint8Array> {
+  const abs = await absender();
+  const b = new Brief(abs);
+  for (const t of vs.teilnehmer.filter((x) => !nurPerson || x.person_id === nurPerson)) vollmachtSeite(b, vs, t, abs);
   return b.seitenzahlen().bytes();
 }
 
