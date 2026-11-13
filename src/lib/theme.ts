@@ -50,7 +50,7 @@ export function nullBetraegeNeutral() {
       if (n !== e.hasAttribute('data-null')) { if (n) e.setAttribute('data-null', ''); else e.removeAttribute('data-null'); }
     });
   };
-  new MutationObserver(() => { if (!geplant) { geplant = true; requestAnimationFrame(pruefen); } })
+  new MutationObserver(() => { if (!geplant) { geplant = true; setTimeout(pruefen, 0); } })
     .observe(document.body, { subtree: true, childList: true, characterData: true });
   pruefen();
 }
