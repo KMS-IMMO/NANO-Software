@@ -49,7 +49,7 @@ export function parseCamt(xml: string): Umsatz[] {
 
 /** CSV-Export deutscher Banken (Sparkasse, Volksbank, Deutsche Bank, Commerzbank, ING, …) mit Spaltenerkennung */
 export function parseCsv(text: string): Umsatz[] {
-  const lines = text.replace(/^﻿/, '').split(/\r?\n/).filter((l) => l.trim());
+  const lines = text.replace(/^\uFEFF/, '').split(/\r?\n/).filter((l) => l.trim());
   const sep = (lines.find((l) => /buchung|betrag|datum/i.test(l)) ?? lines[0]).split(';').length > 2 ? ';' : ',';
   const split = (l: string) => {
     const r: string[] = []; let cur = ''; let q = false;

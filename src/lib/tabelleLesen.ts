@@ -70,7 +70,7 @@ export async function tabelleLesen(datei: File): Promise<Tabelle> {
   else {
     let text = new TextDecoder('utf-8').decode(bytes);
     if (text.includes('�')) text = new TextDecoder('windows-1252').decode(bytes);
-    roh = csvLesen(text.replace(/^﻿/, ''));
+    roh = csvLesen(text.replace(/^\uFEFF/, ''));
   }
   roh = roh.filter((z) => z.some((x) => x !== ''));
   if (roh.length < 2) throw new Error('Die Tabelle braucht eine Überschriftenzeile und mindestens eine Datenzeile.');

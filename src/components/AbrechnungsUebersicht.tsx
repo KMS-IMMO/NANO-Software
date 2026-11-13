@@ -129,7 +129,7 @@ export function AbrechnungsUebersicht({ objekt, jahr, pos, schluessel, stand = 0
       .then((r) => setEigeneJahr(new Set(r.map((x) => Number(x.buchungskonto_id)))));
   }, [objekt, jahr, stand, pos, intern]);
 
-  const umschalten = (k: string) => { const n = new Set(offen); n.has(k) ? n.delete(k) : n.add(k); setOffen(n); };
+  const umschalten = (k: string) => { const n = new Set(offen); if (n.has(k)) n.delete(k); else n.add(k); setOffen(n); };
   const einErlaubt = (id: number) => !einnahmeKonten || einnahmeKonten.includes(String(konten.find((x) => x.id === id)?.nummer ?? ''));
   const einnahmen = [...new Set(belege.ein.map((b) => b.buchungskonto_id))].filter(einErlaubt).map((id) => {
     const k = konten.find((x) => x.id === id) ?? { nummer: '', name: 'ohne Konto' };

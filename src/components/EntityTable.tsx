@@ -161,7 +161,7 @@ export function EntityTable({ title, table, fields, listSql, listParams = [], fi
       setEditing(null);
       await load();
       onChange?.();
-    } catch (e: any) {
+    } catch {
       setError('Löschen nicht möglich: Der Datensatz wird noch verwendet.');
     }
   }

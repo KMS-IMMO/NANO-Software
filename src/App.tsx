@@ -17,7 +17,7 @@ import { wiederkehrendErzeugen } from './logic/wiederkehrend';
 
 // Seiten erst laden, wenn sie gebraucht werden: Die App startet schneller (Dashboard sofort, Rest bei Bedarf)
 function seite(laden: () => Promise<Record<string, unknown>>, name: string) {
-  return lazy(() => laden().then((m) => ({ default: m[name] as ComponentType })));
+  return lazy(() => laden().then((m) => ({ default: m[name] as ComponentType<any> })));
 }
 const ObjektDetailPage = seite(() => import('./pages/Objekte'), 'ObjektDetailPage');
 const ObjektePage = seite(() => import('./pages/Objekte'), 'ObjektePage');

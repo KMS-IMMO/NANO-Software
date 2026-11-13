@@ -19,6 +19,10 @@ export default tseslint.config(
     },
     rules: {
       ...reactHooks.configs.recommended.rules,
+      // Datenbankzeilen sind bewusst frei typisiert (Row = Record<string, any>)
+      '@typescript-eslint/no-explicit-any': 'off',
+      // _name = absichtlich verworfen (z. B. beim Herausnehmen von Feldern)
+      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_', destructuredArrayIgnorePattern: '^_' }],
       'react-refresh/only-export-components': [
         'warn',
         { allowConstantExport: true },

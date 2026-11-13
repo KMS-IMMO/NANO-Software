@@ -21,7 +21,7 @@ export function euro(n: number): string {
 export function betragZahl(s: unknown): number | null {
   if (typeof s === 'number') return Number.isFinite(s) ? s : null;
   if (s === null || s === undefined) return null;
-  let t = String(s).replace(/[\s €]/g, '').replace(/−/g, '-');
+  let t = String(s).replace(/[\s\u00A0€]/g, '').replace(/−/g, '-');
   if (!t) return null;
   if (t.includes(',') && t.includes('.') && t.lastIndexOf('.') > t.lastIndexOf(',')) t = t.replace(/,/g, '');  // englisch: 1,234.56
   else if (t.includes(',')) t = t.replace(/\./g, '').replace(',', '.');

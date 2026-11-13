@@ -5,6 +5,7 @@ import { db, mehrplatz } from '../db';
 const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 
 /** Erlaubte Zeichen für Datei- und Ordnernamen unter Windows und macOS */
+// eslint-disable-next-line no-control-regex -- Steuerzeichen sind in Dateinamen verboten
 export const sicher = (s: string) => s.replace(/[<>:"/\\|?*\u0000-\u001F]/g, '-').replace(/\s+/g, ' ').trim().slice(0, 120);
 
 export async function ablagePfad(): Promise<string> {

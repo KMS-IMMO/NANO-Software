@@ -335,7 +335,7 @@ export function WegAbrechnungPage() {
 function OpAufstellung({ konten, jahr }: { konten: Row[]; jahr: number }) {
   const [auf, setAuf] = useState<Set<string>>(new Set());
   if (!konten.length) return <p className="muted small">Zum 31.12.{jahr} sind alle Forderungen ausgeglichen.</p>;
-  const um = (k: string) => { const n = new Set(auf); n.has(k) ? n.delete(k) : n.add(k); setAuf(n); };
+  const um = (k: string) => { const n = new Set(auf); if (n.has(k)) n.delete(k); else n.add(k); setAuf(n); };
   return (
     <>
       <h3 className="sec">Woher kommen die Beträge?</h3>
