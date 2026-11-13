@@ -8,7 +8,7 @@ import { AbrechnungsUebersicht } from '../components/AbrechnungsUebersicht';
 import { SchluesselWahl, schluesselText } from '../components/SchluesselWahl';
 import { AbschlussKarte } from '../components/AbschlussKarte';
 import { useObjektKontext } from '../logic/objektKontext';
-import { eur, num, datum } from '../components/EntityTable';
+import { eur, farbe, num, datum } from '../components/EntityTable';
 import { nichtVerteilteKosten, tageImJahr, type Position, type Schluessel } from '../logic/verteilung';
 import { HEIZ_KONTO, nkBerechnen, type NkErgebnis } from '../logic/nebenkosten';
 import { Brief, absender, dDatum, geld } from '../lib/pdf';
@@ -147,7 +147,7 @@ export function NebenkostenPage() {
       <div className="kpis">
         <div className="kpi"><span>Umlagefähige Kosten</span><b>{eur(kosten)}</b></div>
         <div className="kpi"><span>Vorauszahlungen{mieter.some((r) => r.ueberEigentuemer) ? ' (gezahlt bzw. laut Vertrag)' : ' (gezahlt)'}</span><b>{eur(mieter.reduce((a, r) => a + r.vz, 0))}</b></div>
-        <div className="kpi"><span>Nachzahlungen − Guthaben</span><b>{eur(mieter.reduce((a, r) => a + r.saldo, 0))}</b></div>
+        <div className="kpi"><span>Nachzahlungen − Guthaben</span><b className={farbe(mieter.reduce((a, r) => a + r.saldo, 0))}>{eur(mieter.reduce((a, r) => a + r.saldo, 0))}</b></div>
         {weg ? <div className="kpi"><span>Mieter in der Abrechnung</span><b>{mieter.length}</b><small>{einheiten.length - new Set(mieter.map((r) => r.einheit.id)).size} Einheiten nicht vermietet</small></div>
           : <div className="kpi"><span>Anteil Leerstand (Eigentümer)</span><b>{eur(leer.reduce((a, r) => a + r.summe, 0))}</b></div>}
       </div>
