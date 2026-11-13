@@ -190,9 +190,9 @@ function vollmachtSeite(b: Brief, vs: Versammlung, t: Row, abs: Absender) {
   b.abschnitt('Ich bevollmächtige');
   b.y += 3;
   const wahl = [
-    `die Verwaltung (${abs.name}${abs.unterschrift?.name ? `, ${abs.unterschrift.name}` : ''})`,
-    'den Vorsitz des Verwaltungsbeirats',
-    'folgende Person:',
+    'Die Verwaltung KMS Immobilienverwaltung',
+    'Den Vorsitz des Verwaltungsbeirats',
+    'Folgende Person:',
   ];
   for (const w of wahl) { b.platz(8); kaestchen(b, 20, b.y); d.setFontSize(10); d.text(w, 26, b.y); b.y += 6; }
   d.setDrawColor(130); d.setLineWidth(0.2);
@@ -228,7 +228,7 @@ function vollmachtSeite(b: Brief, vs: Versammlung, t: Row, abs: Absender) {
   kasten(b, [
     { text: 'Rechtliche Hinweise', fett: true, klein: true, farbe: [150, 112, 52] },
     { text: '• Form: Textform genügt (§ 25 Abs. 3 WEG, § 126b BGB). Ihr Name muss erkennbar sein, eine eigenhändige Unterschrift ist nicht nötig; Foto, Scan, Fax oder E-Mail reichen aus.', klein: true },
-    { text: `• Vorlage: Bitte senden Sie die Vollmacht vor der Versammlung an ${abs.name}${abs.email ? ` (${abs.email})` : ''} oder geben Sie sie der bevollmächtigten Person mit. Ohne Nachweis kann die Versammlungsleitung den Vertreter zurückweisen.`, klein: true },
+    { text: `• Vorlage: Bitte senden Sie die Vollmacht vor der Versammlung an die KMS Immobilienverwaltung${abs.email ? ` (${abs.email})` : ''} oder geben Sie sie der bevollmächtigten Person mit. Ohne Nachweis kann die Versammlungsleitung den Vertreter zurückweisen.`, klein: true },
     { text: '• Vertreter: Ihre Gemeinschaftsordnung kann den Kreis möglicher Vertreter beschränken, z. B. auf Ehegatten, Miteigentümer oder die Verwaltung.', klein: true },
     { text: '• Geltung: Nur für diese Versammlung, jederzeit widerruflich. Ein Stimmrechtsausschluss (§ 25 Abs. 4 WEG) gilt auch für die bevollmächtigte Person.', klein: true },
   ], [250, 246, 238], [176, 138, 74], true);
