@@ -1207,3 +1207,16 @@ table.list td.einzug { padding-left: 28px; color: var(--muted); }
 .zutun-leer { display: flex; align-items: center; gap: 8px; color: var(--pos); margin: 6px 0; }
 .zutun a > span:first-child { min-width: 0; }
 .zutun .zutun-knopf { flex-shrink: 0; }
+
+/* Zählerstände */
+.zaehler-modal { max-width: calc(100vw - 48px); }
+.zaehler-tabelle th.zaehler-gruppe { text-align: center; border-left: 2px solid var(--line); }
+.zaehler-tabelle td input.cell { width: 100%; min-width: 70px; }
+.zaehler-tabelle td input.cell.num { text-align: right; }
+
+/* Import aus Excel */
+.import-zuordnung { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px 14px; }
+.import-zuordnung label { display: flex; flex-direction: column; gap: 3px; font-size: 13px; }
+.datei-wahl { position: relative; display: flex; align-items: center; gap: 8px; border: 1px dashed var(--line); border-radius: 8px; padding: 8px 12px; cursor: pointer; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.datei-wahl input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.import-modal .tablewrap { max-height: 300px; overflow: auto; }

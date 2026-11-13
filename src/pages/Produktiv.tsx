@@ -1,4 +1,5 @@
 // Produktivität: Kalender, Erinnerungen, Ticket-Boards, Todo und Notizen
+import { ImportKnopf } from '../components/ImportAssistent';
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AlarmClock, Calendar, ChevronLeft, ChevronRight, CircleCheck, Columns3, Plus, Printer, SquarePen, Trash2 } from 'lucide-react';
@@ -28,6 +29,7 @@ function Modal({ titel, children, onClose }: { titel: string; children: React.Re
 
 export function KontaktePage() {
   const [art, setArt] = useState<'Mieter' | 'Firmen' | 'Sonstige'>('Mieter');
+  const [stand, setStand] = useState(0);
   // Lieferanten aus den Ausgaben ohne Adresse: Hinweis am Reiter „Firmen“
   const [ohneAdresse, setOhneAdresse] = useState(0);
   useEffect(() => { db.select('SELECT COUNT(*) AS n FROM firmen WHERE strasse IS NULL OR plz IS NULL OR ort IS NULL').then((r) => setOhneAdresse(Number(r[0]?.n) || 0)); }, [art]);
@@ -35,8 +37,10 @@ export function KontaktePage() {
     <>
       <div className="row" style={{ marginBottom: 12 }}>
         <div className="seg">{(['Mieter', 'Firmen', 'Sonstige'] as const).map((a) => <button key={a} className={art === a ? 'on' : ''} onClick={() => setArt(a)}>{a === 'Firmen' ? 'Firmen & Lieferanten' : a}{a === 'Firmen' && ohneAdresse > 0 && <span className="tab-hinweis" title={`${ohneAdresse} ohne Adresse`}>{ohneAdresse}</span>}</button>)}</div>
+        <span className="grow" />
+        {art !== 'Firmen' && <ImportKnopf ziel="kontakte" rolle={art} onFertig={() => setStand((x) => x + 1)} />}
       </div>
-      {art === 'Firmen' ? <FirmenPage /> : <PersonenPage rolle={art} titel={art === 'Sonstige' ? 'Sonstige Kontakte' : undefined} />}
+      {art === 'Firmen' ? <FirmenPage /> : <PersonenPage key={art + stand} rolle={art} titel={art === 'Sonstige' ? 'Sonstige Kontakte' : undefined} />}
     </>
   );
 }

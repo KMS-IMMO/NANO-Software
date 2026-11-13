@@ -1,4 +1,5 @@
 import { VorlagenKarte } from './Versammlungen';
+import { ImportKnopf } from '../components/ImportAssistent';
 import { EntityTable, eur } from '../components/EntityTable';
 import { darstellungLesen, darstellungSetzen, type Darstellung, schriftLesen, schriftSetzen, type Schrift } from '../lib/theme';
 import { SicherheitKarte } from '../components/SicherheitKarte';
@@ -8,7 +9,7 @@ import { BriefpapierKarte } from '../components/BriefpapierKarte';
 import { UnterschriftKarte } from '../components/UnterschriftKarte';
 import { useObjektKontext } from '../logic/objektKontext';
 import { useEffect, useState } from 'react';
-import { Paperclip } from 'lucide-react';
+import { FileSpreadsheet, Paperclip } from 'lucide-react';
 import { RechnungErfassen } from '../components/RechnungErfassen';
 import { oeffnen } from '../lib/dateien';
 import { SCHLUESSEL, einheitLabel, kontoOptions } from '../db/labels';
@@ -130,6 +131,10 @@ export function EinstellungenPage() {
       <KiKarte />
       <MehrplatzKarte />
       {!mehrplatz.aktiv && <SicherheitKarte />}
+      <section className="card">
+        <div className="card-head"><h2 className="title-ico"><FileSpreadsheet size={22} />Daten aus Excel übernehmen</h2><ImportKnopf /></div>
+        <p className="muted small">Kontakte oder Einheiten einer Liegenschaft (auf Wunsch gleich mit Mieter und Mietvertrag) aus einer Excel- oder CSV-Tabelle übernehmen. Du siehst vorher eine Vorschau mit Prüfung, Doppelte werden übersprungen.</p>
+      </section>
       <EntityTable
         title="Bankkonten je Objekt"
         table="bankkonten"

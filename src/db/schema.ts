@@ -741,4 +741,17 @@ CREATE TABLE papierkorb (
   daten TEXT NOT NULL                  -- JSON: gelöschte Zeilen je Tabelle und geleerte Verweise
 );
 `,
+  // 28: Zählerstände je Einheit und Jahr (alt/neu), daraus wird der Verbrauch berechnet
+  `
+CREATE TABLE zaehlerstaende (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  einheit_id INTEGER NOT NULL REFERENCES einheiten(id) ON DELETE CASCADE,
+  buchungskonto_id INTEGER NOT NULL REFERENCES buchungskonten(id),
+  jahr INTEGER NOT NULL,
+  zaehlernr TEXT,
+  alt REAL,
+  neu REAL,
+  UNIQUE (einheit_id, jahr, buchungskonto_id)
+);
+`,
 ];

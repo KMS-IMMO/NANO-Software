@@ -4,6 +4,7 @@ import { betragZahl } from '../lib/betrag';
 import { useEffect, useState } from 'react';
 import { db, type Row } from '../db';
 import { eur, num } from './EntityTable';
+import { ZaehlerstaendeKnopf } from './Zaehlerstaende';
 import type { Position } from '../logic/verteilung';
 
 const zahl = (s: string) => betragZahl(s) ?? 0;
@@ -31,7 +32,9 @@ export function WerteJeEinheit({ objekt, jahr, einheiten, konten, onSaved }: { o
 
   return (
     <section className="card">
-      <div className="card-head"><h2>Beträge und Verbrauch je Einheit für {jahr}</h2><button onClick={speichern}>Speichern und neu berechnen</button></div>
+      <div className="card-head"><h2>Beträge und Verbrauch je Einheit für {jahr}</h2><div className="row">
+        <ZaehlerstaendeKnopf objekt={objekt} jahr={jahr} einheiten={einheiten} konten={konten.filter((p) => p.schluessel === 'Verbrauch').map((p) => ({ konto_id: p.konto_id, name: p.name }))} onSaved={onSaved} />
+        <button onClick={speichern}>Speichern und neu berechnen</button></div></div>
       <table className="list">
         <thead><tr><th>Einheit</th>{konten.map((k) => <th key={k.konto_id} className="num">{k.schluessel === 'Summe' ? `${k.name} (€, manuell)` : `Verbrauch ${k.name}`}</th>)}</tr></thead>
         <tbody>{einheiten.map((e) => (

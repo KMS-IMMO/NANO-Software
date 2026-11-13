@@ -1,4 +1,5 @@
 // Nebenkostenabrechnung je Objekt und Kalenderjahr (Mietverwaltung und vermietete WEG-Einheiten).
+import { ZaehlerstaendeKnopf } from '../components/Zaehlerstaende';
 import { BetragFeld } from '../components/BetragFeld';
 import { betragZahl } from '../lib/betrag';
 import { useEffect, useState } from 'react';
@@ -154,7 +155,10 @@ export function NebenkostenPage() {
 
       <fieldset className="gesperrt" disabled={!!zu}>
       <section className="card">
-        <div className="card-head"><h2>Eingaben je Einheit für {jahr}</h2><button onClick={eingabenSpeichern}>Speichern und neu berechnen</button></div>
+        <div className="card-head"><h2>Eingaben je Einheit für {jahr}</h2><div className="row">
+          <ZaehlerstaendeKnopf objekt={Number(objekt)} jahr={jahr} einheiten={einheiten} konten={pos.filter((p) => p.schluessel === 'Verbrauch').map((p) => ({ konto_id: p.konto_id, name: p.name }))}
+            onSaved={() => { setInfo('Zählerstände gespeichert, Verbrauch übernommen und neu berechnet.'); setStand((x) => x + 1); laden(); }} />
+          <button onClick={eingabenSpeichern}>Speichern und neu berechnen</button></div></div>
         <table className="list">
           <thead><tr><th>Einheit</th><th className="num">Fläche</th><th className="num">Heizkosten lt. Messdienst</th><th className="num">Warmwasser lt. Messdienst</th>
             {verbrauchsKonten.map((k) => <th key={k.konto_id} className="num">{k.schluessel === 'Summe' ? `Betrag € ${k.name}` : `Verbrauch ${k.name}`}</th>)}</tr></thead>

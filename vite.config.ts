@@ -9,6 +9,6 @@ export default defineConfig({
   // erst bei Benutzung und lädt die Vorschau neu, wobei die Demodaten im Browser verloren gehen (Komplettest).
   optimizeDeps: {
     entries: ['index.html', 'src/**/*.{ts,tsx}'],
-    include: ['pdfjs-dist/legacy/build/pdf.worker.mjs'],
+    include: ['pdfjs-dist/legacy/build/pdf.worker.mjs', 'fflate', 'three', 'jspdf', 'jspdf-autotable', 'sql.js'],
   },
 })
