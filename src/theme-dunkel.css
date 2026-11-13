@@ -144,3 +144,8 @@ html[data-theme="dunkel"] .us-flaeche, html[data-theme="dunkel"] .us-vorschau { 
 
 /* Logo im Dunkelmodus: Grau aufgehellt, Bronze etwas leuchtender */
 html[data-theme="dunkel"] { --logo-grau: #d9d5cd; --logo-bronze: #c9a46c; --logo-glanz: #ffffff; }
+
+html[data-theme="dunkel"] .ordner-symbol .ordner-hinten { fill: #6c6f75; }
+html[data-theme="dunkel"] .ordner-symbol .ordner-vorne { fill: #8d9096; }
+html[data-theme="dunkel"] .ordner-symbol .ordner-blatt { fill: #d9d9d6; }
+html[data-theme="dunkel"] .ordner-symbol .ordner-nummer { fill: #3f4247; }
