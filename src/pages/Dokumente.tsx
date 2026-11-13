@@ -5,6 +5,8 @@ import { useObjektKontext } from '../logic/objektKontext';
 import { datum } from '../components/EntityTable';
 import { ablagePfad, oeffnen, sicher, speichern, type Ablage } from '../lib/dateien';
 import { einheitLabel, personLabel } from '../db/labels';
+import { FileText } from 'lucide-react';
+import { OrdnerSymbol } from '../components/OrdnerSymbol';
 
 type Bezug = Exclude<Ablage['bezug'], 'Buchung'>;
 const BEZUEGE: Bezug[] = ['Objekt', 'Einheit', 'Mietvertrag', 'Person', 'Firma'];
@@ -47,6 +49,11 @@ export function DokumentePage() {
   const [over, setOver] = useState('');
   const [info, setInfo] = useState('');
   const [basis, setBasis] = useState<string[]>([]);
+  const [pfad, setPfad] = useState('');   // geöffneter Unterordner, '' = oberste Ebene
+  // Ansicht merken (nur in diesem Browser bzw. dieser App)
+  const [ansicht, setAnsicht] = useState<'Ordner' | 'Liste'>(() => { try { return localStorage.getItem('nano-dokumente-ansicht') === 'Liste' ? 'Liste' : 'Ordner'; } catch { return 'Ordner'; } });
+  const ansichtWaehlen = (a: 'Ordner' | 'Liste') => { setAnsicht(a); try { localStorage.setItem('nano-dokumente-ansicht', a); } catch { /* egal */ } };
+  const vorWoche = new Date(Date.now() - 7 * 864e5).toISOString().slice(0, 10);
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -63,11 +70,16 @@ export function DokumentePage() {
     setDocs(await db.select('SELECT * FROM dokumente WHERE bezug = $1 AND bezug_id = $2 ORDER BY ordner, hinzugefuegt DESC, dateiname', [bezug, id]));
     setBasis(await basisOrdner(bezug, Number(id)));
   };
-  useEffect(() => { load(); }, [bezug, id]);
+  useEffect(() => { load(); setPfad(''); }, [bezug, id]);
 
   const vorlagenOrdner = String(vorlagen.find((v) => v.id === vorlage)?.ordner ?? '').split('\n').map((s) => s.trim()).filter(Boolean);
   const ordner = [...new Set([...vorlagenOrdner, ...docs.map((d) => d.ordner || '')])].filter((x) => x !== undefined);
   if (!ordner.includes('')) ordner.unshift('');
+  // Alle Ordner samt übergeordneten („a/b“ bringt „a“ mit), daraus die direkten Unterordner des geöffneten Ordners
+  const alle = new Set<string>();
+  for (const o of ordner) { const t = o.split('/').filter(Boolean); for (let i = 1; i <= t.length; i++) alle.add(t.slice(0, i).join('/')); }
+  const kinder = [...alle].filter((o) => pfad ? o.startsWith(pfad + '/') && !o.slice(pfad.length + 1).includes('/') : !o.includes('/'));
+  const hier = docs.filter((d) => (d.ordner || '') === pfad);
 
   async function hochladen(files: File[], unterordner: string) {
     if (id === '') return;
@@ -117,8 +129,46 @@ export function DokumentePage() {
       {id === '' ? <section className="card"><p className="muted">Noch nichts angelegt für {bezug}.</p></section> : (
         <section className="card">
           <div className="card-head"><h2>{basis.join(' / ')}</h2>
-            <button className="primary" onClick={() => { setZiel(''); fileRef.current?.click(); }}>Durchsuchen…</button></div>
+            <button className="primary" onClick={() => { setZiel(pfad); fileRef.current?.click(); }}>Durchsuchen…</button></div>
           <input ref={fileRef} type="file" multiple hidden onChange={(e) => { if (e.target.files) hochladen(Array.from(e.target.files), ziel); e.target.value = ''; }} />
+          <div className="seg ordner-umschalter">{(['Ordner', 'Liste'] as const).map((a) => <button key={a} className={ansicht === a ? 'on' : ''} onClick={() => ansichtWaehlen(a)}>{a}</button>)}</div>
+          {ansicht === 'Ordner' ? <>
+          <nav className="ordner-pfad">
+            {['', ...pfad.split('/').filter(Boolean).map((_, i, l) => l.slice(0, i + 1).join('/'))].map((z, i, l) => (
+              <span key={z || '_'}>{i > 0 && <span className="muted"> / </span>}
+                {i === l.length - 1 ? <b>{z ? z.split('/').pop() : basis[basis.length - 1] ?? 'Ablage'}</b>
+                  : <button className="link" onClick={() => setPfad(z)}>{z ? z.split('/').pop() : basis[basis.length - 1] ?? 'Ablage'}</button>}</span>))}
+          </nav>
+          <div className={'ordner-raster' + (over === '#hier' ? ' over' : '')}
+            onDragOver={(e) => { e.preventDefault(); if (!over || over === '#hier') setOver('#hier'); }} onDragLeave={() => setOver('')}
+            onDrop={(e) => { e.preventDefault(); setOver(''); hochladen(Array.from(e.dataTransfer.files), pfad); }}>
+            {pfad && <button className="ordner-kachel zurueck" onClick={() => setPfad(pfad.split('/').slice(0, -1).join('/'))} title="Eine Ebene höher">
+              <OrdnerSymbol /><span className="ordner-name">..</span><span className="muted small">zurück</span></button>}
+            {kinder.map((k) => {
+              const drin = docs.filter((d) => (d.ordner || '') === k || String(d.ordner || '').startsWith(k + '/'));
+              const n = drin.length, u = [...alle].filter((x) => x.startsWith(k + '/') && !x.slice(k.length + 1).includes('/')).length;
+              const neu = drin.filter((d) => String(d.hinzugefuegt ?? '') >= vorWoche).length;
+              const m = k.split('/').pop()!.match(/^(\d{1,3})\s*[-–.]\s*(.+)$/);
+              return (
+                <button key={k} className={'ordner-kachel' + (over === k ? ' over' : '')} onClick={() => setPfad(k)} title={`${k} öffnen`}
+                  onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setOver(k); }} onDragLeave={() => setOver('')}
+                  onDrop={(e) => { e.preventDefault(); e.stopPropagation(); setOver(''); hochladen(Array.from(e.dataTransfer.files), k); }}>
+                  <span className="ordner-bild"><OrdnerSymbol voll={n > 0} nummer={m?.[1]} />{neu > 0 && <span className="ordner-neu">{neu} neu</span>}</span>
+                  <span className="ordner-name">{m ? m[2] : k.split('/').pop()}</span>
+                  <span className="muted small">{[u ? `${u} Ordner` : '', n ? `${n} Datei${n === 1 ? '' : 'en'}` : ''].filter(Boolean).join(' · ') || 'leer'}</span>
+                </button>);
+            })}
+          </div>
+          {hier.length > 0 && <table className="list dateiliste"><thead><tr><th>Datei</th><th>Hinzugefügt</th><th /></tr></thead><tbody>
+            {hier.map((d) => (
+              <tr key={d.id}>
+                <td><button className="link" onClick={() => oeffnen(d.pfad)} title={d.pfad}><FileText size={15} /> {d.dateiname}</button></td>
+                <td className="muted small">{datum(d.hinzugefuegt)}</td>
+                <td className="num"><button className="link small muted" onClick={() => entfernen(d)}>entfernen</button></td>
+              </tr>))}
+          </tbody></table>}
+          {!kinder.length && !hier.length && <p className="muted small">Dieser Ordner ist leer. Dateien hierher ziehen oder „Durchsuchen…“ wählen.</p>}
+          </> : <>
           <div className="ordner">
             {ordner.map((o) => {
               const liste = docs.filter((d) => (d.ordner || '') === o);
@@ -140,6 +190,7 @@ export function DokumentePage() {
                 </div>);
             })}
           </div>
+          </>}
           {!vorlagenOrdner.length && <p className="muted small">Lege unter Einstellungen eine Ordnervorlage für „{bezug}“ an, dann erscheinen hier deine Ordner.</p>}
         </section>
       )}
