@@ -8,6 +8,7 @@ import { KeyRound, UserPlus } from 'lucide-react';
 import { db, insert, type Row } from '../db';
 import { sollStellen } from '../logic/soll';
 import { eur } from './EntityTable';
+import { ibanFehler, kautionHinweis, ortZurPlz, plzFehler } from '../lib/pruefen';
 
 const zahl = (s: string) => betragZahl(s) ?? 0;
 const heute = () => new Date().toISOString().slice(0, 10);
@@ -35,6 +36,14 @@ export function MieterAnlegen({ einheit, objekt, onClose, onSaved }: { einheit: 
   const [vorhanden, setVorhanden] = useState<Row | null>(null);
   const [neuerKontakt, setNeuerKontakt] = useState(false);
   const s = (k: string) => (x: { target: { value: string } }) => setD({ ...d, [k]: x.target.value });
+  // PLZ eingegeben: Ort ergänzen, wenn er leer ist oder noch der Ort des Objekts drinsteht
+  const plzSetzen = (x: { target: { value: string } }) => {
+    const plz = x.target.value;
+    setD((a) => ({ ...a, plz }));
+    ortZurPlz(plz).then((ort) => { if (ort) setD((a) => (!a.ort.trim() || a.ort === (objekt.ort ?? '') ? { ...a, ort } : a)); });
+  };
+  const ibanFalsch = ibanFehler(d.iban);
+  const kautionZuHoch = kautionHinweis(zahl(d.kaution), zahl(d.kalt), gewerbe || zahl(d.ust) > 0);
 
   // Gibt es diese Person schon (z. B. aus einem anderen Vertrag)? Dann wird sie verwendet statt doppelt angelegt.
   useEffect(() => {
@@ -67,6 +76,9 @@ export function MieterAnlegen({ einheit, objekt, onClose, onSaved }: { einheit: 
     if (!d.nachname.trim() && !d.firma.trim()) { setFehler('Bitte Nachname oder Firma des Mieters eintragen.'); return; }
     if (!/^\d{4}-\d{2}-\d{2}$/.test(d.beginn)) { setFehler('Bitte den Mietbeginn eintragen.'); return; }
     if (!weg && !zahl(d.kalt)) { setFehler('Bitte die Kaltmiete eintragen.'); return; }
+    if (ibanFalsch) { setFehler(`IBAN: ${ibanFalsch}`); return; }
+    const t = Math.round(zahl(d.tag));
+    if (d.tag.trim() && (t < 1 || t > 28)) { setFehler('„Fällig am“: bitte einen Tag zwischen 1 und 28.'); return; }
     const belegt = await db.select(`SELECT 1 FROM mietvertraege WHERE einheit_id = $1 AND (ende IS NULL OR ende >= $2) AND beginn <= COALESCE($3, '9999-12-31') LIMIT 1`,
       [einheit.id, d.beginn, null]);
     if (belegt.length) { setFehler('Für diese Einheit läuft ab diesem Datum schon ein Mietvertrag. Beende ihn zuerst (Vertragsende eintragen).'); return; }
@@ -127,9 +139,11 @@ export function MieterAnlegen({ einheit, objekt, onClose, onSaved }: { einheit: 
             <label><span>Telefon</span><input value={d.telefon} onChange={s('telefon')} /></label>
             <label><span>Mobil</span><input value={d.mobil} onChange={s('mobil')} /></label>
             <label><span>E-Mail</span><input type="email" value={d.email} onChange={s('email')} /></label>
-            <label className="breit2"><span>IBAN (für die automatische Zuordnung der Miete)</span><input value={d.iban} onChange={s('iban')} placeholder="DE.." /></label>
+            <label className="breit2"><span>IBAN (für die automatische Zuordnung der Miete)</span><input value={d.iban} onChange={s('iban')} placeholder="DE.." />
+              {ibanFalsch && <small className="feld-fehler">{ibanFalsch}</small>}</label>
             <label className="breit2"><span>Straße</span><input value={d.strasse} onChange={s('strasse')} /></label>
-            <label><span>PLZ</span><input value={d.plz} onChange={s('plz')} /></label>
+            <label><span>PLZ</span><input value={d.plz} onChange={plzSetzen} inputMode="numeric" />
+              {plzFehler(d.plz) && <small className="feld-hinweis">{plzFehler(d.plz)}</small>}</label>
             <label className="breit2"><span>Ort</span><input value={d.ort} onChange={s('ort')} /></label>
           </div> })}
           {Abschnitt({ n: 3, titel: 'Mietvertrag', children: <div className="mieter-raster">
@@ -137,7 +151,9 @@ export function MieterAnlegen({ einheit, objekt, onClose, onSaved }: { einheit: 
             <label><span>Kaltmiete / Monat{weg ? '' : ' *'}</span><BetragFeld value={d.kalt} onChange={s('kalt')} /></label>
             <label><span>NK-Vorauszahlung</span><BetragFeld value={d.nk} onChange={s('nk')} /></label>
             <label><span>HK-Vorauszahlung</span><BetragFeld value={d.hk} onChange={s('hk')} /></label>
-            <label><span>Kaution</span><BetragFeld value={d.kaution} onChange={s('kaution')} /></label>
+            <label><span>Kaution</span><BetragFeld value={d.kaution} onChange={s('kaution')} />
+              {!d.kaution && zahl(d.kalt) > 0 && <button type="button" className="link small" onClick={() => setD({ ...d, kaution: (Math.round(zahl(d.kalt) * 300) / 100).toFixed(2).replace('.', ',') })}>3 Kaltmieten übernehmen</button>}
+              {kautionZuHoch && <small className="feld-hinweis">{kautionZuHoch}</small>}</label>
             <label><span>Personen im Haushalt</span><input inputMode="numeric" value={d.personen} onChange={s('personen')} /></label>
             <label><span>Fällig am (Tag)</span><input inputMode="numeric" value={d.tag} onChange={s('tag')} /></label>
             <label><span>Umsatzsteuer</span><select value={d.ust} onChange={s('ust')}><option value="0">keine (Wohnung)</option><option value="19">19 % (Gewerbe mit Option)</option></select></label>

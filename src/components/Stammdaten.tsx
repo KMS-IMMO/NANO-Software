@@ -7,6 +7,7 @@ import type { Row } from '../db';
 import { datum, eur } from './EntityTable';
 import { BetragFeld } from './BetragFeld';
 import { betragText, betragZahl } from '../lib/betrag';
+import { ibanFehler, ortZurPlz, plzFehler } from '../lib/pruefen';
 
 export type SFeld = {
   key: string; label: string;
@@ -17,7 +18,16 @@ export type SFeld = {
   pflicht?: boolean;
   /** Anzeige statt des Werts (z. B. berechnete Angaben) */
   anzeige?: ReactNode;
+  /** Feld nur zeigen, wenn die Bedingung zutrifft (beim Bearbeiten mit den eingegebenen Werten) */
+  zeigen?: (werte: Row) => boolean;
+  /** Gelber Hinweis unter dem Feld (blockiert nicht) */
+  hinweis?: (werte: Row) => string | null;
+  /** Fehlertext, der das Speichern verhindert */
+  pruefen?: (v: any, werte: Row) => string | null;
 };
+
+const fehlerVon = (f: SFeld, w: Row) => f.pruefen?.(w[f.key], w) ?? (f.key === 'p_iban' ? ibanFehler(w[f.key]) : null);
+const hinweisVon = (f: SFeld, w: Row) => f.hinweis?.(w) ?? (f.key === 'p_plz' ? plzFehler(w[f.key]) : null);
 export type SGruppe = { titel: string; felder: SFeld[] };
 
 const zahlStr = (v: any) => (v === null || v === undefined || v === '' ? '' : betragText(Number(v)));
@@ -58,11 +68,23 @@ export function StammdatenKarte({ titel, icon, gruppen, werte, onSpeichern, roll
     setD(Object.fromEntries(felder.map((f) => [f.key, f.typ === 'geld' ? zahlStr(werte[f.key]) : werte[f.key] == null ? '' : f.typ === 'zahl' ? String(werte[f.key]).replace('.', ',') : String(werte[f.key])])));
     setInfo(''); setFehler(''); setBearbeiten(true);
   };
+  // beim Bearbeiten: eingegebene Texte, Geld/Zahl als Zahl, damit Bedingungen und Hinweise rechnen können
+  const aktuell: Row = bearbeiten ? { ...werte, ...Object.fromEntries(felder.map((f) => [f.key, f.typ === 'geld' || f.typ === 'zahl' ? zahlIn(d[f.key] ?? '') : d[f.key] ?? ''])) } : werte;
+  const sichtbar = (f: SFeld) => !f.zeigen || f.zeigen(aktuell);
+  const setzen = (k: string, v: string) => {
+    setD((x) => ({ ...x, [k]: v }));
+    if (k.endsWith('plz')) {
+      const ortKey = k.replace(/plz$/, 'ort');
+      if (felder.some((f) => f.key === ortKey)) ortZurPlz(v).then((ort) => { if (ort) setD((x) => (!String(x[ortKey] ?? '').trim() ? { ...x, [ortKey]: ort } : x)); });
+    }
+  };
   const speichern = async () => {
     const neu: Row = {};
     for (const f of felder) {
       const s = d[f.key] ?? '';
-      if (f.pflicht && !s.trim()) { setFehler(`Bitte „${f.label}“ ausfüllen.`); return; }
+      if (sichtbar(f) && f.pflicht && !s.trim()) { setFehler(`Bitte „${f.label}“ ausfüllen.`); return; }
+      const fe = sichtbar(f) ? fehlerVon(f, { ...aktuell, [f.key]: s }) : null;
+      if (fe) { setFehler(`${f.label}: ${fe}`); return; }
       const wert = f.typ === 'geld' || f.typ === 'zahl' ? zahlIn(s) : s.trim() || null;
       if ((f.typ === 'geld' || f.typ === 'zahl') && s.trim() && wert === null) { setFehler(`„${f.label}“ ist keine gültige Zahl.`); return; }
       const alt = werte[f.key] === undefined || werte[f.key] === '' ? null : werte[f.key];
@@ -107,12 +129,13 @@ export function StammdatenKarte({ titel, icon, gruppen, werte, onSpeichern, roll
           <span className="erin-nr">{i + 1}</span>
           <div className="erin-feld"><span className="erin-label">{g.titel}</span>
             <div className="mieter-raster">
-              {g.felder.map((f) => {
+              {g.felder.filter(sichtbar).map((f) => {
                 const cls = f.breit === 2 ? 'breit2' : f.breit === 3 ? 'breit3' : undefined;
                 const editierbar = bearbeiten && !f.nurLesen && f.anzeige === undefined;
                 if (!editierbar) return <label key={f.key} className={cls}><span>{f.label}</span><b className="stammdaten-wert">{anzeigen(f, werte[f.key])}</b></label>;
-                const set = (x: { target: { value: string } }) => setD({ ...d, [f.key]: x.target.value });
+                const set = (x: { target: { value: string } }) => setzen(f.key, x.target.value);
                 const v = d[f.key] ?? '';
+                const fe = v ? fehlerVon(f, { ...aktuell, [f.key]: v }) : null, hi = hinweisVon(f, aktuell);
                 return (
                   <label key={f.key} className={cls}><span>{f.label}{f.pflicht ? ' *' : ''}</span>
                     {f.typ === 'auswahl'
@@ -121,6 +144,7 @@ export function StammdatenKarte({ titel, icon, gruppen, werte, onSpeichern, roll
                       : f.typ === 'datum' ? <input type="date" value={v} onChange={set} />
                       : f.typ === 'geld' ? <BetragFeld value={v} onChange={set} />
                       : <input inputMode={f.typ === 'zahl' ? 'decimal' : undefined} value={v} onChange={set} />}
+                    {fe ? <small className="feld-fehler">{fe}</small> : hi ? <small className="feld-hinweis">{hi}</small> : null}
                   </label>);
               })}
             </div>

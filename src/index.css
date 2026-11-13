@@ -1179,3 +1179,17 @@ table.list td.einzug { padding-left: 28px; color: var(--muted); }
 @media (max-width: 1360px) { table.list td, table.list th { padding-left: 7px; padding-right: 7px; } }
 .grid2.wp-plan { grid-template-columns: minmax(420px, 3fr) minmax(320px, 2fr); }
 @media (max-width: 1500px) { .grid2.wp-plan { grid-template-columns: 1fr; } }
+
+/* Schneller erfassen: Hinweise und Fehler direkt am Feld, Kontakt direkt anlegen */
+.feld-fehler, .feld-hinweis { display: block; font-size: 12px; line-height: 1.35; margin-top: 4px; font-weight: 400; }
+.feld-fehler { color: var(--neg); }
+.feld-hinweis { color: #8a5a00; background: var(--warn-bg); border-radius: 6px; padding: 4px 8px; }
+.person-wahl { display: flex; flex-direction: column; gap: 8px; }
+.person-wahl > .row { gap: 8px; flex-wrap: nowrap; }
+.person-wahl > .row > .grow > select { width: 100%; }
+.person-wahl > .row > button { white-space: nowrap; }
+.person-neu { display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 1px solid var(--line, #e2ddd3); border-radius: 10px; background: var(--accent-soft); animation: nano-rein .25s ease both; }
+.person-neu > b { font-size: 13px; }
+.person-neu-raster { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.person-neu-raster .breit { grid-column: span 3; }
+.person-neu-raster select, .person-neu-raster input { width: 100%; min-width: 0; }

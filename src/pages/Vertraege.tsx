@@ -10,30 +10,45 @@ import { useObjektKontext } from '../logic/objektKontext';
 import { einheitLabel, personLabel, personOptions } from '../db/labels';
 import { mieteImMonat, mieteNeuStellen } from '../logic/soll';
 import { DokumentAnsicht } from '../components/DokumentAnsicht';
+import { kautionHinweis } from '../lib/pruefen';
+import { betragZahl } from '../lib/betrag';
 
 const vertragFields: Field[] = [
   { key: 'einheit_id', label: 'Einheit', type: 'select', required: true, wide: true,
     optionsSql: `SELECT e.id AS value, o.name || ' – ' || ${einheitLabel('e')} || ' (' || e.typ || ')' AS label FROM einheiten e JOIN objekte o ON o.id = e.objekt_id ORDER BY o.name, e.lfd_nr, e.nummer` },
-  { key: 'mieter_id', label: 'Mieter', type: 'select', required: true, optionsSql: personOptions('Mieter') },
-  { key: 'mieter2_id', label: '2. Mieter', type: 'select', optionsSql: personOptions('Mieter'), hideInTable: true },
-  { key: 'beginn', label: 'Beginn', type: 'date', required: true },
-  { key: 'ende', label: 'Ende', type: 'date' },
-  { key: 'zahlung_an', label: 'Miete zahlt an', type: 'select', hideInTable: true,
+  { key: 'mieter_id', label: 'Mieter', type: 'select', required: true, optionsSql: personOptions('Mieter'), neuePerson: 'Mieter' },
+  { key: 'mieter2_id', label: '2. Mieter', type: 'select', optionsSql: personOptions('Mieter'), hideInTable: true, neuePerson: 'Mieter' },
+  { key: 'beginn', label: 'Beginn', type: 'date', required: true, standard: ersterNaechsterMonat },
+  { key: 'ende', label: 'Ende', type: 'date', pruefen: (v, w) => (v && w.beginn && v < w.beginn ? 'Das Ende liegt vor dem Beginn.' : null) },
+  { key: 'zahlung_an', label: 'Miete zahlt an', type: 'select', hideInTable: true, standard: 'Verwaltung',
     options: [{ value: 'Verwaltung', label: 'Verwaltung (Soll-Stellung bei uns)' }, { value: 'Eigentümer', label: 'Eigentümer (vermietete WEG-Einheit)' }] },
-  { key: 'mietart', label: 'Mietart', type: 'select', options: ['Standard', 'Staffelmiete', 'Indexmiete'] },
+  { key: 'mietart', label: 'Mietart', type: 'select', options: ['Standard', 'Staffelmiete', 'Indexmiete'], standard: 'Standard', hinweis: mietartHinweis },
   { key: 'kaltmiete', label: 'Kaltmiete (Start)', type: 'number', geld: true, format: eur, hideInTable: true },
   { key: 'nk_vorauszahlung', label: 'NK-Vorauszahlung (Start)', type: 'number', geld: true, format: eur, hideInTable: true },
   { key: 'hk_vorauszahlung', label: 'HK-Vorauszahlung (Start)', type: 'number', geld: true, format: eur, hideInTable: true },
-  { key: 'ust_satz', label: 'Umsatzsteuer %', type: 'select', options: [{ value: 0, label: 'keine' }, { value: 19, label: '19 %' }, { value: 7, label: '7 %' }], hideInTable: true },
-  { key: 'kaution', label: 'Kaution', type: 'number', geld: true, format: eur, hideInTable: true },
-  { key: 'personenzahl', label: 'Personen', type: 'number', format: (v) => v ?? '' },
-  { key: 'zahlweise', label: 'Zahlweise Miete + NK', type: 'select', hideInTable: true,
-    options: [{ value: '', label: 'wie bei der Liegenschaft eingestellt' }, { value: 'zusammen', label: 'zusammen (eine Zahlung)' }, { value: 'getrennt', label: 'getrennt überwiesen' }] },
-  { key: 'faellig_tag', label: 'Fällig am (Tag im Monat)', type: 'number', hideInTable: true, format: (v) => v },
-  { key: 'index_basis', label: 'Index-Basiswert (VPI)', type: 'number', hideInTable: true },
-  { key: 'index_basis_monat', label: 'Index-Basismonat', hideInTable: true },
+  { key: 'ust_satz', label: 'Umsatzsteuer %', type: 'select', options: [{ value: 0, label: 'keine' }, { value: 19, label: '19 %' }, { value: 7, label: '7 %' }], hideInTable: true, standard: 0 },
+  { key: 'kaution', label: 'Kaution', type: 'number', geld: true, format: eur, hideInTable: true,
+    hinweis: (w) => kautionHinweis(betragZahl(w.kaution), betragZahl(w.kaltmiete), Number(w.ust_satz) > 0) },
+  { key: 'personenzahl', label: 'Personen', type: 'number', format: (v) => v ?? '', standard: 1 },
+  { key: 'zahlweise', label: 'Zahlweise Miete + NK', type: 'select', hideInTable: true, leer: 'wie bei der Liegenschaft eingestellt',
+    options: [{ value: 'zusammen', label: 'zusammen (eine Zahlung)' }, { value: 'getrennt', label: 'getrennt überwiesen' }] },
+  { key: 'faellig_tag', label: 'Fällig am (Tag im Monat)', type: 'number', hideInTable: true, format: (v) => v, standard: 3,
+    pruefen: (v) => { const n = betragZahl(v); return v !== '' && v != null && (n === null || n < 1 || n > 28) ? 'Bitte einen Tag zwischen 1 und 28.' : null; } },
+  { key: 'index_basis', label: 'Index-Basiswert (VPI)', type: 'number', hideInTable: true, zeigen: (w) => w.mietart === 'Indexmiete' },
+  { key: 'index_basis_monat', label: 'Index-Basismonat', hideInTable: true, zeigen: (w) => w.mietart === 'Indexmiete' },
   { key: 'notiz', label: 'Notiz', type: 'textarea', hideInTable: true },
 ];
+
+function ersterNaechsterMonat() {
+  const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() + 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
+}
+function mietartHinweis(w: Row): string | null {
+  const art = w.mietart ?? w.v_mietart;
+  if (art === 'Staffelmiete') return 'Die einzelnen Staffeln trägst du nach dem Speichern im Vertrag unter „Mietstaffeln und Änderungen“ ein.';
+  if (art === 'Indexmiete') return 'Basiswert und Basismonat des Verbraucherpreisindex (VPI) stehen im Mietvertrag.';
+  return null;
+}
 
 const listSql = (where = '1=1') => `SELECT v.*, o.name || ' – ' || e.nummer AS einheit_id_label, o.miete_zahlweise AS objekt_zahlweise, o.verwaltungsart, ${personLabel('p')} AS mieter_id_label,
     (SELECT COUNT(*) FROM dokumente d WHERE d.bezug = 'Mietvertrag' AND d.bezug_id = v.id) AS doks,
@@ -98,24 +113,24 @@ function vertragGruppen(v: Row, wo: string): SGruppe[] {
     { key: 'm2_nachname', label: '2. Mieter Nachname' },
     { key: 'wo', label: 'Hinterlegt bei', breit: 3, anzeige: wo || '–' },
   ]);
-  const index = v.mietart === 'Indexmiete';
   return [g1, g2, { titel: 'Mietvertrag', felder: [
     { key: 'v_beginn', label: 'Mietbeginn / Einzug', typ: 'datum', pflicht: true },
     { key: 'v_ende', label: 'Mietende / Auszug', typ: 'datum' },
-    { key: 'v_mietart', label: 'Mietart', typ: 'auswahl', optionen: ['Standard', 'Staffelmiete', 'Indexmiete'].map((x) => ({ value: x, label: x })) },
+    { key: 'v_mietart', label: 'Mietart', typ: 'auswahl', optionen: ['Standard', 'Staffelmiete', 'Indexmiete'].map((x) => ({ value: x, label: x })), hinweis: mietartHinweis },
     { key: 'v_kaltmiete', label: 'Kaltmiete / Monat (Start)', typ: 'geld' },
     { key: 'v_nk_vorauszahlung', label: 'NK-Vorauszahlung (Start)', typ: 'geld' },
     { key: 'v_hk_vorauszahlung', label: 'HK-Vorauszahlung (Start)', typ: 'geld' },
-    { key: 'v_kaution', label: 'Kaution', typ: 'geld' },
+    { key: 'v_kaution', label: 'Kaution', typ: 'geld', hinweis: (w) => kautionHinweis(w.v_kaution, w.v_kaltmiete, Number(w.v_ust_satz) > 0) },
     { key: 'v_personenzahl', label: 'Personen im Haushalt', typ: 'zahl' },
-    { key: 'v_faellig_tag', label: 'Fällig am (Tag)', typ: 'zahl' },
+    { key: 'v_faellig_tag', label: 'Fällig am (Tag)', typ: 'zahl', pruefen: (x) => { const n = betragZahl(String(x ?? '')); return x !== '' && x != null && (n === null || n < 1 || n > 28) ? 'Bitte einen Tag zwischen 1 und 28.' : null; } },
     { key: 'v_ust_satz', label: 'Umsatzsteuer', typ: 'auswahl', optionen: [{ value: '0', label: 'keine (Wohnung)' }, { value: '7', label: '7 %' }, { value: '19', label: '19 % (Gewerbe mit Option)' }] },
     { key: 'v_zahlweise', label: 'Zahlweise Miete + NK', typ: 'auswahl', optionen: [
       { value: '', label: `wie Liegenschaft (${v.objekt_zahlweise === 'getrennt' ? 'getrennt' : 'zusammen'})` },
       { value: 'zusammen', label: 'zusammen (eine Zahlung)' }, { value: 'getrennt', label: 'getrennt überwiesen' }] },
     { key: 'v_zahlung_an', label: 'Mieter zahlt an', typ: 'auswahl', optionen: [
       { value: 'Verwaltung', label: 'Verwaltung (Soll-Stellung bei uns)' }, { value: 'Eigentümer', label: 'Eigentümer (vermietete WEG-Einheit)' }] },
-    ...(index ? [{ key: 'v_index_basis', label: 'Index-Basiswert (VPI)', typ: 'zahl' as const }, { key: 'v_index_basis_monat', label: 'Index-Basismonat' }] : []),
+    { key: 'v_index_basis', label: 'Index-Basiswert (VPI)', typ: 'zahl', zeigen: (w) => w.v_mietart === 'Indexmiete' },
+    { key: 'v_index_basis_monat', label: 'Index-Basismonat', zeigen: (w) => w.v_mietart === 'Indexmiete' },
     { key: 'v_notiz', label: 'Notiz zum Vertrag', typ: 'lang', breit: 3 },
   ] }];
 }

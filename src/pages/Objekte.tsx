@@ -49,7 +49,7 @@ const objektFields: Field[] = [
   { key: 'warmwasser', label: 'Warmwasserversorgung', type: 'select', hideInTable: true, options: WARMWASSER },
   { key: 'miete_zahlweise', label: 'Mieter zahlen Miete und Nebenkosten (Standard, je Mietvertrag änderbar)', type: 'select', hideInTable: true, wide: true,
     options: [{ value: 'zusammen', label: 'zusammen in einer Überweisung' }, { value: 'getrennt', label: 'getrennt in einzelnen Überweisungen' }] },
-  { key: 'eigentuemer_id', label: 'Eigentümer (nur Mietverwaltung)', type: 'select', optionsSql: personOptions('Eigentümer'), hideInTable: true, wide: true },
+  { key: 'eigentuemer_id', label: 'Eigentümer (nur Mietverwaltung)', type: 'select', optionsSql: personOptions('Eigentümer'), hideInTable: true, wide: true, neuePerson: 'Eigentümer' },
   { key: 'notiz', label: 'Notiz', type: 'textarea', hideInTable: true },
 ];
 
@@ -522,7 +522,7 @@ function EigentuemerTab({ objektId, nurHausgeld }: { objektId: number; nurHausge
         fields={[
           { key: 'wid', label: 'W-ID', computed: true, format: (v: any) => <b className="nowrap">{v}</b> },
           { key: 'einheit_id', label: 'Einheit', type: 'select', required: true, optionsSql: einheitOptions(objektId) },
-          { key: 'person_id', label: 'Eigentümer', type: 'select', required: true, optionsSql: personOptions('Eigentümer') },
+          { key: 'person_id', label: 'Eigentümer', type: 'select', required: true, optionsSql: personOptions('Eigentümer'), neuePerson: 'Eigentümer' },
           { key: 'anteil', label: 'Anteil %', type: 'number' },
           { key: 'von', label: 'Eigentümer seit', type: 'date' },
           { key: 'bis', label: 'bis (Verkauf)', type: 'date' },

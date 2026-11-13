@@ -149,3 +149,5 @@ html[data-theme="dunkel"] .ordner-symbol .ordner-hinten { fill: #6c6f75; }
 html[data-theme="dunkel"] .ordner-symbol .ordner-vorne { fill: #8d9096; }
 html[data-theme="dunkel"] .ordner-symbol .ordner-blatt { fill: #d9d9d6; }
 html[data-theme="dunkel"] .ordner-symbol .ordner-nummer { fill: #3f4247; }
+html[data-theme="dunkel"] .feld-hinweis { color: #f0c987; }
+html[data-theme="dunkel"] .person-neu { background: rgba(255,255,255,.04); border-color: rgba(255,255,255,.12); }

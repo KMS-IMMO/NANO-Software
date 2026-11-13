@@ -4,6 +4,7 @@ import { betragZahl, euro } from '../lib/betrag';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { FileDown, Pencil } from 'lucide-react';
 import { db, insert, remove, update, type Row } from '../db';
+import { doppeltePerson, ibanFehler, ortZurPlz, plzFehler } from '../lib/pruefen';
 
 export type FieldType = 'text' | 'number' | 'date' | 'time' | 'select' | 'textarea' | 'checkbox';
 
@@ -28,6 +29,16 @@ export interface Field {
   geld?: boolean;
   /** bei geld: Minusbeträge nicht rot färben */
   minusNeutral?: boolean;
+  /** Feld im Formular nur zeigen, wenn die Bedingung zutrifft (z. B. Index-Angaben nur bei Indexmiete) */
+  zeigen?: (werte: Row) => boolean;
+  /** Gelber Hinweis unter dem Feld (blockiert nicht) */
+  hinweis?: (werte: Row) => string | null;
+  /** Fehlertext, der das Speichern verhindert */
+  pruefen?: (v: any, werte: Row) => string | null;
+  /** Vorbelegung beim Neuanlegen (Wert oder Funktion, die ihn liefert) */
+  standard?: any;
+  /** Auswahl einer Person: Knopf „+ Neu“ legt sie direkt hier mit dieser Rolle an */
+  neuePerson?: string;
 }
 
 interface Props {
@@ -85,15 +96,35 @@ export function EntityTable({ title, table, fields, listSql, listParams = [], fi
   }, [!!editing]);
 
   const formFields = fields.filter((f) => !f.computed);
+  const [warnung, setWarnung] = useState('');
+  const neu = () => { setWarnung(''); setError(''); setEditing(Object.fromEntries(formFields.filter((f) => f.standard !== undefined).map((f) => [f.key, typeof f.standard === 'function' ? f.standard() : f.standard]))); };
+  const sichtbar = (f: Field) => !editing || !f.zeigen || f.zeigen(editing);
+  // Werte ändern; bei PLZ gleich den Ort ergänzen, wenn er noch leer ist
+  const setzen = (f: Field, v: any) => {
+    setEditing((e) => ({ ...e, [f.key]: v }));
+    setWarnung('');
+    if (f.key === 'plz' && formFields.some((x) => x.key === 'ort')) {
+      ortZurPlz(v).then((ort) => { if (ort) setEditing((e) => (e && !String(e.ort ?? '').trim() ? { ...e, ort } : e)); });
+    }
+  };
+  const fehlerVon = (f: Field, w: Row) => f.pruefen?.(w[f.key], w) ?? (f.key === 'iban' ? ibanFehler(w[f.key]) : null);
+  const hinweisVon = (f: Field, w: Row) => f.hinweis?.(w) ?? (f.key === 'plz' ? plzFehler(w[f.key]) : null);
 
   async function save() {
     if (!editing) return;
     setError('');
     for (const f of formFields) {
+      if (!sichtbar(f)) continue;
       if (f.required && (editing[f.key] === undefined || editing[f.key] === null || editing[f.key] === '')) {
         setError(`Bitte „${f.label}“ ausfüllen.`);
         return;
       }
+      const fe = fehlerVon(f, editing);
+      if (fe) { setError(`${f.label}: ${fe}`); return; }
+    }
+    if (table === 'personen' && !warnung) {
+      const d = await doppeltePerson(editing, editing.id);
+      if (d) { setWarnung(d); return; }
     }
     const values: Row = {};
     for (const f of formFields) {
@@ -105,6 +136,9 @@ export function EntityTable({ title, table, fields, listSql, listParams = [], fi
         v = n;
       }
       if (f.type === 'checkbox') v = v ? 1 : 0;
+      if (f.key === 'iban' && v) v = String(v).replace(/\s/g, '').toUpperCase();
+      // leerer Geldbetrag beim Anlegen: es gilt der Standard der Datenbank (z. B. 0 € NK-Vorauszahlung)
+      if (f.geld && v === null && !editing.id) continue;
       values[f.key] = v;
     }
     try {
@@ -170,7 +204,7 @@ export function EntityTable({ title, table, fields, listSql, listParams = [], fi
         <div className="row">
           <input className="search" placeholder="Suchen…" value={filter} onChange={(e) => setFilter(e.target.value)} />
           {visible.length > 0 && <button onClick={alsPdf} title="Liste als PDF"><FileDown size={16} />PDF</button>}
-          <button className="primary" onClick={() => (onNew ? onNew() : setEditing({}))}>+ {newLabel ?? 'Neu'}</button>
+          <button className="primary" onClick={() => (onNew ? onNew() : neu())}>+ {newLabel ?? 'Neu'}</button>
         </div>
       </div>
       {visible.length === 0 ? (
@@ -188,7 +222,7 @@ export function EntityTable({ title, table, fields, listSql, listParams = [], fi
               <tr key={r.id} onClick={() => (onOpen ? onOpen(r) : setEditing(r))} className={'clickable' + (rowClass?.(r) ? ' ' + rowClass(r) : '')}>
                 {shown.map((f) => <td key={f.key} className={f.type === 'number' ? 'num' + (f.geld && !f.minusNeutral && Number(r[f.key]) < -0.004 ? ' neg' : '') : ''}>{display(f, r)}</td>)}
                 <td className="actions">
-                  <button className="icon-btn" title="Bearbeiten" onClick={(e) => { e.stopPropagation(); setEditing(r); }}><Pencil size={17} /></button>
+                  <button className="icon-btn" title="Bearbeiten" onClick={(e) => { e.stopPropagation(); setWarnung(''); setEditing(r); }}><Pencil size={17} /></button>
                 </td>
               </tr>,
             ])}
@@ -211,14 +245,21 @@ export function EntityTable({ title, table, fields, listSql, listParams = [], fi
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <h3>{editing.id ? `${title}: bearbeiten` : `${title}: neu anlegen`}</h3>
             <div className="form" onKeyDown={(e) => { if (e.key === 'Enter' && !(e.target instanceof HTMLTextAreaElement) && !(e.target instanceof HTMLButtonElement)) { e.preventDefault(); save(); } }}>
-              {formFields.map((f) => (
+              {formFields.filter(sichtbar).map((f) => {
+                const fe = editing[f.key] ? fehlerVon(f, editing) : null, hi = hinweisVon(f, editing);
+                return (
                 <label key={f.key} className={f.wide || f.type === 'textarea' ? 'wide' : ''}>
                   <span>{f.label}{f.required ? ' *' : ''}</span>
-                  <Input f={f} value={editing[f.key]} opts={opts[f.key]} onChange={(v) => setEditing({ ...editing, [f.key]: v })} />
-                </label>
-              ))}
+                  {f.neuePerson
+                    ? <PersonWahl f={f} value={editing[f.key]} opts={opts[f.key]} onChange={(v) => setzen(f, v)}
+                        onNeu={(o) => { setOpts((x) => ({ ...x, [f.key]: [...(x[f.key] ?? []), o].sort((a, b) => a.label.localeCompare(b.label, 'de')) })); setzen(f, o.value); }} />
+                    : <Input f={f} value={editing[f.key]} opts={opts[f.key]} onChange={(v) => setzen(f, v)} />}
+                  {fe ? <small className="feld-fehler">{fe}</small> : hi ? <small className="feld-hinweis">{hi}</small> : null}
+                </label>);
+              })}
             </div>
             {error && <p className="error">{error}</p>}
+            {warnung && <p className="warn">{warnung}</p>}
             <div className="row end">
               {editing.id && <button className="danger" onClick={del}>Löschen</button>}
               <span className="grow" />
@@ -229,6 +270,50 @@ export function EntityTable({ title, table, fields, listSql, listParams = [], fi
         </div>
       )}
     </section>
+  );
+}
+
+/** Personenauswahl mit „+ Neu“: legt die Person gleich hier an, ohne das Formular zu verlassen */
+function PersonWahl({ f, value, opts, onChange, onNeu }: { f: Field; value: any; opts?: Opt[]; onChange: (v: any) => void; onNeu: (o: Opt) => void }) {
+  const [auf, setAuf] = useState(false);
+  const [p, setP] = useState<Record<string, string>>({ anrede: 'Herr', vorname: '', nachname: '', firma: '', telefon: '', email: '', iban: '' });
+  const [fehler, setFehler] = useState('');
+  const [warn, setWarn] = useState('');
+  const s = (k: string) => (e: { target: { value: string } }) => { setP({ ...p, [k]: e.target.value }); setWarn(''); };
+  async function anlegen() {
+    setFehler('');
+    if (!p.nachname.trim() && !p.firma.trim()) { setFehler('Bitte Nachname oder Firma eintragen.'); return; }
+    const ib = ibanFehler(p.iban); if (ib) { setFehler(ib); return; }
+    if (!warn) { const d = await doppeltePerson(p); if (d) { setWarn(d.replace('Nochmal auf Speichern', 'Nochmal auf Anlegen')); return; } }
+    const leer = (x: string) => x.trim() || null;
+    const id = await insert('personen', { rolle: f.neuePerson, anrede: leer(p.anrede), vorname: leer(p.vorname), nachname: leer(p.nachname), firma: leer(p.firma),
+      telefon: leer(p.telefon), email: leer(p.email), iban: leer(p.iban.replace(/\s/g, '').toUpperCase()) });
+    const label = p.nachname.trim() ? [p.nachname.trim(), p.vorname.trim()].filter(Boolean).join(', ') : p.firma.trim();
+    onNeu({ value: id, label });
+    setAuf(false); setWarn(''); setP({ anrede: 'Herr', vorname: '', nachname: '', firma: '', telefon: '', email: '', iban: '' });
+  }
+  return (
+    <span className="person-wahl">
+      <span className="row">
+        <span className="grow"><Input f={f} value={value} opts={opts} onChange={onChange} /></span>
+        <button type="button" className={auf ? '' : 'link'} onClick={(e) => { e.preventDefault(); setAuf(!auf); }} title={`Neuen Kontakt (${f.neuePerson}) direkt anlegen`}>{auf ? 'Schließen' : '+ Neu'}</button>
+      </span>
+      {auf && <span className="person-neu" onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); anlegen(); } }}>
+        <b>Neuer Kontakt ({f.neuePerson})</b>
+        <span className="person-neu-raster">
+          <select value={p.anrede} onChange={s('anrede')}>{['Herr', 'Frau', 'Divers', 'Firma', 'Eheleute'].map((a) => <option key={a}>{a}</option>)}</select>
+          <input placeholder="Vorname" value={p.vorname} onChange={s('vorname')} autoFocus />
+          <input placeholder="Nachname" value={p.nachname} onChange={s('nachname')} />
+          <input placeholder="Firma (bei Gewerbe)" value={p.firma} onChange={s('firma')} />
+          <input placeholder="Telefon" value={p.telefon} onChange={s('telefon')} />
+          <input placeholder="E-Mail" value={p.email} onChange={s('email')} />
+          <input className="breit" placeholder="IBAN (für die Zuordnung der Zahlungen)" value={p.iban} onChange={s('iban')} />
+        </span>
+        {fehler && <small className="feld-fehler">{fehler}</small>}
+        {warn && <small className="feld-hinweis">{warn}</small>}
+        <span className="row end"><button type="button" className="primary" onClick={(e) => { e.preventDefault(); anlegen(); }}>Anlegen und auswählen</button></span>
+      </span>}
+    </span>
   );
 }
 

@@ -1,5 +1,6 @@
 // Assistent „Liegenschaft hinzufügen“: Grunddaten → Einheiten erfassen → Zusammenfassung.
 import { BetragFeld } from '../components/BetragFeld';
+import { ortZurPlz } from '../lib/pruefen';
 import { betragZahl } from '../lib/betrag';
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
@@ -152,7 +153,7 @@ export function ObjektAssistentPage() {
               <label><span>Verwaltungsart *</span><select value={o.verwaltungsart} onChange={(e) => set('verwaltungsart', e.target.value)}><option value="WEG">WEG (Wohnungseigentum)</option><option value="Mietverwaltung">Mietverwaltung</option></select></label>
               <label className="span2"><span>Bezeichnung</span><input placeholder="z. B. WEG Rheinblick (sonst die Straße)" value={o.name ?? ''} onChange={(e) => set('name', e.target.value)} /></label>
               <label className="span3"><span>Straße und Hausnummer *</span><input placeholder="z. B. Musterstraße 12" value={o.strasse ?? ''} onChange={(e) => set('strasse', e.target.value)} /></label>
-              <label><span>PLZ *</span><input value={o.plz ?? ''} onChange={(e) => set('plz', e.target.value)} /></label>
+              <label><span>PLZ *</span><input value={o.plz ?? ''} inputMode="numeric" onChange={(e) => { const plz = e.target.value; set('plz', plz); ortZurPlz(plz).then((ort) => { if (ort) setO((a: Row) => (String(a.ort ?? '').trim() ? a : { ...a, ort })); }); }} /></label>
               <label><span>Ort *</span><input value={o.ort ?? ''} onChange={(e) => set('ort', e.target.value)} /></label>
               <label><span>Baujahr</span><input inputMode="numeric" value={o.baujahr ?? ''} onChange={(e) => set('baujahr', e.target.value)} /></label>
             </div>
