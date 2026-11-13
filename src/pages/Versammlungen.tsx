@@ -539,7 +539,7 @@ function Unterschriftfeld({ bild, onSpeichern, onLoeschen, gesperrt }: { bild?: 
     const ctx = c.getContext('2d')!; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = '#14213d'; ctx.lineWidth = 4.4; setLeer(true);
   }, [bild]);
   const p = (e: React.PointerEvent<HTMLCanvasElement>) => { const r = e.currentTarget.getBoundingClientRect(); return { x: (e.clientX - r.left) * 2, y: (e.clientY - r.top) * 2 }; };
-  if (bild) return <div className="pad"><img src={bild} alt="Unterschrift" />{!gesperrt && <button className="link" style={{ position: 'absolute', right: 0, top: 0, fontSize: 11 }} onClick={onLoeschen}>neu unterschreiben</button>}</div>;
+  if (bild) return <div className="pad"><img src={bild} alt="Unterschrift" />{!gesperrt && <button className="link" style={{ position: 'absolute', right: 0, top: 0, fontSize: 12 }} onClick={onLoeschen}>neu unterschreiben</button>}</div>;
   return (
     <>
       <div className="pad">

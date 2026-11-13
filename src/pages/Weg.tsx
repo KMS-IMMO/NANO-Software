@@ -416,7 +416,7 @@ export function WirtschaftsplanTab({ objektId }: { objektId: number }) {
   return (
     <>
     <OsaPlanVorschlag objektId={objektId} objektName={objName} jahr={jahr} plan={planZahlen} onUebernehmen={vorschlagUebernehmen} />
-    <div className="grid2" style={{ gridTemplateColumns: 'minmax(420px, 3fr) minmax(320px, 2fr)' }}>
+    <div className="grid2 wp-plan">
       <section className="card">
         <div className="card-head"><h2 className="title-ico"><ClipboardList size={22} />Wirtschaftsplan {jahr}</h2>
           <div className="row">

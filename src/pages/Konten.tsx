@@ -1,6 +1,6 @@
 import { VorlagenKarte } from './Versammlungen';
 import { EntityTable, eur } from '../components/EntityTable';
-import { darstellungLesen, darstellungSetzen, type Darstellung } from '../lib/theme';
+import { darstellungLesen, darstellungSetzen, type Darstellung, schriftLesen, schriftSetzen, type Schrift } from '../lib/theme';
 import { SicherheitKarte } from '../components/SicherheitKarte';
 import { db, mehrplatz, sicherheit } from '../db';
 import { MehrplatzKarte } from '../components/MehrplatzKarte';
@@ -165,6 +165,7 @@ export function EinstellungenPage() {
 /** Darstellung: Hell, Dunkel (Forged Carbon) oder wie macOS */
 function DarstellungKarte() {
   const [d, setD] = useState<Darstellung>(darstellungLesen);
+  const [schrift, setSchrift] = useState<Schrift>(schriftLesen);
   const wahl: [Darstellung, string, string][] = [
     ['hell', 'Hell', 'Heller Hintergrund, wie bisher'],
     ['dunkel', 'Dunkel (Forged Carbon)', 'Carbon-Grau mit Bronze, Minus knallrot, Plus knallgrün'],
@@ -182,7 +183,12 @@ function DarstellungKarte() {
           </button>
         ))}
       </div>
-      <p className="muted" style={{ marginBottom: 0 }}>Gilt sofort und nur auf diesem Mac. Ausdrucke und PDFs bleiben immer hell.</p>
+      <div className="row" style={{ marginTop: 14, alignItems: 'center' }}>
+        <b>Schriftgröße</b>
+        <div className="seg">{([['normal', 'Normal'], ['gross', 'Groß'], ['sehrgross', 'Sehr groß']] as [Schrift, string][]).map(([k, t]) => (
+          <button key={k} type="button" className={schrift === k ? 'on' : ''} onClick={() => { setSchrift(k); schriftSetzen(k); }}>{t}</button>))}</div>
+      </div>
+      <p className="muted" style={{ marginBottom: 0 }}>Gilt sofort und nur auf diesem Mac. Ausdrucke und PDFs bleiben immer hell und in normaler Größe.</p>
     </section>
   );
 }

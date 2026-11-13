@@ -5,7 +5,7 @@
 html[data-theme="dunkel"] {
   color-scheme: dark;
   --bg: #121315; --panel: #1b1d20; --panel-2: #222428; --side: #0d0e10; --side-2: #08090a; --side-text: #e4e1da;
-  --text: #ece9e3; --muted: #9d9fa4; --line: #2d3035; --head: #24262a; --sum: #2a241c;
+  --text: #ece9e3; --muted: #b2b4b8; --line: #2d3035; --head: #24262a; --sum: #2a241c;
   --accent: #c8955a; --accent-dark: #e0ad6e; --accent-soft: rgba(200,149,90,.16); --gray: #d9d5cd;
   --neg: #ff2e45; --pos: #1fe36b; --warn-bg: rgba(255,184,0,.12);
   --shadow: 0 1px 0 rgba(255,255,255,.03) inset, 0 6px 22px rgba(0,0,0,.45);
