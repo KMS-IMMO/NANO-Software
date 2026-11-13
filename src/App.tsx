@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState, type ComponentType, type ReactNode } from 'react';
 import { HashRouter, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import {
   AlarmClock, Banknote, CalendarClock, Bell, Building2, Calendar, ChevronRight, CircleCheck, Columns3, Contact, CreditCard, FolderOpen, LayoutDashboard, Landmark, Lock,
-  Network, Receipt, Search, Settings, SquarePen, Trash2, UserCog, UserRound, Users,
+  Network, Receipt, Search, Settings, SquarePen, Trash2, FileSpreadsheet, KeyRound, UserCog, UserRound, Users,
 } from 'lucide-react';
 import { db, mehrplatz, sicherheit, type Row } from './db';
 import { personLabel } from './db/labels';
@@ -12,25 +12,45 @@ import { KopfNetz, Logo } from './components/Logo';
 import { KiAssistent } from './components/KiAssistent';
 import { ModalHelfer } from './components/ModalHelfer';
 import { DashboardPage } from './pages/Dashboard';
-import { ObjektDetailPage, ObjektePage } from './pages/Objekte';
-import { FirmenPage, PersonenPage } from './pages/Personen';
-import { VertragDetailPage, VertraegePage } from './pages/Vertraege';
-import { OffenePostenPage } from './pages/OffenePosten';
-import { BankPage } from './pages/Bank';
-import { MahnungenPage } from './pages/Mahnungen';
-import { NebenkostenPage } from './pages/Nebenkosten';
-import { DokumentePage } from './pages/Dokumente';
-import { EigentuemerAbrechnungPage, WegAbrechnungPage } from './pages/Jahresabrechnungen';
-import { EinstellungenPage, KontenPage, RechnungenPage } from './pages/Konten';
-import { PapierkorbPage } from './pages/Papierkorb';
-import { BeschluessePage, InstandhaltungPage } from './pages/Weg';
-import { AuswertungPage, BerichtePage, JournalPage, RegelnPage } from './pages/Buchhaltung';
-import { ObjektAssistentPage } from './pages/ObjektAssistent';
-import { SollstellungenPage } from './pages/Sollstellungen';
 import { autoAbruf, BANK_INFO } from './logic/bankAbruf';
 import { wiederkehrendErzeugen } from './logic/wiederkehrend';
-import { FristenPage } from './pages/Fristen';
-import { ErinnerungenPage, KalenderPage, KontaktePage, NotizenPage, TicketBoardsPage, TodoPage } from './pages/Produktiv';
+
+// Seiten erst laden, wenn sie gebraucht werden: Die App startet schneller (Dashboard sofort, Rest bei Bedarf)
+function seite(laden: () => Promise<Record<string, unknown>>, name: string) {
+  return lazy(() => laden().then((m) => ({ default: m[name] as ComponentType })));
+}
+const ObjektDetailPage = seite(() => import('./pages/Objekte'), 'ObjektDetailPage');
+const ObjektePage = seite(() => import('./pages/Objekte'), 'ObjektePage');
+const FirmenPage = seite(() => import('./pages/Personen'), 'FirmenPage');
+const PersonenPage = seite(() => import('./pages/Personen'), 'PersonenPage');
+const VertragDetailPage = seite(() => import('./pages/Vertraege'), 'VertragDetailPage');
+const VertraegePage = seite(() => import('./pages/Vertraege'), 'VertraegePage');
+const OffenePostenPage = seite(() => import('./pages/OffenePosten'), 'OffenePostenPage');
+const BankPage = seite(() => import('./pages/Bank'), 'BankPage');
+const MahnungenPage = seite(() => import('./pages/Mahnungen'), 'MahnungenPage');
+const NebenkostenPage = seite(() => import('./pages/Nebenkosten'), 'NebenkostenPage');
+const DokumentePage = seite(() => import('./pages/Dokumente'), 'DokumentePage');
+const EigentuemerAbrechnungPage = seite(() => import('./pages/Jahresabrechnungen'), 'EigentuemerAbrechnungPage');
+const WegAbrechnungPage = seite(() => import('./pages/Jahresabrechnungen'), 'WegAbrechnungPage');
+const EinstellungenPage = seite(() => import('./pages/Konten'), 'EinstellungenPage');
+const KontenPage = seite(() => import('./pages/Konten'), 'KontenPage');
+const RechnungenPage = seite(() => import('./pages/Konten'), 'RechnungenPage');
+const PapierkorbPage = seite(() => import('./pages/Papierkorb'), 'PapierkorbPage');
+const BeschluessePage = seite(() => import('./pages/Weg'), 'BeschluessePage');
+const InstandhaltungPage = seite(() => import('./pages/Weg'), 'InstandhaltungPage');
+const AuswertungPage = seite(() => import('./pages/Buchhaltung'), 'AuswertungPage');
+const BerichtePage = seite(() => import('./pages/Buchhaltung'), 'BerichtePage');
+const JournalPage = seite(() => import('./pages/Buchhaltung'), 'JournalPage');
+const RegelnPage = seite(() => import('./pages/Buchhaltung'), 'RegelnPage');
+const ObjektAssistentPage = seite(() => import('./pages/ObjektAssistent'), 'ObjektAssistentPage');
+const SollstellungenPage = seite(() => import('./pages/Sollstellungen'), 'SollstellungenPage');
+const FristenPage = seite(() => import('./pages/Fristen'), 'FristenPage');
+const ErinnerungenPage = seite(() => import('./pages/Produktiv'), 'ErinnerungenPage');
+const KalenderPage = seite(() => import('./pages/Produktiv'), 'KalenderPage');
+const KontaktePage = seite(() => import('./pages/Produktiv'), 'KontaktePage');
+const NotizenPage = seite(() => import('./pages/Produktiv'), 'NotizenPage');
+const TicketBoardsPage = seite(() => import('./pages/Produktiv'), 'TicketBoardsPage');
+const TodoPage = seite(() => import('./pages/Produktiv'), 'TodoPage');
 
 type Item = { to: string; label: string; icon?: ReactNode; sub?: string };
 type Group = { label: string; icon: ReactNode; items: Item[] };
@@ -42,6 +62,7 @@ const NAV: Abschnitt[] = [
     { to: '/objekte', label: 'Immobilien', icon: <Building2 size={I} /> },
     { to: '/eigentuemer', label: 'Eigentümer', icon: <Users size={I} /> },
     { to: '/mieter', label: 'Mieter', icon: <UserRound size={I} /> },
+    { to: '/vertraege', label: 'Mietverträge', icon: <KeyRound size={I} /> },
     { to: '/verwalter', label: 'Verwalter', icon: <UserCog size={I} /> },
     { to: '/kontakte', label: 'Kontakte', icon: <Contact size={I} /> },
     { to: '/ablage', label: 'Dateimanager', icon: <FolderOpen size={I} /> },
@@ -51,16 +72,17 @@ const NAV: Abschnitt[] = [
       { to: '/bank', label: 'Bank & Zuordnung' },
       { to: '/regeln', label: 'Buchungsregeln' },
     ] },
-    { label: 'Sollstellung', icon: <Banknote size={I} />, items: [
+    { label: 'Forderungen', icon: <Banknote size={I} />, items: [
       { to: '/sollstellungen', label: 'Sollstellungen' },
       { to: '/offene-posten', label: 'Offene Posten' },
-      { to: '/vertraege', label: 'Mietverträge' },
       { to: '/mahnungen', label: 'Mahnungen' },
+    ] },
+    { to: '/rechnungen', label: 'Ausgaben', icon: <Receipt size={I} /> },
+    { label: 'Abrechnungen', icon: <FileSpreadsheet size={I} />, items: [
       { to: '/weg-abrechnung', label: 'Hausgeldabrechnung' },
       { to: '/nebenkosten', label: 'Nebenkostenabrechnung' },
       { to: '/eigentuemer-abrechnung', label: 'Eigentümerabrechnung' },
     ] },
-    { to: '/rechnungen', label: 'Ausgaben', icon: <Receipt size={I} /> },
     { label: 'Buchungskonten', icon: <Network size={I} />, items: [
       { to: '/konten', label: 'Kontenplan' },
       { to: '/journal', label: 'Buchungsjournal' },
@@ -233,6 +255,7 @@ function Rahmen() {
           <Topbar />
           <main className="main">
             <Seite>
+            <Suspense fallback={<div className="seite-laedt" />}>
             <Routes>
               <Route path="/" element={<DashboardPage />} />
               <Route path="/objekte" element={<ObjektePage />} />
@@ -271,6 +294,7 @@ function Rahmen() {
               <Route path="/todo" element={<TodoPage />} />
               <Route path="/notizen" element={<NotizenPage />} />
             </Routes>
+            </Suspense>
             </Seite>
             <KiAssistent />
             <ModalHelfer />

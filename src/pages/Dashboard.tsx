@@ -1,14 +1,16 @@
 // Dashboard: 3D-Stadt mit dem KMS HQ in der Mitte. Über die Suche oder per Klick wird eine Liegenschaft gewählt,
 // die Kamera fährt hin und rundherum erscheinen Zahlungsübersicht, offene Aufgaben, Liegenschaftsübersicht und Termine.
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import { Suspense, lazy, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ArrowRight, BarChart3, Building2, CalendarDays, ChevronRight, DoorOpen, ListTodo, MapPin, Search, Users, Wallet, X } from 'lucide-react';
+import { ArrowRight, BarChart3, CheckCircle2, Building2, CalendarDays, ChevronRight, DoorOpen, ListTodo, MapPin, Search, Users, Wallet, X } from 'lucide-react';
 import { db, type Row } from '../db';
 import { datum, eur, num } from '../components/EntityTable';
 import { Donut } from '../components/Donut';
 import { OP_SQL } from '../logic/soll';
 import { Zaehler } from '../components/Zaehler';
-import { Stadt3D, type StadtObjekt } from '../components/Stadt3D';
+import type { StadtObjekt } from '../components/Stadt3D';
+// 3D-Stadt (three.js) erst nachladen: Kennzahlen stehen sofort da, die Stadt erscheint einen Moment später
+const Stadt3D = lazy(() => import('../components/Stadt3D').then((m) => ({ default: m.Stadt3D })));
 
 const monat = () => new Date().toISOString().slice(0, 7);
 const monatName = () => new Date().toLocaleDateString('de-DE', { month: 'long', year: 'numeric' });
@@ -31,7 +33,17 @@ async function laden(id: number | null): Promise<Daten> {
       (SELECT COUNT(*) FROM vorgaenge WHERE ${o('objekt_id')} AND status <> 'Erledigt') vorgaenge,
       (SELECT COUNT(*) FROM beschluesse WHERE ${o('objekt_id')} AND status <> 'Erledigt' AND ergebnis = 'Angenommen') beschluesse,
       (SELECT COUNT(*) FROM fristen WHERE ${o('objekt_id')} AND erledigt_am IS NULL AND faellig <= date('now', '+' || COALESCE(vorlauf_tage, 30) || ' days')) fristen,
-      (SELECT COUNT(*) FROM rechnungen WHERE ${o('objekt_id')} AND bezahlt_am IS NULL) rechnungen`))[0] ?? {};
+      (SELECT COUNT(*) FROM rechnungen WHERE ${o('objekt_id')} AND bezahlt_am IS NULL) rechnungen,
+      (SELECT COUNT(*) FROM bankumsaetze u JOIN bankkonten b ON b.id = u.bankkonto_id WHERE ${o('b.objekt_id')} AND u.status = 'offen') bank_offen,
+      (SELECT COUNT(*) FROM mietvertraege v JOIN einheiten e ON e.id = v.einheit_id WHERE ${o('e.objekt_id')} AND ${AKTIV} AND COALESCE(v.zahlung_an, 'Verwaltung') <> 'Eigentümer'
+        AND NOT EXISTS (SELECT 1 FROM sollstellungen s WHERE s.vertrag_id = v.id AND s.monat = strftime('%Y-%m', 'now'))) soll_fehlt,
+      (SELECT COUNT(*) FROM mietvertraege v JOIN einheiten e ON e.id = v.einheit_id WHERE ${o('e.objekt_id')} AND ${AKTIV}
+        AND NOT EXISTS (SELECT 1 FROM dokumente d WHERE d.bezug = 'Mietvertrag' AND d.bezug_id = v.id)) ohne_pdf,
+      (SELECT COUNT(*) FROM objekte x WHERE ${o('x.id')} AND x.verwaltungsart <> 'WEG' AND EXISTS (SELECT 1 FROM mietvertraege v JOIN einheiten e ON e.id = v.einheit_id
+        WHERE e.objekt_id = x.id AND v.beginn <= (strftime('%Y', 'now') - 1) || '-12-31' AND (v.ende IS NULL OR v.ende >= (strftime('%Y', 'now') - 1) || '-01-01'))
+        AND NOT EXISTS (SELECT 1 FROM abrechnungen a WHERE a.objekt_id = x.id AND a.art = 'Nebenkosten' AND a.jahr = strftime('%Y', 'now') - 1 AND a.status IN ('Abgeschlossen', 'Gebucht'))) nk_offen,
+      (SELECT COUNT(*) FROM objekte x WHERE ${o('x.id')} AND x.verwaltungsart = 'WEG' AND EXISTS (SELECT 1 FROM einheiten e WHERE e.objekt_id = x.id)
+        AND NOT EXISTS (SELECT 1 FROM abrechnungen a WHERE a.objekt_id = x.id AND a.art = 'WEG' AND a.jahr = strftime('%Y', 'now') - 1 AND a.status = 'Abgeschlossen')) weg_offen`))[0] ?? {};
   const z = (await db.select(`SELECT COALESCE(SUM(betrag), 0) soll, COALESCE(SUM(MIN(bezahlt, betrag)), 0) ist
       FROM (${OP_SQL}) WHERE ${o('objekt_id')} AND monat = $1 AND art IN ('Kaltmiete', 'NK', 'HK', 'USt', 'Hausgeld', 'Rücklage')`, [monat()]))[0] ?? {};
   const leer = Number((await db.select(`SELECT COUNT(*) n FROM einheiten e JOIN objekte o ON o.id = e.objekt_id
@@ -125,21 +137,13 @@ export function DashboardPage() {
             <Link className="leit-zeile" to={pfad('offene-posten', '/offene-posten')}><Wallet size={16} /><span>Überfällig</span><b className={k.offen > 0 ? 'neg' : ''}><Zaehler wert={Number(k.offen) || 0} format={eur} /></b></Link>
           </section>
           <section className="card leit-karte">
-            <div className="card-head"><h2 className="title-ico"><ListTodo size={20} />Offene Aufgaben</h2></div>
-            <div className="aufgaben kompakt">
-              <Link to={pfad('mahnungen', '/mahnungen')}><span><b className={k.offen_n ? 'neg' : ''}>{k.offen_n ?? 0}</b>Zahlungen überfällig</span><ChevronRight size={16} /></Link>
-              <Link to={pfad('instandhaltung', '/instandhaltung')}><span><b>{k.vorgaenge ?? 0}</b>Instandhaltungen offen</span><ChevronRight size={16} /></Link>
-              <Link to={pfad('fristen', '/fristen')}><span><b className={k.fristen ? 'neg' : ''}>{k.fristen ?? 0}</b>Fristen fällig oder bald fällig</span><ChevronRight size={16} /></Link>
-              <Link to={pfad('buchungen', '/journal')}><span><b>{k.rechnungen ?? 0}</b>Rechnungen unbezahlt</span><ChevronRight size={16} /></Link>
-              {(wahl == null || gewaehlt?.verwaltungsart === 'WEG') && <Link to={pfad('beschluesse', '/beschluesse')}><span><b>{k.beschluesse ?? 0}</b>Beschlüsse in Umsetzung</span><ChevronRight size={16} /></Link>}
-              {(wahl == null || gewaehlt?.verwaltungsart !== 'WEG') && <Link to={pfad('mieter', '/vertraege')}><span><b>{d?.leer ?? 0}</b>Einheiten leer</span><ChevronRight size={16} /></Link>}
-              {(wahl == null || gewaehlt?.verwaltungsart !== 'WEG') && <Link to={pfad('mieter', '/vertraege')}><span><b>{d?.auslaufend ?? 0}</b>Mietverträge enden in 6 Monaten</span><ChevronRight size={16} /></Link>}
-            </div>
+            <div className="card-head"><h2 className="title-ico"><ListTodo size={20} />Was ist zu tun?</h2></div>
+            <ZuTun k={k} d={d} pfad={pfad} weg={wahl == null ? null : gewaehlt?.verwaltungsart === 'WEG'} />
           </section>
         </div>
 
         <div className="leit-stadt">
-          <Stadt3D objekte={stadt} gewaehlt={wahl} onWahl={(id) => setWahl(id)} />
+          <Suspense fallback={null}><Stadt3D objekte={stadt} gewaehlt={wahl} onWahl={(id) => setWahl(id)} /></Suspense>
           <div className="leit-legende"><span><i className="hq" />KMS Zentrale · Agent O.S.A</span><span><i className="mv" />Mietverwaltung</span><span><i className="weg" />WEG</span></div>
           {wahl == null ? <p className="leit-hinweis">Gebäude anklicken oder oben suchen · Ziehen dreht die Stadt · Mausrad zoomt</p>
             : <button className="leit-zurueck" onClick={() => waehlen(null)}><X size={14} />Ganze Stadt</button>}
@@ -184,6 +188,34 @@ export function DashboardPage() {
           </section>
         </div>
       </div>
+    </div>
+  );
+}
+
+/** „Was ist zu tun?“: nur, was wirklich ansteht, das Dringendste zuerst, mit direktem Knopf */
+function ZuTun({ k, d, pfad, weg }: { k: Row; d: Daten | null; pfad: (unter: string, global: string) => string; weg: boolean | null }) {
+  const vj = new Date().getFullYear() - 1;
+  const n = (x: unknown) => Number(x) || 0;
+  const punkte: { n: number; text: string; knopf: string; ziel: string; dringend?: boolean }[] = [
+    { n: n(k.offen_n), text: n(k.offen_n) === 1 ? 'Zahlung überfällig' : 'Zahlungen überfällig', knopf: 'Mahnen', ziel: pfad('mahnungen', '/mahnungen'), dringend: true },
+    { n: n(k.fristen), text: n(k.fristen) === 1 ? 'Frist fällig oder bald fällig' : 'Fristen fällig oder bald fällig', knopf: 'Ansehen', ziel: pfad('fristen', '/fristen'), dringend: true },
+    { n: n(k.bank_offen), text: n(k.bank_offen) === 1 ? 'Bankumsatz nicht zugeordnet' : 'Bankumsätze nicht zugeordnet', knopf: 'Zuordnen', ziel: pfad('bank', '/bank') },
+    { n: n(k.soll_fehlt), text: `Mietverträge ohne Sollstellung für ${new Date().toLocaleDateString('de-DE', { month: 'long' })}`, knopf: 'Erzeugen', ziel: pfad('sollstellungen', '/sollstellungen') },
+    ...(weg !== true ? [{ n: n(k.nk_offen), text: `Nebenkostenabrechnung ${vj} offen (Frist 31.12.${vj + 1})`, knopf: 'Abrechnen', ziel: pfad('nebenkosten', '/nebenkosten') }] : []),
+    ...(weg !== false ? [{ n: n(k.weg_offen), text: `Hausgeldabrechnung ${vj} nicht abgeschlossen`, knopf: 'Abrechnen', ziel: pfad('hausgeldabrechnung', '/weg-abrechnung') }] : []),
+    { n: n(k.rechnungen), text: n(k.rechnungen) === 1 ? 'Rechnung unbezahlt' : 'Rechnungen unbezahlt', knopf: 'Bezahlen', ziel: pfad('rechnungen', '/rechnungen') },
+    { n: n(k.vorgaenge), text: 'Instandhaltungen offen', knopf: 'Ansehen', ziel: pfad('instandhaltung', '/instandhaltung') },
+    ...(weg !== false ? [{ n: n(k.beschluesse), text: 'Beschlüsse in Umsetzung', knopf: 'Ansehen', ziel: pfad('beschluesse', '/beschluesse') }] : []),
+    ...(weg !== true ? [
+      { n: n(d?.auslaufend), text: 'Mietverträge enden in 6 Monaten', knopf: 'Ansehen', ziel: pfad('mieter', '/vertraege') },
+      { n: n(d?.leer), text: 'Einheiten leer', knopf: 'Vermieten', ziel: pfad('mieter', '/vertraege') },
+      { n: n(k.ohne_pdf), text: 'Mietverträge ohne PDF', knopf: 'Hochladen', ziel: pfad('mieter', '/vertraege') }] : []),
+  ].filter((x) => x.n > 0);
+  if (!punkte.length) return <p className="zutun-leer"><CheckCircle2 size={18} />Alles erledigt. Gerade steht nichts an.</p>;
+  return (
+    <div className="aufgaben kompakt zutun">
+      {punkte.map((x) => (
+        <Link key={x.text} to={x.ziel}><span><b className={x.dringend ? 'neg' : ''}>{x.n}</b>{x.text}</span><span className="zutun-knopf">{x.knopf}<ChevronRight size={14} /></span></Link>))}
     </div>
   );
 }

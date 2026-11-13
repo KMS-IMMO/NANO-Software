@@ -27,6 +27,8 @@ const { chromium } = require('playwright');
   for (const u of urls) {
     cur = u;
     await p.goto('http://localhost:5179/#' + u); await p.waitForTimeout(700);
+    // Seiten werden bei Bedarf nachgeladen: beim ersten Aufruf kurz warten, bis Inhalt da ist
+    await p.waitForFunction(() => (document.querySelector('main')?.innerText ?? '').trim().length >= 20, null, { timeout: 8000 }).catch(() => {});
     const t = await p.evaluate(() => document.querySelector('main')?.innerText ?? document.body.innerText);
     if (/Something went wrong|Unexpected Application Error|is not a function|undefined|NaN|\[object Object\]/.test(t)) leer.push([u, (t.match(/.{0,60}(Something went wrong|Unexpected Application Error|is not a function|undefined|NaN|\[object Object\]).{0,60}/) || [''])[0]]);
     if (t.trim().length < 20) leer.push([u, 'fast leer']);

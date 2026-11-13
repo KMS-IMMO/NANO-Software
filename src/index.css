@@ -1199,3 +1199,11 @@ table.list td.einzug { padding-left: 28px; color: var(--muted); }
 .sicherung-status > div { display: flex; flex-direction: column; gap: 4px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--head); min-width: 0; }
 .sicherung-status b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sicherung-status .row { gap: 10px; margin-top: 4px; }
+
+/* Dashboard „Was ist zu tun?“ */
+.zutun a { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.zutun .zutun-knopf { display: inline-flex; align-items: center; gap: 2px; font-size: 12px; font-weight: 600; color: var(--accent-dark); background: var(--accent-soft); border-radius: 999px; padding: 3px 8px 3px 10px; white-space: nowrap; }
+.zutun a:hover .zutun-knopf { background: var(--accent); color: #fff; }
+.zutun-leer { display: flex; align-items: center; gap: 8px; color: var(--pos); margin: 6px 0; }
+.zutun a > span:first-child { min-width: 0; }
+.zutun .zutun-knopf { flex-shrink: 0; }
