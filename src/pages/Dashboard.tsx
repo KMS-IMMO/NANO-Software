@@ -41,7 +41,7 @@ async function laden(id: number | null): Promise<Daten> {
   // Offene Termine wie im Kalender: Termine, Versammlungen, Instandhaltungen, Fristen, Erinnerungen und Tickets der Liegenschaft
   const termine = await db.select(`SELECT * FROM (
       SELECT t.datum, t.uhrzeit, COALESCE(t.art, 'Termin') AS art, t.titel, o.name AS objekt, '/kalender' AS ziel FROM termine t LEFT JOIN objekte o ON o.id = t.objekt_id WHERE ${o('t.objekt_id')} AND t.datum >= date('now')
-      UNION ALL SELECT v.datum, v.uhrzeit, 'Versammlung', v.art, o.name, '/objekte/' || o.id || '/beschluesse' FROM versammlungen v JOIN objekte o ON o.id = v.objekt_id WHERE ${o('v.objekt_id')} AND v.datum >= date('now')
+      UNION ALL SELECT v.datum, v.uhrzeit, 'Versammlung', v.art, o.name, '/objekte/' || o.id || '/versammlungen/' || v.id FROM versammlungen v JOIN objekte o ON o.id = v.objekt_id WHERE ${o('v.objekt_id')} AND v.datum >= date('now')
       UNION ALL SELECT x.faellig, NULL, 'Instandhaltung', x.betreff, o.name, '/objekte/' || o.id || '/instandhaltung' FROM vorgaenge x JOIN objekte o ON o.id = x.objekt_id WHERE ${o('x.objekt_id')} AND x.status <> 'Erledigt' AND x.faellig IS NOT NULL
       UNION ALL SELECT f.faellig, NULL, 'Frist', f.titel, o.name, '/fristen' FROM fristen f LEFT JOIN objekte o ON o.id = f.objekt_id WHERE ${o('f.objekt_id')} AND f.erledigt_am IS NULL
       UNION ALL SELECT r.faellig, r.uhrzeit, 'Erinnerung', r.titel, o.name, '/erinnerungen' FROM erinnerungen r LEFT JOIN objekte o ON o.id = r.objekt_id WHERE ${o('r.objekt_id')} AND r.erledigt = 0

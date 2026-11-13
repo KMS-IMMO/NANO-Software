@@ -25,12 +25,12 @@ const zahl = (s: string) => betragZahl(s) ?? 0;
 
 /* =================== Beschlüsse und Versammlungen =================== */
 
-export function BeschluesseTab({ objektId }: { objektId?: number }) {
+export function BeschluesseTab({ objektId, nurBeschluesse }: { objektId?: number; nurBeschluesse?: boolean }) {
   const wo = objektId ? 'WHERE b.objekt_id = $1' : '';
   const params = objektId ? [objektId] : [];
   return (
     <>
-      <EntityTable
+      {!nurBeschluesse && <EntityTable
         title="Eigentümerversammlungen"
         icon={<CalendarDays size={22} />}
         newLabel="Versammlung anlegen"
@@ -50,14 +50,14 @@ export function BeschluesseTab({ objektId }: { objektId?: number }) {
         listParams={params}
         fixed={objektId ? { objekt_id: objektId } : undefined}
         emptyText="Noch keine Versammlung angelegt. Geplante Versammlungen erscheinen automatisch im Kalender."
-      />
+      />}
       <EntityTable
-        title={objektId ? 'Beschlüsse' : 'Beschlusssammlung'}
+        title={nurBeschluesse ? 'Beschluss-Sammlung' : objektId ? 'Beschlüsse' : 'Beschlusssammlung'}
         icon={<Gavel size={22} />}
         newLabel="Beschluss hinzufügen"
         table="beschluesse"
         fields={[
-          { key: 'nummer', label: 'Nr.', format: (v) => <b>{v}</b> },
+          { key: 'nummer', label: 'Nr.', format: (v) => <b style={{ whiteSpace: 'nowrap' }}>{v}</b> },
           ...(objektId ? [] : [{ key: 'objekt_id', label: 'Liegenschaft', type: 'select' as const, optionsSql: objektOptions, required: true }]),
           { key: 'datum', label: 'Datum (EV)', type: 'date', required: true },
           { key: 'versammlung_id', label: 'Versammlung', type: 'select', hideInTable: true,
@@ -70,6 +70,7 @@ export function BeschluesseTab({ objektId }: { objektId?: number }) {
             format: (v, r) => <>{pill(v, ERGEBNIS)}{r.zustimmung != null && <span className="muted small"> {num(r.zustimmung, 0)} %</span>}</> },
           { key: 'zustimmung', label: 'Zustimmung in %', type: 'number', hideInTable: true },
           { key: 'status', label: 'Status', type: 'select', options: ['Geplant', 'In Umsetzung', 'Erledigt'], required: true, format: (v) => pill(v, STATUS_B) },
+          { key: 'anfechtung_bis', label: 'Anfechtbar bis', type: 'date', format: (v) => v ? (v >= new Date().toISOString().slice(0, 10) ? <span className="pill teil">{datum(v)}</span> : <span className="muted small">bestandskräftig</span>) : '' },
           { key: 'notiz', label: 'Beschlusstext / Notiz', type: 'textarea', hideInTable: true },
         ]}
         listSql={`SELECT b.*, o.name AS objekt_id_label FROM beschluesse b JOIN objekte o ON o.id = b.objekt_id ${wo} ORDER BY b.datum DESC, b.nummer DESC`}

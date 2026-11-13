@@ -1,3 +1,4 @@
+import { VorlagenKarte } from './Versammlungen';
 import { EntityTable, eur } from '../components/EntityTable';
 import { darstellungLesen, darstellungSetzen, type Darstellung } from '../lib/theme';
 import { SicherheitKarte } from '../components/SicherheitKarte';
@@ -125,6 +126,7 @@ export function EinstellungenPage() {
       </section>
       <BriefpapierKarte />
       <UnterschriftKarte />
+      <VorlagenKarte />
       <KiKarte />
       <MehrplatzKarte />
       {!mehrplatz.aktiv && <SicherheitKarte />}

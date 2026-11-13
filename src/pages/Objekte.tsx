@@ -4,9 +4,10 @@ import { MieterAnlegen } from '../components/MieterAnlegen';
 import { useEffect, useMemo, useState } from 'react';
 import { BJ } from '../logic/buchung';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, BarChart3, CircleCheck, FileDown, CalendarClock, CalendarRange, BookOpen, Building2, ClipboardList, Coins, DoorOpen, FileSignature, FileText, FolderOpen, Gavel, Home, Landmark, Layers, ListChecks, Mail,
+import { ArrowLeft, BarChart3, CalendarDays, CircleCheck, FileDown, CalendarClock, CalendarRange, BookOpen, Building2, ClipboardList, Coins, DoorOpen, FileSignature, FileText, FolderOpen, Gavel, Home, Landmark, Layers, ListChecks, Mail,
   Maximize2, PiggyBank, Scale, Trash2, User, Users, Wallet, Wrench } from 'lucide-react';
 import { BeschluesseTab, RuecklagenTab, VorgaengeTab, WirtschaftsplanTab } from './Weg';
+import { VersammlungenBereich, VersammlungListe, VollmachtenListe } from './Versammlungen';
 import { EntityTable, datum, eur, num, type Field } from '../components/EntityTable';
 import { ObjektKontext } from '../logic/objektKontext';
 import { ObjektLoeschen } from '../components/ObjektLoeschen';
@@ -104,8 +105,12 @@ const ebenen = (weg: boolean): Ebene[] => [
     weg && { slug: 'hausgeldabrechnung', label: 'Hausgeldabrechnung', icon: FileText },
     { slug: 'nebenkosten', label: 'Nebenkostenabrechnung', icon: FileText },
     !weg && { slug: 'eigentuemerabrechnung', label: 'Eigentümerabrechnung', icon: FileText }] },
+  ...(weg ? [{ titel: 'Eigentümerversammlung', punkte: [
+    { slug: 'versammlungen', label: 'Versammlungen', icon: CalendarDays },
+    { slug: 'beschluesse', label: 'Beschluss-Sammlung', icon: FileSignature },
+    { slug: 'umlaufbeschluesse', label: 'Umlaufbeschlüsse', icon: Mail },
+    { slug: 'vollmachten', label: 'Vollmachten', icon: Gavel }] }] : []),
   { titel: 'Verwaltung', punkte: [
-    weg && { slug: 'beschluesse', label: 'Beschlüsse', icon: FileSignature },
     { slug: 'instandhaltung', label: 'Instandhaltung', icon: Wrench },
     { slug: 'aufgaben', label: 'Aufgaben', icon: CircleCheck },
     { slug: 'fristen', label: 'Fristen', icon: CalendarClock },
@@ -196,7 +201,10 @@ function Bereich({ slug, rest, o, sum, weg, reload }: { slug: string; rest: stri
     case 'hausgeldabrechnung': return <WegAbrechnungPage />;
     case 'nebenkosten': return <NebenkostenPage />;
     case 'eigentuemerabrechnung': return <EigentuemerAbrechnungPage />;
-    case 'beschluesse': return <BeschluesseTab objektId={id} />;
+    case 'beschluesse': return <BeschluesseTab objektId={id} nurBeschluesse />;
+    case 'versammlungen': return <VersammlungenBereich objektId={id} rest={rest} />;
+    case 'umlaufbeschluesse': return <VersammlungListe objektId={id} umlauf />;
+    case 'vollmachten': return <VollmachtenListe objektId={id} />;
     case 'instandhaltung': return <VorgaengeTab objektId={id} />;
     case 'beirat': return <BeiratTab objektId={id} />;
     case 'schluessel': return <SchluesselTab objektId={id} weg={weg} />;
