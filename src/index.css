@@ -1150,3 +1150,6 @@ input, select, textarea, button { font-family: inherit; }
 @keyframes logo-puls { 0% { transform: translateX(0); opacity: 0; } 15%, 85% { opacity: .9; } 100% { transform: translateX(840px); opacity: 0; } }
 .logo-daten.aktiv .logo-puls { animation-duration: .8s; }
 @media (prefers-reduced-motion: reduce) { .logo-marke .logo-puls { animation: none; } }
+
+/* Unterzeile in Übersichtstabellen („davon …“) */
+table.list td.einzug { padding-left: 28px; color: var(--muted); }

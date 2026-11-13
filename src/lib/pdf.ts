@@ -17,6 +17,19 @@ export async function absender(): Promise<Absender> {
 export const geld = (n: number) => (Math.abs(n) < 0.005 ? 0 : n).toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €';
 export const dDatum = (iso: string) => new Date(iso + 'T00:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
+/** Farben für Abrechnungsergebnisse (PDF bleibt hell): Nachzahlung rot, Guthaben grün */
+export const ROT: [number, number, number] = [192, 57, 43], GRUEN: [number, number, number] = [46, 125, 50];
+/** Farbe einer Ergebniszeile nach ihrer Bezeichnung („Nachzahlung …“, „Guthaben …“, „Nachschuss …“, „Erstattung …“, „Überschuss“, „Fehlbetrag“) */
+function ergebnisFarbe(raw: unknown): [number, number, number] | null {
+  const erste = Array.isArray(raw) ? raw[0] : null;
+  const t = String(erste && typeof erste === 'object' && 'content' in (erste as object) ? (erste as { content: unknown }).content : erste ?? '').trim();
+  if (/^(Nachzahlung|Nachschuss|Fehlbetrag)\b/.test(t)) return ROT;
+  if (/^(Guthaben|Erstattung|Überschuss)(\s|$|\()/.test(t) && !t.includes('/')) return GRUEN;
+  return null;
+}
+/** Betrag als farbige Tabellenzelle: positiv = Forderung/Nachzahlung (rot), negativ = Guthaben (grün) */
+export const saldoZelle = (wert: number, text: string) => ({ content: text, styles: { textColor: wert > 0.005 ? ROT : wert < -0.005 ? GRUEN : 0 } as never });
+
 export class Brief {
   doc = new jsPDF({ unit: 'mm', format: 'a4' });
   y = 0;
@@ -102,7 +115,11 @@ export class Brief {
       headStyles: { fillColor: [176, 138, 74], textColor: 255 },
       footStyles: { fillColor: [248, 240, 227], textColor: 0, fontStyle: 'bold' },
       columnStyles: align,
-      didParseCell: (h) => { if (h.section !== 'body' && h.column.index >= rechtsAb) h.cell.styles.halign = 'right'; },
+      didParseCell: (h) => {
+        if (h.section !== 'body' && h.column.index >= rechtsAb) h.cell.styles.halign = 'right';
+        // Ergebniszeile einer Abrechnung: Nachzahlung rot, Guthaben grün
+        if (h.section === 'foot') { const f = ergebnisFarbe(h.row.raw); if (f) h.cell.styles.textColor = f; }
+      },
     });
     this.y = (this.doc as any).lastAutoTable.finalY + 8;
   }

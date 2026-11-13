@@ -262,4 +262,6 @@ export const num = (v: any, digits = 2) =>
   v === null || v === undefined || v === '' ? '' : Number(v).toLocaleString('de-DE', { minimumFractionDigits: digits, maximumFractionDigits: digits });
 /** Geldbetrag immer als 1.234,00 € */
 export const eur = (v: any) => (v === null || v === undefined || v === '' || !Number.isFinite(Number(v)) ? '' : euro(Number(v)));
+/** CSS-Klasse für ein Abrechnungsergebnis: positiv = Nachzahlung (rot), negativ = Guthaben (grün) */
+export const farbe = (n: number) => (n > 0.005 ? 'neg' : n < -0.005 ? 'pos' : '');
 export const datum = (v: any) => (v ? new Date(v + 'T00:00:00').toLocaleDateString('de-DE') : '');

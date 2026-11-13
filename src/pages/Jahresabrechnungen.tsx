@@ -9,9 +9,9 @@ import { AbrechnungsUebersicht } from '../components/AbrechnungsUebersicht';
 import { SchluesselWahl, schluesselText } from '../components/SchluesselWahl';
 import { AbschlussKarte } from '../components/AbschlussKarte';
 import { useObjektKontext } from '../logic/objektKontext';
-import { eur, num, datum } from '../components/EntityTable';
+import { eur, farbe, num, datum } from '../components/EntityTable';
 import { eigeneSchluessel, kostenErmitteln, nichtVerteilteKosten, nutzerErmitteln, verteilen, type Ergebnis, type Position } from '../logic/verteilung';
-import { Brief, EIGENTUEMER_HINWEIS, HINWEIS_35A_VERMIETER, absender, dDatum, eigentuemerGruppen, geld } from '../lib/pdf';
+import { Brief, EIGENTUEMER_HINWEIS, HINWEIS_35A_VERMIETER, absender, dDatum, eigentuemerGruppen, geld, saldoZelle } from '../lib/pdf';
 import { oeffnen, speichern } from '../lib/dateien';
 import { WerteJeEinheit } from '../components/WerteJeEinheit';
 import { ruecklageJahr } from '../logic/ruecklage';
@@ -160,7 +160,7 @@ export function WegAbrechnungPage() {
     for (const z of konten) { z.soll = r2(z.soll); z.ist = r2(z.ist); z.saldo = r2(z.soll - z.ist); }
     const offen = konten.filter((z) => Math.abs(z.saldo) > 0.005);
     const hgImJahr = posten.filter((x) => (x.art === 'Hausgeld' || x.art === 'Rücklage') && String(x.monat).startsWith(String(jahr))).length;
-    setVerm({ ruecklage: rl.bestand, zufJahr, entnahmeJahr: rl.entnahme, zinsJahr: rl.zinsen, banken,
+    setVerm({ ruecklage: rl.bestand, ruecklageIst: rl.bestandIst, ruecklageOffen: rl.offen, zufIstJahr: rl.zufuehrungIst, zufJahr, entnahmeJahr: rl.entnahme, zinsJahr: rl.zinsen, banken,
       forderungen: r2(offen.filter((z) => z.saldo > 0).reduce((a, z) => a + z.saldo, 0)),
       guthaben: r2(offen.filter((z) => z.saldo < 0).reduce((a, z) => a - z.saldo, 0)),
       opKonten: offen, hgImJahr });
@@ -187,20 +187,23 @@ export function WegAbrechnungPage() {
     g.tabelle(['', 'Betrag'], [['Umlagefähige Kosten', geld(sum(pU))], ['Nicht umlagefähige Kosten', geld(sum(pN))]], [['Summe Ausgaben gesamt', geld(sum(pos))]]);
     const anteil = (r: typeof erg[number], u: boolean) => r.zeilen.filter((z) => z.pos.umlagefaehig === u).reduce((a, z) => a + z.betrag, 0);
     g.tabelle(['Einheit', 'Eigentümer', 'umlagefähig', 'nicht umlagef.', 'Kostenanteil', 'Vorschüsse', 'Spitze'],
-      erg.map((r) => [r.einheit.nummer, r.nutzer.name, geld(anteil(r, true)), geld(anteil(r, false)), geld(r.summe), geld(r.vorschuss), geld(r.spitze)]), undefined, 2);
+      erg.map((r) => [r.einheit.nummer, r.nutzer.name, geld(anteil(r, true)), geld(anteil(r, false)), geld(r.summe), geld(r.vorschuss), saldoZelle(r.spitze, geld(r.spitze))]), undefined, 2);
     g.betreff(`Vermögensbericht zum 31.12.${jahr}`);
     g.tabelle(['Position', 'Betrag'], [
-      ['Erhaltungsrücklage zum 31.12.', geld(verm.ruecklage ?? 0)],
-      ['davon Zuführung im Jahr (Soll)', geld(verm.zufJahr ?? 0)],
-      ['davon Entnahmen im Jahr', geld(-(verm.entnahmeJahr ?? 0))],
-      ['davon Zinserträge im Jahr', geld(verm.zinsJahr ?? 0)],
+      ['Erhaltungsrücklage zum 31.12. laut Wirtschaftsplan (Soll)', geld(verm.ruecklage ?? 0)],
+      ['   davon tatsächlich eingezahlt (Ist)', geld(verm.ruecklageIst ?? 0)],
+      ['   davon von Eigentümern noch nicht gezahlt', geld(verm.ruecklageOffen ?? 0)],
+      [`Zuführung ${jahr} laut Wirtschaftsplan (Soll)`, geld(verm.zufJahr ?? 0)],
+      [`   davon bis 31.12.${jahr} gezahlt (Ist)`, geld(verm.zufIstJahr ?? 0)],
+      [`Entnahmen ${jahr}`, geld(-(verm.entnahmeJahr ?? 0))],
+      [`Zinserträge ${jahr}`, geld(verm.zinsJahr ?? 0)],
       ...(verm.banken ?? []).map((b: Row) => [`Kontostand ${b.name} (${b.iban ?? ''})`, geld(Number(b.saldo))]),
       ['Offene Forderungen gegen Eigentümer', geld(verm.forderungen ?? 0)],
       ['Guthaben von Eigentümern (Überzahlungen)', geld(verm.guthaben ?? 0)],
     ]);
     const opk: Row[] = verm.opKonten ?? [];
     if (opk.length) g.tabelle(['Einheit', 'Eigentümer', 'Soll bis 31.12.', 'gezahlt', 'Forderung / Guthaben'],
-      opk.map((z) => [z.einheit, z.name, geld(z.soll), geld(z.ist), z.saldo > 0 ? geld(z.saldo) : `Guthaben ${geld(-z.saldo)}`]), undefined, 2);
+      opk.map((z) => [z.einheit, z.name, geld(z.soll), geld(z.ist), saldoZelle(z.saldo, z.saldo > 0 ? geld(z.saldo) : `Guthaben ${geld(-z.saldo)}`)]), undefined, 2);
     g.gruss();
     if (!gesamt) await speichern(g.bytes(), `Gesamtabrechnung und Vermögensbericht ${jahr}.pdf`, { bezug: 'Objekt', bezugId: o.id, ordner });
     // Einzelabrechnungen
@@ -264,8 +267,8 @@ export function WegAbrechnungPage() {
         <div className="kpi"><span>Ausgaben {jahr}</span><b className="neg">{eur(pos.reduce((a, p) => a + p.betrag, 0))}</b>
           <small className="muted">umlagefähig {eur(pos.filter((p) => p.umlagefaehig).reduce((a, p) => a + p.betrag, 0))} · nicht umlagefähig {eur(pos.filter((p) => !p.umlagefaehig).reduce((a, p) => a + p.betrag, 0))}</small></div>
         <div className="kpi"><span>Hausgeld Soll / Ist</span><b>{eur(erg.reduce((a, r) => a + r.soll, 0))}</b><small>gezahlt {eur(erg.reduce((a, r) => a + r.ist, 0))}</small></div>
-        <div className="kpi"><span>Erhaltungsrücklage 31.12.</span><b>{eur(verm.ruecklage ?? 0)}</b><small>Zuführung {eur(verm.zufJahr ?? 0)}</small></div>
-        <div className="kpi"><span>Summe Abrechnungsspitzen</span><b>{eur(erg.reduce((a, r) => a + r.spitze, 0))}</b></div>
+        <div className="kpi"><span>Erhaltungsrücklage 31.12.</span><b>{eur(verm.ruecklage ?? 0)}</b><small>Ist {eur(verm.ruecklageIst ?? 0)} · Zuführung {eur(verm.zufJahr ?? 0)}</small></div>
+        <div className="kpi"><span>Summe Abrechnungsspitzen</span><b className={farbe(erg.reduce((a, r) => a + r.spitze, 0))}>{eur(erg.reduce((a, r) => a + r.spitze, 0))}</b></div>
       </div>
       {objekt !== '' && o && <AbschlussKarte objekt={Number(objekt)} jahr={jahr} art="WEG" stand={stand} ordner={[o.name, 'WEG-Jahresabrechnung', String(jahr)]}
         extra={[
@@ -293,7 +296,7 @@ export function WegAbrechnungPage() {
               <td className="num">{eur(r.soll)}</td><td className="num">{eur(-r.ruecklageSoll)}</td><td className="num">{eur(r.vorschuss)}</td>
               <td className={'num ' + (r.spitze > 0 ? 'neg' : 'pos')}><b>{r.spitze > 0 ? 'Nachschuss ' : 'Erstattung '}{eur(Math.abs(r.spitze))}</b></td>
               <td className={'num ' + (r.rueckstand > 0.005 ? 'neg' : '')}>{eur(r.rueckstand)}</td>
-              <td className="small">{r.mieter ? <>{r.mieter.name}<div className="muted">VZ {eur(r.mieter.vz)} · {r.mieter.saldo > 0 ? 'Nachzahlung' : 'Guthaben'} {eur(Math.abs(r.mieter.saldo))}</div></> : <span className="muted">selbst genutzt</span>}</td>
+              <td className="small">{r.mieter ? <>{r.mieter.name}<div className="muted">VZ {eur(r.mieter.vz)} · <span className={farbe(r.mieter.saldo)}>{r.mieter.saldo > 0 ? 'Nachzahlung' : 'Guthaben'} {eur(Math.abs(r.mieter.saldo))}</span></div></> : <span className="muted">selbst genutzt</span>}</td>
             </tr>))}
           </tbody>
         </table>
@@ -301,8 +304,11 @@ export function WegAbrechnungPage() {
       <section className="card abr-uebersicht">
         <div className="card-head"><h2>Vermögensbericht zum 31.12.{jahr}</h2></div>
         <table className="list"><tbody>
-          <tr><td>Erhaltungsrücklage</td><td className="num"><b>{eur(verm.ruecklage ?? 0)}</b></td></tr>
-          <tr><td className="muted">Zuführung {jahr} (Soll) / Entnahmen / Zinsen</td><td className="num muted">{eur(verm.zufJahr ?? 0)} / {eur(verm.entnahmeJahr ?? 0)} / {eur(verm.zinsJahr ?? 0)}</td></tr>
+          <tr><td>Erhaltungsrücklage laut Wirtschaftsplan (Soll)</td><td className="num"><b>{eur(verm.ruecklage ?? 0)}</b></td></tr>
+          <tr><td className="einzug">davon tatsächlich eingezahlt (Ist)</td><td className="num">{eur(verm.ruecklageIst ?? 0)}</td></tr>
+          <tr><td className="einzug">davon von Eigentümern noch nicht gezahlt</td><td className={'num' + ((verm.ruecklageOffen ?? 0) > 0.005 ? ' neg' : '')}>{eur(verm.ruecklageOffen ?? 0)}</td></tr>
+          <tr><td className="muted">Zuführung {jahr}: Soll / davon gezahlt</td><td className="num muted">{eur(verm.zufJahr ?? 0)} / {eur(verm.zufIstJahr ?? 0)}</td></tr>
+          <tr><td className="muted">Entnahmen / Zinsen {jahr}</td><td className="num muted">{eur(verm.entnahmeJahr ?? 0)} / {eur(verm.zinsJahr ?? 0)}</td></tr>
           {(verm.banken ?? []).map((b: Row) => <tr key={b.id}><td>Kontostand {b.name}</td><td className="num">{eur(Number(b.saldo))}</td></tr>)}
           <tr><td>Offene Forderungen gegen Eigentümer</td><td className="num">{eur(verm.forderungen ?? 0)}</td></tr>
           <tr><td>Guthaben von Eigentümern (Überzahlungen)</td><td className="num">{eur(verm.guthaben ?? 0)}</td></tr>
@@ -406,7 +412,7 @@ export function EigentuemerAbrechnungPage() {
     b.tabelle(['Einnahmen', 'Betrag'], ein.map((x) => [`${x.nummer} ${x.name}`, geld(Number(x.betrag))]), [['Summe Einnahmen', geld(summeEin)]]);
     b.tabelle(['Umlagefähige Kosten', 'Betrag'], uml.map((x) => [`${x.nummer} ${x.name}`, geld(x.betrag)]), [['Summe umlagefähig', geld(sU)]]);
     b.tabelle(['Nicht umlagefähige Kosten', 'Betrag'], nicht.map((x) => [`${x.nummer} ${x.name}`, geld(x.betrag)]), [['Summe nicht umlagefähig', geld(sN)]]);
-    b.tabelle(['Ergebnis', 'Betrag'], [['Einnahmen', geld(summeEin)], ['Ausgaben gesamt', geld(-(sU + sN))]], [['Überschuss / Fehlbetrag', geld(summeEin - sU - sN)]]);
+    b.tabelle(['Ergebnis', 'Betrag'], [['Einnahmen', geld(summeEin)], ['Ausgaben gesamt', geld(-(sU + sN))]], [[summeEin - sU - sN < 0 ? 'Fehlbetrag' : 'Überschuss', geld(summeEin - sU - sN)]]);
     if (eig.length) {
       b.abschnitt('Auszahlungen an den Eigentümer');
       b.gruppenTabelle(['Monat', 'Überwiesen am', 'Buchungstext', 'Betrag'], eigentuemerGruppen(eigBuch), geld(-sEig), [34, 30, 80, 26], [91, 104, 140]);
@@ -440,7 +446,7 @@ export function EigentuemerAbrechnungPage() {
         <div className="kpi"><span>Einnahmen</span><b>{eur(summeEin)}</b></div>
         <div className="kpi"><span>Umlagefähige Kosten</span><b className="neg">{eur(sU)}</b></div>
         <div className="kpi"><span>Nicht umlagefähige Kosten</span><b className="neg">{eur(sN)}</b></div>
-        <div className="kpi"><span>Überschuss</span><b className={summeEin - sU - sN < 0 ? 'neg' : ''}>{eur(summeEin - sU - sN)}</b></div>
+        <div className="kpi"><span>Überschuss</span><b className={farbe(-(summeEin - sU - sN))}>{eur(summeEin - sU - sN)}</b></div>
         {eig.length > 0 && <div className="kpi"><span>An Eigentümer ausgezahlt</span><b>{eur(-sEig)}</b><small>{eig.filter((x) => Number(x.betrag) < 0).length} Auszahlungen</small></div>}
       </div>
       {bank.n > 0 && endeRechnerisch < 0 && <p className="warn">Achtung: Nach den Auszahlungen an den Eigentümer ist das Objektkonto zum 31.12.{jahr} rechnerisch im Minus ({eur(endeRechnerisch)}). Es fehlt Geld für laufende Kosten.</p>}
@@ -464,7 +470,7 @@ export function EigentuemerAbrechnungPage() {
           <div className="card-head"><h2>Kontoentwicklung</h2></div>
           <table className="list"><tbody>
             {bank.n > 0 && <tr><td>Kontostand am 01.01.{jahr}</td><td className="num">{eur(bank.anfang)}</td></tr>}
-            <tr><td>+ Überschuss / Fehlbetrag</td><td className={'num ' + (ueberschuss < 0 ? 'neg' : '')}>{eur(ueberschuss)}</td></tr>
+            <tr><td>+ Überschuss / Fehlbetrag</td><td className={'num ' + farbe(-ueberschuss)}>{eur(ueberschuss)}</td></tr>
             {eig.length > 0 && <tr><td>− Auszahlungen an den Eigentümer{eig.some((x) => Number(x.betrag) > 0) ? ' (abzüglich Einzahlungen)' : ''}</td><td className="num neg">{eur(-sEig)}</td></tr>}
             <tr className="sum"><td>{bank.n > 0 ? `Kontostand am 31.12.${jahr} (rechnerisch)` : 'Veränderung des Kontostands'}</td><td className={'num ' + ((bank.n ? endeRechnerisch : ueberschuss + sEig) < 0 ? 'neg' : '')}>{eur(bank.n ? endeRechnerisch : ueberschuss + sEig)}</td></tr>
             {bank.n > 0 && <tr><td>Kontostand laut Bank am 31.12.{jahr}</td><td className="num">{eur(bank.ende)}{Math.abs(differenz) < 0.01 ? ' ✓' : ''}</td></tr>}
