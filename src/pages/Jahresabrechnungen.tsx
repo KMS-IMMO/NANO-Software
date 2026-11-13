@@ -10,7 +10,7 @@ import { SchluesselWahl, schluesselText } from '../components/SchluesselWahl';
 import { AbschlussKarte } from '../components/AbschlussKarte';
 import { useObjektKontext } from '../logic/objektKontext';
 import { eur, num, datum } from '../components/EntityTable';
-import { eigeneSchluessel, kostenErmitteln, nutzerErmitteln, verteilen, type Ergebnis, type Position } from '../logic/verteilung';
+import { eigeneSchluessel, kostenErmitteln, nichtVerteilteKosten, nutzerErmitteln, verteilen, type Ergebnis, type Position } from '../logic/verteilung';
 import { Brief, EIGENTUEMER_HINWEIS, HINWEIS_35A_VERMIETER, absender, dDatum, eigentuemerGruppen, geld } from '../lib/pdf';
 import { oeffnen, speichern } from '../lib/dateien';
 import { WerteJeEinheit } from '../components/WerteJeEinheit';
@@ -67,6 +67,7 @@ export function WegAbrechnungPage() {
   const [stand, setStand] = useState(0);
   const [zu, setZu] = useState<Row | null>(null);
   const [werteFehlen, setWerteFehlen] = useState('');
+  const nichtVerteilt = nichtVerteilteKosten(pos, erg);
   const anteile = (kontoId: number) => {
     const m: Record<number, number> = {};
     for (const r of erg) for (const z of r.zeilen) if (z.pos.konto_id === kontoId) m[r.nutzer.einheit_id] = (m[r.nutzer.einheit_id] ?? 0) + z.betrag;
@@ -270,6 +271,7 @@ export function WegAbrechnungPage() {
         extra={[
           { ok: erg.length > 0, sperrt: true, text: 'Eigentümer und Einheiten für das Jahr vorhanden' },
           { ok: !werteFehlen, sperrt: true, text: 'Werte für Verbrauch und manuelle Verteilung eingetragen', hinweis: werteFehlen ? `Fehlt bei: ${werteFehlen}` : undefined },
+          { ok: !nichtVerteilt.length, sperrt: true, text: 'Alle Kosten sind vollständig verteilt', hinweis: nichtVerteilt.length ? `Nicht verteilt: ${nichtVerteilt.map((x) => `${x.name} ${eur(x.rest)}`).join(', ')}` : undefined },
         ]}
         vorschau={async (entwurf) => (await erzeugen({ entwurf }))!} ablegen={async () => { await erzeugen(null); }}
         buchen={buchen} buchenText="Abrechnungsspitzen als offene Posten buchen"
@@ -313,6 +315,7 @@ export function WegAbrechnungPage() {
         extra={[
           { ok: erg.length > 0, sperrt: true, text: 'Eigentümer und Einheiten für das Jahr vorhanden' },
           { ok: !werteFehlen, sperrt: true, text: 'Werte für Verbrauch und manuelle Verteilung eingetragen', hinweis: werteFehlen ? `Fehlt bei: ${werteFehlen}` : undefined },
+          { ok: !nichtVerteilt.length, sperrt: true, text: 'Alle Kosten sind vollständig verteilt', hinweis: nichtVerteilt.length ? `Nicht verteilt: ${nichtVerteilt.map((x) => `${x.name} ${eur(x.rest)}`).join(', ')}` : undefined },
         ]}
         vorschau={async (entwurf) => (await erzeugen({ entwurf }))!} ablegen={async () => { await erzeugen(null); }}
         buchen={buchen} buchenText="Abrechnungsspitzen als offene Posten buchen"

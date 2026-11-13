@@ -194,6 +194,28 @@ export async function vorschlag(u: Row): Promise<Vorschlag | null> {
 }
 
 /** Verteilt einen Zahlungseingang auf die offenen Posten einer Person (älteste zuerst). */
+const MONATSNAMEN: [RegExp, number][] = [[/^jan/, 1], [/^feb/, 2], [/^(maer|mar|mrz)/, 3], [/^apr/, 4], [/^mai/, 5], [/^jun/, 6], [/^jul/, 7], [/^aug/, 8], [/^sep/, 9], [/^okt/, 10], [/^nov/, 11], [/^dez/, 12]];
+/** Der eine Monat, den der Verwendungszweck nennt und für den es offene Posten gibt („12/2025“, „12.25“, „2025-12“, „Dezember 2025“, „Dez.“) */
+export function monatImText(text: string, ops: Row[]): string | null {
+  const offen = new Set(ops.map((o) => String(o.monat)));
+  if (/(?<![\d.])\d{1,2}\s?(?:\+|&|,|und|bis|-)\s?\d{1,2}\s?[./]\s?(?:20\d{2}|\d{2})(?![\d.,])/i.test(text)) return null; // mehrere Monate („11+12/2025“)
+  const treffer = new Set<string>();
+  const jj = (j: string) => (j.length === 2 ? '20' + j : j);
+  const mm = (m: number) => String(m).padStart(2, '0');
+  for (const x of text.matchAll(/(?<![\d.,])(0?[1-9]|1[0-2])\s?[./-]\s?(20\d{2}|\d{2})(?![\d.,])/g)) treffer.add(`${jj(x[2])}-${mm(Number(x[1]))}`);
+  for (const x of text.matchAll(/(?<!\d)(20\d{2})-(0[1-9]|1[0-2])(?![\d-])/g)) treffer.add(`${x[1]}-${x[2]}`);
+  for (const x of norm(text).matchAll(/(?:^|\s)([a-z]{3,9})(?:\s+(20\d{2}|\d{2}))?(?=\s|$)/g)) {
+    const w = x[1]; const n = MONATSNAMEN.find(([r]) => r.test(w))?.[1];
+    const voll = /^(januar|februar|maerz|marz|april|mai|juni|juli|august|september|oktober|november|dezember)$/.test(w);
+    // Abkürzungen („Jan“, „Dez“) nur mit Jahreszahl, damit ein Vorname wie „Jan“ nicht als Monat zählt
+    if (!n || (!voll && (w.length > 4 || !x[2]))) continue;
+    if (x[2]) treffer.add(`${jj(x[2])}-${mm(n)}`);
+    else { const passend = [...offen].filter((m) => m.endsWith('-' + mm(n))); if (passend.length === 1) treffer.add(passend[0]); }
+  }
+  const l = [...treffer].filter((m) => offen.has(m));
+  return treffer.size === 1 && l.length === 1 ? l[0] : null;
+}
+
 export async function zuordnenPerson(u: Row, personId: number) {
   const objekt = (await db.select('SELECT objekt_id FROM bankkonten WHERE id = $1', [u.bankkonto_id]))[0]?.objekt_id ?? null;
   let ops = (await db.select(`SELECT * FROM (${OP_SQL}) WHERE person_id = $1 AND betrag - bezahlt > 0.005 ORDER BY faellig, einheit_lfd, id`, [personId]))
@@ -216,6 +238,10 @@ export async function zuordnenPerson(u: Row, personId: number) {
   }
   // Zahlweise der Liegenschaft: „zusammen“ = eine Überweisung je Monat (Miete + Nebenkosten bzw. Hausgeld + Rücklage),
   // „getrennt“ = einzelne Überweisungen; dann bestimmen Verwendungszweck und genau passender Betrag den Posten.
+  // Nennt der Verwendungszweck genau einen Monat (z. B. „Miete 12/2025“), gilt das als Tilgungsbestimmung (§ 366 Abs. 1 BGB):
+  // dieser Monat zuerst, sonst wie bisher der älteste offene Posten (§ 366 Abs. 2 BGB)
+  const genannt = monatImText(u.verwendungszweck ?? '', ops);
+  if (genannt) ops = [...ops.filter((o) => o.monat === genannt), ...ops.filter((o) => o.monat !== genannt)];
   const getrennt = ops.length ? await zahlweiseGetrennt(ops[0].objekt_id, personId, ops[0].einheit_id, ops[0].vertrag_id) : false;
   if (getrennt) ops = getrenntOrdnen(ops, betragU, text, offen);
   else {

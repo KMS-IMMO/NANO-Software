@@ -78,25 +78,34 @@ export function verteilen(jahr: number, einheiten: Row[], nutzer: Nutzer[], posi
     if (Math.abs(p.betrag) < 0.005) continue;
     if (p.schluessel === 'Personen') {
       const gesamt = nutzer.reduce((a, n) => a + n.personen * n.tage, 0);
-      for (const n of nutzer) {
-        const nb = n.personen * n.tage;
-        add(res.get(n.key)!, p, gesamt, nb, gesamt ? (p.betrag * nb) / gesamt : 0);
-      }
+      centGenau(nutzer.map((n) => { const nb = n.personen * n.tage; return { r: res.get(n.key)!, gb: gesamt, nb, betrag: gesamt ? (p.betrag * nb) / gesamt : 0 }; }))
+        .forEach((z) => add(z.r, p, z.gb, z.nb, z.betrag));
       continue;
     }
     const gesamt = einheiten.reduce((a, e) => a + basisEinheit(e, p.schluessel, p), 0);
     // Bei Summe ist die Basis der eingetragene Betrag je Einheit und wird genau so übernommen;
     // bei Direkt werden die direkt zugeordneten Rechnungsbeträge auf die Kontosumme bezogen
     const faktor = p.schluessel === 'Direkt' && gesamt ? p.betrag / gesamt : 1;
-    for (const n of nutzer) {
+    centGenau(nutzer.map((n) => {
       const e = einheiten.find((x) => x.id === n.einheit_id)!;
       const eb = basisEinheit(e, p.schluessel, p);
       const nb = eb * (n.tage / T) * (n.anteil / 100);
       const betrag = (p.schluessel === 'Direkt' || p.schluessel === 'Summe') ? eb * faktor * (n.tage / T) * (n.anteil / 100) : gesamt ? (p.betrag * nb) / gesamt : 0;
-      add(res.get(n.key)!, p, gesamt, nb, betrag);
-    }
+      return { r: res.get(n.key)!, gb: gesamt, nb, betrag };
+    })).forEach((z) => add(z.r, p, z.gb, z.nb, z.betrag));
   }
   return [...res.values()];
+
+  /** Auf Cent runden, ohne dass die Summe abweicht: fehlende bzw. überzählige Cent bekommen die Anteile mit dem größten Rundungsrest */
+  function centGenau<Z extends { betrag: number }>(l: Z[]): Z[] {
+    const ziel = Math.round(l.reduce((a, z) => a + z.betrag, 0) * 100);
+    const out = l.map((z) => ({ ...z, betrag: Math.round(z.betrag * 100) }));
+    let diff = ziel - out.reduce((a, z) => a + z.betrag, 0);
+    const rang = l.map((z, i) => ({ i, rest: z.betrag * 100 - out[i].betrag })).filter((x) => l[x.i].betrag !== 0)
+      .sort((a, b) => (diff > 0 ? b.rest - a.rest : a.rest - b.rest));
+    for (const x of rang) { if (!diff) break; const d = diff > 0 ? 1 : -1; out[x.i].betrag += d; diff -= d; }
+    return out.map((z) => ({ ...z, betrag: z.betrag / 100 }));
+  }
 
   function add(r: Ergebnis, p: Position, gb: number, nb: number, betrag: number) {
     const b = Math.round(betrag * 100) / 100;
@@ -193,4 +202,12 @@ export async function vorauszahlungen(jahr: number, arten: string[]): Promise<Ro
     FROM sollstellungen s JOIN buchungen b ON b.sollstellung_id = s.id
     WHERE substr(s.monat, 1, 4) = $1 AND s.art IN (${arten.map((a) => `'${a}'`).join(',')})
     GROUP BY s.vertrag_id, s.einheit_id, s.person_id, s.art`, [String(jahr)]);
+}
+
+/** Positionen, deren Betrag nicht vollständig bei den Nutzern ankommt (z. B. Schlüssel Verbrauch oder Messdienst ohne Werte) */
+export function nichtVerteilteKosten(pos: Position[], erg: Ergebnis[]): { name: string; rest: number }[] {
+  return pos.map((p) => {
+    const verteilt = erg.reduce((a, r) => a + r.zeilen.filter((z) => z.pos.konto_id === p.konto_id).reduce((b, z) => b + z.betrag, 0), 0);
+    return { name: `${p.nummer} ${p.name}`, rest: Math.round((p.betrag - verteilt) * 100) / 100 };
+  }).filter((x) => Math.abs(x.rest) >= 0.01);
 }
