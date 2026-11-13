@@ -9,7 +9,7 @@ import { SchluesselWahl, schluesselText } from '../components/SchluesselWahl';
 import { AbschlussKarte } from '../components/AbschlussKarte';
 import { useObjektKontext } from '../logic/objektKontext';
 import { eur, num, datum } from '../components/EntityTable';
-import { tageImJahr, type Position, type Schluessel } from '../logic/verteilung';
+import { nichtVerteilteKosten, tageImJahr, type Position, type Schluessel } from '../logic/verteilung';
 import { HEIZ_KONTO, nkBerechnen, type NkErgebnis } from '../logic/nebenkosten';
 import { Brief, absender, dDatum, geld } from '../lib/pdf';
 import { oeffnen, speichern } from '../lib/dateien';
@@ -118,6 +118,8 @@ export function NebenkostenPage() {
   const oAkt = objekte.find((x) => x.id === objekt);
   const werteFehlen = [...pos.filter((p) => p.schluessel === 'Verbrauch' && !einheiten.some((e) => zahl(verbr[`${e.id}-${p.konto_id}`] ?? '') > 0)),
     ...summenAbweichung.map((x) => x.p)].map((p) => `${p.nummer} ${p.name}`);
+  // Kosten, die mangels Werten (Verbrauch, Messdienst, Personen) bei niemandem ankommen
+  const nichtVerteilt = nichtVerteilteKosten(pos, erg);
   const heizFehlt = pos.some((p) => p.nummer === HEIZ_KONTO) && !Object.values(heiz).some((x) => zahl(x.heizkosten) || zahl(x.warmwasser));
 
   return (
@@ -136,6 +138,7 @@ export function NebenkostenPage() {
           { ok: mieter.length > 0, sperrt: true, text: 'Mieter mit Abrechnung im Jahr vorhanden' },
           { ok: !werteFehlen.length, sperrt: true, text: 'Werte für Verbrauch und manuelle Verteilung eingetragen', hinweis: werteFehlen.length ? `Fehlt bei: ${werteFehlen.join(', ')}` : undefined },
           { ok: !heizFehlt, sperrt: false, text: 'Heizkosten laut Messdienst eingetragen', hinweis: heizFehlt ? `Konto ${HEIZ_KONTO} wird sonst nach Schlüssel verteilt.` : undefined },
+          { ok: !nichtVerteilt.length, sperrt: true, text: 'Alle Kosten sind vollständig verteilt', hinweis: nichtVerteilt.length ? `Nicht verteilt: ${nichtVerteilt.map((x) => `${x.name} ${eur(x.rest)}`).join(', ')}` : undefined },
         ]}
         vorschau={vorschauPdf} ablegen={pdfs} buchen={buchen} buchenText="Ergebnis als offene Posten buchen"
         ergebnis={() => ({ kosten: Math.round(kosten * 100) / 100, saldo: Math.round(mieter.reduce((a, r) => a + r.saldo, 0) * 100) / 100, mieter: mieter.length })}
@@ -172,6 +175,7 @@ export function NebenkostenPage() {
           </tbody>
         </table>
         <p className="muted small">Sobald Messdienst-Werte eingetragen sind, wird Konto {HEIZ_KONTO} danach verteilt. Spalten für Verbrauch bzw. feste Beträge erscheinen für Konten mit Schlüssel „Verbrauch“ oder „Summe“.</p>
+        {nichtVerteilt.length > 0 && <p className="warn">Nicht verteilt, weil Werte fehlen: {nichtVerteilt.map((x) => `${x.name} ${eur(x.rest)}`).join(', ')}. Bitte Verbrauch, Messdienst oder Personenzahl eintragen oder den Schlüssel ändern.</p>}
         {summenAbweichung.map(({ p, s }) => <p key={p.konto_id} className="warn">Schlüssel „Summe“ bei {p.name}: eingetragen {eur(s)}, Kosten laut Buchhaltung {eur(p.betrag)}. Bitte prüfen.</p>)}
       </section>
       </fieldset>
@@ -209,6 +213,7 @@ export function NebenkostenPage() {
           { ok: mieter.length > 0, sperrt: true, text: 'Mieter mit Abrechnung im Jahr vorhanden' },
           { ok: !werteFehlen.length, sperrt: true, text: 'Werte für Verbrauch und manuelle Verteilung eingetragen', hinweis: werteFehlen.length ? `Fehlt bei: ${werteFehlen.join(', ')}` : undefined },
           { ok: !heizFehlt, sperrt: false, text: 'Heizkosten laut Messdienst eingetragen', hinweis: heizFehlt ? `Konto ${HEIZ_KONTO} wird sonst nach Schlüssel verteilt.` : undefined },
+          { ok: !nichtVerteilt.length, sperrt: true, text: 'Alle Kosten sind vollständig verteilt', hinweis: nichtVerteilt.length ? `Nicht verteilt: ${nichtVerteilt.map((x) => `${x.name} ${eur(x.rest)}`).join(', ')}` : undefined },
         ]}
         vorschau={vorschauPdf} ablegen={pdfs} buchen={buchen} buchenText="Ergebnis als offene Posten buchen"
         ergebnis={() => ({ kosten: Math.round(kosten * 100) / 100, saldo: Math.round(mieter.reduce((a, r) => a + r.saldo, 0) * 100) / 100, mieter: mieter.length })}
