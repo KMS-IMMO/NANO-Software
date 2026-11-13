@@ -1,6 +1,8 @@
 // Wiederverwendbare Liste mit Formular zum Anlegen, Bearbeiten und Löschen.
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
-import { Pencil } from 'lucide-react';
+import { BetragFeld } from './BetragFeld';
+import { betragZahl, euro } from '../lib/betrag';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { FileDown, Pencil } from 'lucide-react';
 import { db, insert, remove, update, type Row } from '../db';
 
 export type FieldType = 'text' | 'number' | 'date' | 'time' | 'select' | 'textarea' | 'checkbox';
@@ -22,6 +24,10 @@ export interface Field {
   sum?: boolean;
   /** Text der leeren Auswahl (Standard: – bitte wählen –) */
   leer?: string;
+  /** Geldbetrag: Eingabe mit €, Anzeige 1.234,00 €, Minusbeträge rot */
+  geld?: boolean;
+  /** bei geld: Minusbeträge nicht rot färben */
+  minusNeutral?: boolean;
 }
 
 interface Props {
@@ -47,11 +53,13 @@ interface Props {
   onDelete?: (row: Row) => void;
   /** Ändert sich der Wert, wird die Liste neu geladen */
   version?: number;
+  /** Zusätzliche CSS-Klasse je Zeile, z. B. Farbe nach Rolle */
+  rowClass?: (row: Row) => string | undefined;
 }
 
 type Opt = { value: string | number; label: string };
 
-export function EntityTable({ title, table, fields, listSql, listParams = [], fixed, onOpen, emptyText, onChange, groupBy, newLabel, icon, onNew, onDelete, version }: Props) {
+export function EntityTable({ title, table, fields, listSql, listParams = [], fixed, onOpen, emptyText, onChange, groupBy, newLabel, icon, onNew, onDelete, version, rowClass }: Props) {
   const [rows, setRows] = useState<Row[]>([]);
   const [editing, setEditing] = useState<Row | null>(null);
   const [opts, setOpts] = useState<Record<string, Opt[]>>({});
@@ -91,7 +99,11 @@ export function EntityTable({ title, table, fields, listSql, listParams = [], fi
     for (const f of formFields) {
       let v = editing[f.key];
       if (v === '' || v === undefined) v = null;
-      if (f.type === 'number' && v !== null) v = Number(String(v).replace(',', '.'));
+      if (f.type === 'number' && v !== null) {
+        const n = betragZahl(v);
+        if (n === null) { setError(`„${f.label}“ ist keine gültige Zahl.`); return; }
+        v = n;
+      }
       if (f.type === 'checkbox') v = v ? 1 : 0;
       values[f.key] = v;
     }
@@ -133,12 +145,31 @@ export function EntityTable({ title, table, fields, listSql, listParams = [], fi
     return v ?? '';
   };
 
+  // Liste als PDF: genau die sichtbaren Spalten und Zeilen (inkl. Suchfilter)
+  const karte = useRef<HTMLElement>(null);
+  const alsPdf = async () => {
+    const t = karte.current?.querySelector('table.list'); if (!t) return;
+    const txt = (el: Element) => (el as HTMLElement).innerText.replace(/\s*\n\s*/g, ' ').trim();
+    const ths = [...t.querySelectorAll('thead th')];
+    const nutz = ths.map((th, i) => (txt(th) && !th.classList.contains('wahl') ? i : -1)).filter((i) => i >= 0);
+    const zeile = (tr: Element) => { const c = [...tr.children]; return nutz.map((i) => (c[i] ? txt(c[i]) : '')); };
+    const rechts = nutz.map((i, j) => (ths[i].classList.contains('num') ? j : -1)).filter((j) => j >= 0);
+    const body = [...t.querySelectorAll('tbody tr')].filter((tr) => !tr.classList.contains('sum')).map(zeile);
+    const fuss = [...t.querySelectorAll('tfoot tr, tbody tr.sum')].map(zeile);
+    const { listePdf } = await import('../lib/pdf');
+    const { oeffnen, speichern } = await import('../lib/dateien');
+    const heute = new Date().toLocaleDateString('de-DE');
+    const bytes = await listePdf(title, `Stand ${heute} · ${body.length} Einträge${filter ? ` · Suche „${filter}“` : ''}`, nutz.map((i) => txt(ths[i])), body, fuss.length ? fuss : undefined, rechts);
+    oeffnen(await speichern(bytes, `${title} ${new Date().toISOString().slice(0, 10)}.pdf`, { bezug: 'Objekt', bezugId: 0, ordner: ['Berichte'] }));
+  };
+
   return (
-    <section className="card">
+    <section className="card" ref={karte}>
       <div className="card-head">
         <h2 className="title-ico">{icon}{title}</h2>
         <div className="row">
           <input className="search" placeholder="Suchen…" value={filter} onChange={(e) => setFilter(e.target.value)} />
+          {visible.length > 0 && <button onClick={alsPdf} title="Liste als PDF"><FileDown size={16} />PDF</button>}
           <button className="primary" onClick={() => (onNew ? onNew() : setEditing({}))}>+ {newLabel ?? 'Neu'}</button>
         </div>
       </div>
@@ -154,8 +185,8 @@ export function EntityTable({ title, table, fields, listSql, listParams = [], fi
               groupBy && (i === 0 || visible[i - 1][groupBy] !== r[groupBy]) ? (
                 <tr key={'g' + r.id} className="group"><td colSpan={shown.length + 1}>{r[groupBy] ?? 'Ohne Gruppe'}</td></tr>
               ) : null,
-              <tr key={r.id} onClick={() => (onOpen ? onOpen(r) : setEditing(r))} className="clickable">
-                {shown.map((f) => <td key={f.key} className={f.type === 'number' ? 'num' : ''}>{display(f, r)}</td>)}
+              <tr key={r.id} onClick={() => (onOpen ? onOpen(r) : setEditing(r))} className={'clickable' + (rowClass?.(r) ? ' ' + rowClass(r) : '')}>
+                {shown.map((f) => <td key={f.key} className={f.type === 'number' ? 'num' + (f.geld && !f.minusNeutral && Number(r[f.key]) < -0.004 ? ' neg' : '') : ''}>{display(f, r)}</td>)}
                 <td className="actions">
                   <button className="icon-btn" title="Bearbeiten" onClick={(e) => { e.stopPropagation(); setEditing(r); }}><Pencil size={17} /></button>
                 </td>
@@ -216,7 +247,8 @@ function Input({ f, value, opts, onChange }: { f: Field; value: any; opts?: Opt[
     case 'checkbox':
       return <input type="checkbox" checked={!!value} onChange={(e) => onChange(e.target.checked)} />;
     case 'number':
-      return <input inputMode="decimal" value={v} onChange={(e) => onChange(e.target.value)} />;
+      if (f.geld) return <BetragFeld value={value} onChange={(e) => onChange(e.target.value)} />;
+      return <input inputMode="decimal" value={typeof value === 'number' ? String(value).replace('.', ',') : v} onChange={(e) => onChange(e.target.value)} />;
     case 'date':
       return <input type="date" value={v} onChange={(e) => onChange(e.target.value)} />;
     case 'time':
@@ -228,5 +260,8 @@ function Input({ f, value, opts, onChange }: { f: Field; value: any; opts?: Opt[
 
 export const num = (v: any, digits = 2) =>
   v === null || v === undefined || v === '' ? '' : Number(v).toLocaleString('de-DE', { minimumFractionDigits: digits, maximumFractionDigits: digits });
-export const eur = (v: any) => (v === null || v === undefined ? '' : num(v) + ' €');
+/** Geldbetrag immer als 1.234,00 € */
+export const eur = (v: any) => (v === null || v === undefined || v === '' || !Number.isFinite(Number(v)) ? '' : euro(Number(v)));
+/** CSS-Klasse für ein Abrechnungsergebnis: positiv = Nachzahlung (rot), negativ = Guthaben (grün) */
+export const farbe = (n: number) => (n > 0.005 ? 'neg' : n < -0.005 ? 'pos' : '');
 export const datum = (v: any) => (v ? new Date(v + 'T00:00:00').toLocaleDateString('de-DE') : '');

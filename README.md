@@ -1,4 +1,4 @@
-# NANO-Software
+# NEOSS-Software
 
 Desktop-Software zur Immobilienverwaltung (WEG und Mietverwaltung) für KMS Immobilien Köln.
 Läuft lokal unter Windows und macOS, alle Daten liegen in einer SQLite-Datei auf dem eigenen Rechner.

@@ -2,13 +2,13 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { HashRouter, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import {
   AlarmClock, Banknote, CalendarClock, Bell, Building2, Calendar, ChevronRight, CircleCheck, Columns3, Contact, CreditCard, FolderOpen, LayoutDashboard, Landmark, Lock,
-  Network, Receipt, Search, Settings, SquarePen, UserCog, Users,
+  Network, Receipt, Search, Settings, SquarePen, UserCog, UserRound, Users,
 } from 'lucide-react';
 import { db, mehrplatz, sicherheit, type Row } from './db';
 import { personLabel } from './db/labels';
 import { OP_SQL } from './logic/soll';
 import { Sperre, SPERREN } from './components/Sperre';
-import { Logo } from './components/Logo';
+import { KopfNetz, Logo } from './components/Logo';
 import { KiAssistent } from './components/KiAssistent';
 import { ModalHelfer } from './components/ModalHelfer';
 import { DashboardPage } from './pages/Dashboard';
@@ -40,6 +40,7 @@ const NAV: Abschnitt[] = [
     { to: '/', label: 'Dashboard', icon: <LayoutDashboard size={I} /> },
     { to: '/objekte', label: 'Immobilien', icon: <Building2 size={I} /> },
     { to: '/eigentuemer', label: 'Eigentümer', icon: <Users size={I} /> },
+    { to: '/mieter', label: 'Mieter', icon: <UserRound size={I} /> },
     { to: '/verwalter', label: 'Verwalter', icon: <UserCog size={I} /> },
     { to: '/kontakte', label: 'Kontakte', icon: <Contact size={I} /> },
     { to: '/ablage', label: 'Dateimanager', icon: <FolderOpen size={I} /> },
@@ -164,6 +165,7 @@ function Topbar() {
   }, [loc.pathname]);
   return (
     <header className="topbar">
+      <KopfNetz />
       <GlobalSearch />
       <NavLink to="/offene-posten" className="bell" title={`${offen} überfällige Posten`}>
         <Bell size={20} />{offen > 0 && <span className="dot">{offen > 99 ? '99+' : offen}</span>}

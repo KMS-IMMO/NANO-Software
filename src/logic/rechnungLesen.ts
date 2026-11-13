@@ -1,3 +1,4 @@
+import { pdfjsLaden } from '../lib/pdfjs';
 // Rechnung auslesen: Text aus der PDF holen und die wichtigsten Angaben erkennen.
 // Funktioniert bei PDFs mit Textebene (die meisten digitalen Rechnungen). Gescannte Bilder enthalten keinen Text.
 
@@ -7,14 +8,12 @@ export interface Erkannt {
 }
 
 /** Text einer PDF, Zeile für Zeile (Textstücke mit gleicher Höhe werden zu einer Zeile) */
-export async function pdfText(daten: Uint8Array): Promise<string> {
-  const pdfjs = await import('pdfjs-dist');
-  const worker = (await import('pdfjs-dist/build/pdf.worker.min.mjs?url')).default;
-  pdfjs.GlobalWorkerOptions.workerSrc = worker;
+export async function pdfText(daten: Uint8Array, maxSeiten = 4): Promise<string> {
+  const pdfjs = await pdfjsLaden();
   const task = pdfjs.getDocument({ data: daten.slice() });
   const doc = await task.promise;
   const zeilen: string[] = [];
-  for (let i = 1; i <= Math.min(doc.numPages, 4); i++) {
+  for (let i = 1; i <= Math.min(doc.numPages, maxSeiten); i++) {
     const inhalt = await (await doc.getPage(i)).getTextContent();
     const nachY = new Map<number, { x: number; s: string }[]>();
     for (const it of inhalt.items as any[]) {

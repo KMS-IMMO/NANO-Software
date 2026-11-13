@@ -2,12 +2,13 @@
 // und zeigt die einzelnen Rechnungen und Buchungen, aus denen sich der Betrag zusammensetzt.
 // Der Verteilerschlüssel wird je Konto für das Abrechnungsjahr gewählt.
 // Beträge lassen sich hier direkt ändern, löschen und neu hinzufügen (als Buchung auf das Konto der Liegenschaft).
+import { BetragFeld } from './BetragFeld';
 import { Fragment, useEffect, useState, type ReactNode } from 'react';
 import { Check, ChevronDown, ChevronRight, Pencil, Plus, Trash2, X } from 'lucide-react';
 import { db, type Row } from '../db';
 import { eur } from './EntityTable';
 import type { Position } from '../logic/verteilung';
-import { buchungLoeschen, loeschHinweis } from '../logic/buchung';
+import { BJ, buchungLoeschen, loeschHinweis } from '../logic/buchung';
 
 const datum = (d: string) => (d ? new Date(d + 'T00:00:00').toLocaleDateString('de-DE') : '');
 
@@ -15,11 +16,11 @@ const datum = (d: string) => (d ? new Date(d + 'T00:00:00').toLocaleDateString('
 async function belegeLaden(objekt: number, jahr: number): Promise<{ aus: Row[]; ein: Row[] }> {
   const von = `${jahr}-01-01`, bis = `${jahr}-12-31`;
   const buch = await db.select(`SELECT b.id, b.datum, b.betrag, b.text, b.buchungskonto_id, k.art,
-      COALESCE(f.name, rf.name) AS firma, r.rechnungsnr, e.nummer AS einheit, b.bankumsatz_id, b.sollstellung_id, b.rechnung_id
+      COALESCE(f.name, rf.name) AS firma, COALESCE(b.rechnungsnr, r.rechnungsnr) AS rechnungsnr, e.nummer AS einheit, b.bankumsatz_id, b.sollstellung_id, b.rechnung_id
     FROM buchungen b JOIN buchungskonten k ON k.id = b.buchungskonto_id
     LEFT JOIN rechnungen r ON r.id = b.rechnung_id LEFT JOIN firmen f ON f.id = b.firma_id LEFT JOIN firmen rf ON rf.id = r.firma_id
     LEFT JOIN einheiten e ON e.id = b.einheit_id
-    WHERE b.objekt_id = $1 AND b.datum BETWEEN $2 AND $3 ORDER BY b.datum, b.id`, [objekt, von, bis]);
+    WHERE b.objekt_id = $1 AND ${BJ('b')} = CAST(substr($2, 1, 4) AS INTEGER) ORDER BY b.datum, b.id`, [objekt, von]);
   const rech = await db.select(`SELECT r.id, r.bezahlt_am, COALESCE(r.bezahlt_am, r.datum) AS datum, r.betrag, r.buchungskonto_id, r.rechnungsnr, f.name AS firma, e.nummer AS einheit, r.notiz
     FROM rechnungen r LEFT JOIN firmen f ON f.id = r.firma_id LEFT JOIN einheiten e ON e.id = r.einheit_id
     WHERE r.objekt_id = $1 AND COALESCE(r.bezahlt_am, r.datum) BETWEEN $2 AND $3
@@ -79,7 +80,7 @@ function Belege({ liste, ausgabe, kontoId, objekt, jahr, onChanged }: { liste: R
     <tr className="beleg-edit" key={'e' + (b ? keyVon(b) : 'neu')}>
       <td><input type="date" className="cell" value={e.datum} onChange={(x) => setE({ ...e, datum: x.target.value })} /></td>
       <td colSpan={4}><input className="cell" style={{ width: '100%', textAlign: 'left' }} placeholder="Text, z. B. Korrektur oder Rechnung Hausmeister" value={e.text} onChange={(x) => setE({ ...e, text: x.target.value })} /></td>
-      <td className="num"><input className="cell" inputMode="decimal" autoFocus style={{ width: 110 }} value={e.betrag} onChange={(x) => setE({ ...e, betrag: x.target.value })}
+      <td className="num"><BetragFeld zelle className="cell" autoFocus style={{ width: 130 }} value={e.betrag} onChange={(x) => setE({ ...e, betrag: x.target.value })}
         onKeyDown={(x) => { if (x.key === 'Enter') speichern(b); if (x.key === 'Escape') setE(null); }} /></td>
       <td className="actions nowrap"><button className="icon-btn" title="Speichern" onClick={() => speichern(b)}><Check size={16} /></button>
         <button className="icon-btn" title="Abbrechen" onClick={() => { setE(null); setFehler(''); }}><X size={16} /></button></td>
@@ -104,10 +105,12 @@ function Belege({ liste, ausgabe, kontoId, objekt, jahr, onChanged }: { liste: R
   );
 }
 
-export function AbrechnungsUebersicht({ objekt, jahr, pos, schluessel, stand = 0, mitEinnahmen = true, titel, onChanged, nurUmlagefaehig = false }: {
+export function AbrechnungsUebersicht({ objekt, jahr, pos, schluessel, stand = 0, mitEinnahmen = true, titel, onChanged, nurUmlagefaehig = false, einnahmeKonten, einnahmenTitel }: {
   objekt: number; jahr: number; pos: Position[]; schluessel: (p: Position) => ReactNode; stand?: number; mitEinnahmen?: boolean; titel?: string;
   /** Wird nach Ändern, Löschen oder Hinzufügen eines Betrags aufgerufen; ohne diese Funktion ist die Übersicht nur lesbar */
   onChanged?: (text: string) => void; nurUmlagefaehig?: boolean;
+  /** Nur diese Einnahmekonten zeigen (Nebenkostenabrechnung: nur Vorauszahlungen der Mieter, nie Hausgeld oder Rücklage der Eigentümer) */
+  einnahmeKonten?: string[]; einnahmenTitel?: string;
 }) {
   const [neu, setNeu] = useState<{ konto: string; datum: string; text: string; betrag: string } | null>(null);
   const [neuFehler, setNeuFehler] = useState('');
@@ -126,7 +129,8 @@ export function AbrechnungsUebersicht({ objekt, jahr, pos, schluessel, stand = 0
   }, [objekt, jahr, stand, pos, intern]);
 
   const umschalten = (k: string) => { const n = new Set(offen); n.has(k) ? n.delete(k) : n.add(k); setOffen(n); };
-  const einnahmen = [...new Set(belege.ein.map((b) => b.buchungskonto_id))].map((id) => {
+  const einErlaubt = (id: number) => !einnahmeKonten || einnahmeKonten.includes(String(konten.find((x) => x.id === id)?.nummer ?? ''));
+  const einnahmen = [...new Set(belege.ein.map((b) => b.buchungskonto_id))].filter(einErlaubt).map((id) => {
     const k = konten.find((x) => x.id === id) ?? { nummer: '', name: 'ohne Konto' };
     const liste = belege.ein.filter((b) => b.buchungskonto_id === id);
     return { id, nummer: k.nummer, name: k.name, liste, betrag: liste.reduce((a, b) => a + b.betrag, 0) };
@@ -168,32 +172,37 @@ export function AbrechnungsUebersicht({ objekt, jahr, pos, schluessel, stand = 0
           </select></label>
           <label><span>Datum</span><input type="date" value={neu.datum} onChange={(x) => setNeu({ ...neu, datum: x.target.value })} /></label>
           <label className="grow"><span>Text</span><input placeholder="z. B. Rechnung Hausmeister Dezember" value={neu.text} onChange={(x) => setNeu({ ...neu, text: x.target.value })} /></label>
-          <label><span>Betrag €</span><input inputMode="decimal" value={neu.betrag} onChange={(x) => setNeu({ ...neu, betrag: x.target.value })} onKeyDown={(x) => x.key === 'Enter' && neuSpeichern()} /></label>
+          <label><span>Betrag</span><BetragFeld value={neu.betrag} onChange={(x) => setNeu({ ...neu, betrag: x.target.value })} onKeyDown={(x) => x.key === 'Enter' && neuSpeichern()} /></label>
           <div className="row"><button onClick={() => { setNeu(null); setNeuFehler(''); }}>Abbrechen</button><button className="primary" onClick={neuSpeichern}>Hinzufügen</button></div>
           {neuFehler && <p className="error small">{neuFehler}</p>}
         </div>)}
       <h3 className="sec">Ausgaben</h3>
       {pos.length === 0 ? <p className="muted">Keine Ausgaben im Jahr {jahr}. Kosten kommen aus dem Bankimport und aus erfassten Rechnungen.</p> : (
         <table className="list">
-          <thead><tr><th style={{ width: 36 }} /><th>Konto</th><th>Kostenart</th><th>umlagefähig</th><th>Verteilerschlüssel {jahr}</th><th className="num">Belege</th><th className="num">Gesamtkosten</th></tr></thead>
-          <tbody>{pos.map((p) => {
+          <thead><tr><th style={{ width: 36 }} /><th>Konto</th><th>Kostenart</th><th>Verteilerschlüssel {jahr}</th><th className="num">Belege</th><th className="num">Gesamtkosten</th></tr></thead>
+          {([['Umlagefähige Kosten', pos.filter((p) => p.umlagefaehig), 'umlage'], ['Nicht umlagefähige Kosten', pos.filter((p) => !p.umlagefaehig), 'nicht']] as const).map(([gTitel, gPos, art]) => gPos.length > 0 && (
+          <tbody key={art} className={'abr-gruppe ' + art}>
+            <tr className="abr-gruppe-kopf"><td /><td colSpan={5}>{gTitel}<span className="muted small"> · {art === 'umlage' ? 'auf Mieter umlegbar (BetrKV)' : 'nicht auf Mieter umlegbar'}</span></td></tr>
+            {gPos.map((p) => {
             const k = 'a' + p.konto_id, liste = belege.aus.filter((b) => b.buchungskonto_id === p.konto_id);
             return (
               <Fragment key={k}>
                 <tr className={offen.has(k) ? 'auf' : ''}>
-                  <td><Pfeil k={k} n={liste.length} /></td><td>{p.nummer}</td><td>{p.name}{(p.hdl || p.hwl) && <div className="muted small">§ 35a {p.hdl ? 'HDL' : 'HWL'}: {eur(p.betrag35a ?? p.betrag)}</div>}</td><td>{p.umlagefaehig ? 'ja' : 'nein'}</td>
+                  <td><Pfeil k={k} n={liste.length} /></td><td>{p.nummer}</td><td>{p.name}{(p.hdl || p.hwl) && <div className="muted small">§ 35a {p.hdl ? 'HDL' : 'HWL'}: {eur(p.betrag35a ?? p.betrag)}</div>}</td>
                   <td>{schluessel(p)}{eigeneJahr.has(p.konto_id) && <span className="pill st-aktiv klein" title={`Eigener Schlüssel nur für ${jahr}`}>nur {jahr}</span>}</td>
                   <td className="num">{liste.length}</td><td className="num"><b>{eur(p.betrag)}</b></td>
                 </tr>
-                {offen.has(k) && <tr className="belege-zeile"><td /><td colSpan={6}><Belege liste={liste} ausgabe kontoId={p.konto_id} objekt={objekt} jahr={jahr} onChanged={geaendert} />
+                {offen.has(k) && <tr className="belege-zeile"><td /><td colSpan={5}><Belege liste={liste} ausgabe kontoId={p.konto_id} objekt={objekt} jahr={jahr} onChanged={geaendert} />
                   {Math.abs(liste.reduce((a, b) => a + b.betrag, 0) - p.betrag) > 0.005 && <p className="warn small">Die Belege ergeben {eur(liste.reduce((a, b) => a + b.betrag, 0))}, gebucht sind {eur(p.betrag)}.</p>}</td></tr>}
               </Fragment>);
-          })}</tbody>
-          <tfoot><tr><td /><td colSpan={5}>Summe Ausgaben</td><td className="num">{eur(summeAus)}</td></tr></tfoot>
+          })}
+            <tr className="abr-zwischensumme"><td /><td colSpan={4}>Summe {gTitel.toLowerCase().replace('kosten', 'Kosten')}</td><td className="num">{eur(gPos.reduce((a, p) => a + p.betrag, 0))}</td></tr>
+          </tbody>))}
+          <tfoot><tr><td /><td colSpan={4}>Summe Ausgaben gesamt</td><td className="num">{eur(summeAus)}</td></tr></tfoot>
         </table>)}
       {mitEinnahmen && <>
-        <h3 className="sec">Einnahmen</h3>
-        {einnahmen.length === 0 ? <p className="muted">Keine Einnahmen im Jahr {jahr} gebucht.</p> : (
+        <h3 className="sec">{einnahmenTitel ?? 'Einnahmen'}</h3>
+        {einnahmen.length === 0 ? <p className="muted">{einnahmeKonten ? `Keine Vorauszahlungen von Mietern im Jahr ${jahr} bei uns gebucht.` : `Keine Einnahmen im Jahr ${jahr} gebucht.`}</p> : (
           <table className="list">
             <thead><tr><th style={{ width: 36 }} /><th>Konto</th><th>Art</th><th className="num">Buchungen</th><th className="num">Gesamt</th></tr></thead>
             <tbody>{einnahmen.map((e) => {

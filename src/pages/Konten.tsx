@@ -1,7 +1,11 @@
+import { VorlagenKarte } from './Versammlungen';
 import { EntityTable, eur } from '../components/EntityTable';
+import { darstellungLesen, darstellungSetzen, type Darstellung } from '../lib/theme';
 import { SicherheitKarte } from '../components/SicherheitKarte';
 import { db, mehrplatz, sicherheit } from '../db';
 import { MehrplatzKarte } from '../components/MehrplatzKarte';
+import { BriefpapierKarte } from '../components/BriefpapierKarte';
+import { UnterschriftKarte } from '../components/UnterschriftKarte';
 import { useObjektKontext } from '../logic/objektKontext';
 import { useEffect, useState } from 'react';
 import { Paperclip } from 'lucide-react';
@@ -22,12 +26,14 @@ export function KontenPage() {
         { key: 'nummer', label: 'Konto', required: true },
         { key: 'name', label: 'Bezeichnung', required: true, wide: true },
         { key: 'gruppe', label: 'Gruppe' },
-        { key: 'art', label: 'Art', type: 'select', required: true, options: ['Aufwand', 'Ertrag', 'Einnahme', 'Bank', 'Kaution'], hideInTable: true },
+        { key: 'art', label: 'Art', type: 'select', required: true, options: ['Aufwand', 'Ertrag', 'Einnahme', 'Bank', 'Kaution', 'Eigentümer'], hideInTable: true },
         { key: 'euer', label: 'EÜR', type: 'checkbox', format: haken },
         { key: 'mwst', label: 'MwSt %', type: 'select', options: [{ value: 0, label: '0 %' }, { value: 7, label: '7 %' }, { value: 19, label: '19 %' }], format: (v) => (v ? v + ' %' : '–') },
         { key: 'umlagefaehig', label: 'Umlagefähig', type: 'checkbox', format: haken },
         { key: 'hdl', label: 'HDL', type: 'checkbox', format: haken },
         { key: 'hwl', label: 'HWL', type: 'checkbox', format: haken },
+        { key: 'hbg', label: 'Minijob § 35a Abs. 1', type: 'checkbox', format: haken, hideInTable: true },
+        { key: 'rechnung_pflicht', label: 'Rechnungs-Nr. Pflicht', type: 'checkbox', format: haken },
         { key: 'schluessel', label: 'Schlüssel (Vorschlag)', type: 'select', options: SCHLUESSEL },
       ]}
       listSql="SELECT * FROM buchungskonten ORDER BY nummer"
@@ -54,14 +60,14 @@ export function RechnungenPage() {
         { key: 'datum', label: 'Datum', type: 'date', required: true },
         ...(fix ? [] : [{ key: 'objekt_id', label: 'Objekt', type: 'select' as const, required: true, optionsSql: 'SELECT id AS value, name AS label FROM objekte ORDER BY name' }]),
         { key: 'einheit_id', label: 'Einheit', type: 'select', leer: 'Alle Einheiten (Umlage nach Schlüssel)',
-          optionsSql: `SELECT e.id AS value, ${fix ? '' : "o.name || ' – ' || "}${einheitLabel('e')} AS label FROM einheiten e JOIN objekte o ON o.id = e.objekt_id ${fix ? `WHERE e.objekt_id = ${fix.id}` : ''} ORDER BY o.name, e.nummer` },
+          optionsSql: `SELECT e.id AS value, ${fix ? '' : "o.name || ' – ' || "}${einheitLabel('e')} AS label FROM einheiten e JOIN objekte o ON o.id = e.objekt_id ${fix ? `WHERE e.objekt_id = ${fix.id}` : ''} ORDER BY o.name, e.lfd_nr, e.nummer` },
         { key: 'firma_id', label: 'Firma', type: 'select', optionsSql: 'SELECT id AS value, name AS label FROM firmen ORDER BY name' },
         { key: 'rechnungsnr', label: 'Rechnungsnr.' },
         { key: 'buchungskonto_id', label: 'Buchungskonto', type: 'select', required: true, wide: true, optionsSql: kontoOptions("art IN ('Aufwand')") },
-        { key: 'betrag', label: 'Betrag brutto', type: 'number', required: true, format: (v: any) => <span className={v < 0 ? '' : 'neg'}>{eur(v)}{v < 0 ? ' Gutschrift' : ''}</span> },
+        { key: 'betrag', label: 'Betrag brutto', type: 'number', geld: true, minusNeutral: true, required: true, format: (v: any) => <span className={v < 0 ? '' : 'neg'}>{eur(v)}{v < 0 ? ' Gutschrift' : ''}</span> },
         { key: 'mwst_satz', label: 'MwSt %', type: 'number', format: (v: any) => (v == null ? '' : `${v} %`) },
         { key: 'beleg', label: 'Beleg', computed: true, format: (v: any) => v ? <button className="link" title={v} onClick={(e) => { e.stopPropagation(); oeffnen(v); }}><Paperclip size={15} /></button> : '' },
-        { key: 'anteil_lohn', label: 'davon Arbeitskosten (§35a)', type: 'number', format: eur, hideInTable: true },
+        { key: 'anteil_lohn', label: 'davon Arbeitskosten (§35a)', type: 'number', geld: true, format: eur, hideInTable: true },
         { key: 'zeitraum_von', label: 'Leistung von', type: 'date', hideInTable: true },
         { key: 'zeitraum_bis', label: 'Leistung bis', type: 'date', hideInTable: true },
         { key: 'faellig', label: 'Fällig', type: 'date' },
@@ -107,6 +113,7 @@ export function EinstellungenPage() {
   }
   return (
     <>
+      <DarstellungKarte />
       <section className="card">
         <div className="card-head"><h2>Allgemein und Mahnwesen</h2></div>
         <div className="form">
@@ -117,6 +124,9 @@ export function EinstellungenPage() {
         </div>
         <div className="row end"><span className="grow" />{saved && <span className="pos">Gespeichert</span>}<button className="primary" onClick={save}>Speichern</button></div>
       </section>
+      <BriefpapierKarte />
+      <UnterschriftKarte />
+      <VorlagenKarte />
       <KiKarte />
       <MehrplatzKarte />
       {!mehrplatz.aktiv && <SicherheitKarte />}
@@ -129,7 +139,7 @@ export function EinstellungenPage() {
           { key: 'bank', label: 'Bank' },
           { key: 'iban', label: 'IBAN', wide: true },
           { key: 'bic', label: 'BIC', hideInTable: true },
-          { key: 'anfangssaldo', label: 'Anfangssaldo', type: 'number', format: eur, hideInTable: true },
+          { key: 'anfangssaldo', label: 'Anfangssaldo', type: 'number', geld: true, format: eur, hideInTable: true },
           { key: 'saldo_datum', label: 'Saldo zum', type: 'date', hideInTable: true },
         ]}
         listSql={`SELECT b.*, o.name AS objekt_id_label FROM bankkonten b LEFT JOIN objekte o ON o.id = b.objekt_id ORDER BY o.name`}
@@ -151,6 +161,31 @@ export function EinstellungenPage() {
   );
 }
 
+
+/** Darstellung: Hell, Dunkel (Forged Carbon) oder wie macOS */
+function DarstellungKarte() {
+  const [d, setD] = useState<Darstellung>(darstellungLesen);
+  const wahl: [Darstellung, string, string][] = [
+    ['hell', 'Hell', 'Heller Hintergrund, wie bisher'],
+    ['dunkel', 'Dunkel (Forged Carbon)', 'Carbon-Grau mit Bronze, Minus knallrot, Plus knallgrün'],
+    ['system', 'Wie macOS', 'Folgt der Einstellung des Mac (hell am Tag, dunkel am Abend)'],
+  ];
+  return (
+    <section className="card">
+      <div className="card-head"><h2>Darstellung</h2></div>
+      <div className="darstellung-wahl">
+        {wahl.map(([k, t, b]) => (
+          <button key={k} type="button" className={'darstellung-option ' + k + (d === k ? ' aktiv' : '')}
+            onClick={() => { setD(k); darstellungSetzen(k); }}>
+            <span className="darstellung-muster" aria-hidden="true" />
+            <strong>{t}</strong><small>{b}</small>
+          </button>
+        ))}
+      </div>
+      <p className="muted" style={{ marginBottom: 0 }}>Gilt sofort und nur auf diesem Mac. Ausdrucke und PDFs bleiben immer hell.</p>
+    </section>
+  );
+}
 
 /** KI-Assistent: API-Schlüssel und Modell */
 function KiKarte() {

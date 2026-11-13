@@ -1,0 +1,151 @@
+/* =====================================================================
+   Dunkelmodus „Forged Carbon“: Graphit, Carbon-Struktur, Bronze-Akzente.
+   Aktiv mit <html data-theme="dunkel">. Druck und PDFs bleiben hell.
+   ===================================================================== */
+html[data-theme="dunkel"] {
+  color-scheme: dark;
+  --bg: #121315; --panel: #1b1d20; --panel-2: #222428; --side: #0d0e10; --side-2: #08090a; --side-text: #e4e1da;
+  --text: #ece9e3; --muted: #9d9fa4; --line: #2d3035; --head: #24262a; --sum: #2a241c;
+  --accent: #c8955a; --accent-dark: #e0ad6e; --accent-soft: rgba(200,149,90,.16); --gray: #d9d5cd;
+  --neg: #ff2e45; --pos: #1fe36b; --warn-bg: rgba(255,184,0,.12);
+  --shadow: 0 1px 0 rgba(255,255,255,.03) inset, 0 6px 22px rgba(0,0,0,.45);
+  --shadow-hoch: 0 1px 0 rgba(255,255,255,.04) inset, 0 16px 40px rgba(0,0,0,.6);
+  --ring: 0 0 0 4px rgba(200,149,90,.22);
+  --carbon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='520' height='520'%3E%3Cfilter id='f'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.022' numOctaves='2' seed='11' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3CfeComponentTransfer%3E%3CfeFuncR type='discrete' tableValues='0.055 0.085 0.065 0.115 0.07 0.095 0.06 0.13'/%3E%3CfeFuncG type='discrete' tableValues='0.058 0.088 0.068 0.118 0.073 0.098 0.063 0.133'/%3E%3CfeFuncB type='discrete' tableValues='0.064 0.094 0.074 0.126 0.079 0.104 0.069 0.142'/%3E%3C/feComponentTransfer%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23f)'/%3E%3C/svg%3E");
+}
+html[data-theme="dunkel"] body {
+  background:
+    radial-gradient(1100px 600px at 100% -10%, rgba(200,149,90,.10) 0%, transparent 60%),
+    linear-gradient(rgba(14,15,17,.80), rgba(14,15,17,.88)),
+    var(--carbon), var(--bg);
+  background-attachment: fixed; color: var(--text);
+}
+html[data-theme="dunkel"] a { color: var(--accent-dark); }
+
+/* Seitenleiste und Kopfzeile */
+html[data-theme="dunkel"] .side { background: linear-gradient(rgba(8,9,10,.55), rgba(8,9,10,.75)), var(--carbon); border-right: 1px solid #23262a; }
+html[data-theme="dunkel"] .side-logo { background: linear-gradient(rgba(10,11,13,.4), rgba(10,11,13,.6)), var(--carbon); border-color: #23262a; border-bottom: 1px solid rgba(200,149,90,.25); }
+html[data-theme="dunkel"] .nav-item.active, html[data-theme="dunkel"] .oside-punkt.on { background: linear-gradient(135deg, #d6a468, #9c6d36); color: #140f08; box-shadow: 0 4px 14px rgba(200,149,90,.25); }
+html[data-theme="dunkel"] .oside-punkt.on svg { color: #140f08; }
+html[data-theme="dunkel"] .topbar { background: rgba(18,19,21,.82); backdrop-filter: blur(10px); border-color: var(--line); }
+html[data-theme="dunkel"] .oside { background: rgba(20,21,24,.9); border-color: var(--line); }
+html[data-theme="dunkel"] .logo-netz .bahn, html[data-theme="dunkel"] .kopf-netz .bahn { stroke: #3a3530; }
+html[data-theme="dunkel"] .logo-netz .knoten, html[data-theme="dunkel"] .kopf-netz .knoten { fill: #1b1d20; stroke: #4a4238; }
+html[data-theme="dunkel"] .logo-daten .logo-kms { background: linear-gradient(100deg, #d9d5cd 40%, #ffffff 50%, #d9d5cd 60%) 0 0 / 300% 100%; -webkit-background-clip: text; background-clip: text; }
+
+/* Flächen */
+html[data-theme="dunkel"] .card, html[data-theme="dunkel"] .kpi, html[data-theme="dunkel"] .modal, html[data-theme="dunkel"] .sperre-karte,
+html[data-theme="dunkel"] .gsearch-res, html[data-theme="dunkel"] .kfilter-pop, html[data-theme="dunkel"] .board-karte, html[data-theme="dunkel"] .auswahl-leiste {
+  background: linear-gradient(180deg, #202226, #1a1c1f); border-color: var(--line); box-shadow: var(--shadow); color: var(--text);
+}
+html[data-theme="dunkel"] .card { border-top-color: #34373c; }
+html[data-theme="dunkel"] .kpi b { color: #fff; }
+html[data-theme="dunkel"] .modal-bg, html[data-theme="dunkel"] .overlay { background: rgba(0,0,0,.6); }
+html[data-theme="dunkel"] .tabs button, html[data-theme="dunkel"] .seg { background: #1f2124; border-color: var(--line); color: var(--text); }
+html[data-theme="dunkel"] .seg button.on { background: #2c2f34; color: var(--accent-dark); }
+html[data-theme="dunkel"] .tabs button.on { background: var(--accent); color: #140f08; }
+
+/* Eingaben und Knöpfe */
+html[data-theme="dunkel"] input, html[data-theme="dunkel"] select, html[data-theme="dunkel"] textarea, html[data-theme="dunkel"] .addon {
+  background: #141518; border-color: #34373c; color: var(--text);
+}
+html[data-theme="dunkel"] input::placeholder, html[data-theme="dunkel"] textarea::placeholder { color: #6c6f75; }
+html[data-theme="dunkel"] input:hover:not(:focus):not(:disabled), html[data-theme="dunkel"] select:hover:not(:focus):not(:disabled) { border-color: #4a4d53; }
+html[data-theme="dunkel"] input:focus, html[data-theme="dunkel"] select:focus, html[data-theme="dunkel"] textarea:focus { border-color: var(--accent); box-shadow: var(--ring); }
+html[data-theme="dunkel"] .addon > span { background: #24262a; color: var(--muted); }
+html[data-theme="dunkel"] button { background: #23252a; border-color: #393c42; color: var(--text); }
+html[data-theme="dunkel"] button:hover:not(:disabled) { background: #2b2e33; }
+html[data-theme="dunkel"] button.primary, html[data-theme="dunkel"] a.btn-link { background: linear-gradient(180deg, #dcaa6c, #a7743a); border-color: #b9884c; color: #140f08; font-weight: 600; }
+html[data-theme="dunkel"] button.link, html[data-theme="dunkel"] .icon-btn { background: none; }
+html[data-theme="dunkel"] .gsearch { background: #141518; border-color: #34373c; }
+html[data-theme="dunkel"] .gsearch-kbd { background: #1f2124; }
+
+/* Tabellen */
+html[data-theme="dunkel"] table.list th { color: var(--muted); background: #191b1e; border-color: var(--line); }
+html[data-theme="dunkel"] table.list td { border-color: #26292d; }
+html[data-theme="dunkel"] table.list tbody tr:hover > td, html[data-theme="dunkel"] table.list tbody tr:hover td,
+html[data-theme="dunkel"] table.list tr.clickable:hover { background: #24272b; }
+html[data-theme="dunkel"] table.list tfoot td, html[data-theme="dunkel"] table.list tr.sum td { background: #26221c; color: #fff; }
+html[data-theme="dunkel"] table.list tr.group td, html[data-theme="dunkel"] .abr-gruppe-kopf td { background: #1e2023; color: var(--muted); border-color: var(--line); }
+html[data-theme="dunkel"] table.list tr.gewaehlt td, html[data-theme="dunkel"] .abr-uebersicht tr.auf > td { background: rgba(200,149,90,.10); }
+html[data-theme="dunkel"] .abr-zwischensumme td, html[data-theme="dunkel"] .abr-uebersicht tr.belege-zeile > td { background: #1d1f22; }
+
+/* Plus knallgrün, Minus knallrot */
+html[data-theme="dunkel"] .neg, html[data-theme="dunkel"] td.num.neg, html[data-theme="dunkel"] .betrag-feld.minus input { color: var(--neg); text-shadow: 0 0 12px rgba(255,46,69,.35); }
+html[data-theme="dunkel"] .pos, html[data-theme="dunkel"] td.num.pos { color: var(--pos); text-shadow: 0 0 12px rgba(31,227,107,.30); }
+
+/* Status-Pillen und Hinweise */
+html[data-theme="dunkel"] .pill { background: #2a2c30; color: #c4c6ca; }
+html[data-theme="dunkel"] .pill.st-aktiv, html[data-theme="dunkel"] .pill.st-bezahlt { background: rgba(31,227,107,.14); color: #45f08a; }
+html[data-theme="dunkel"] .pill.offen, html[data-theme="dunkel"] .pill.st-offen, html[data-theme="dunkel"] .pill.st-mahnen, html[data-theme="dunkel"] .tag { background: rgba(255,46,69,.16); color: #ff6b7a; }
+html[data-theme="dunkel"] .pill.aktiv, html[data-theme="dunkel"] .pill.bezahlt { background: rgba(31,227,107,.14); color: #45f08a; }
+html[data-theme="dunkel"] .pill.teil, html[data-theme="dunkel"] .pill.st-faellig { background: rgba(255,184,0,.15); color: #ffc94d; }
+html[data-theme="dunkel"] .pill.künftig, html[data-theme="dunkel"] .badge { background: var(--accent-soft); color: var(--accent-dark); }
+html[data-theme="dunkel"] .info, html[data-theme="dunkel"] .modal-hinweis { background: var(--accent-soft); color: var(--text); border-color: rgba(200,149,90,.3); }
+html[data-theme="dunkel"] .bar { background: rgba(255,46,69,.18); }
+
+/* Einzelbereiche mit eigenen hellen Flächen */
+html[data-theme="dunkel"] .leit-stadt { background: radial-gradient(ellipse at 50% 38%, #2a2c30 0%, #1c1e21 55%, #141517 100%); }
+html[data-theme="dunkel"] .leit-zeile, html[data-theme="dunkel"] .leit-termine a:hover, html[data-theme="dunkel"] .mieter-summe,
+html[data-theme="dunkel"] .erin-auto, html[data-theme="dunkel"] .osa-annahmen, html[data-theme="dunkel"] .auszug-drop.kompakt,
+html[data-theme="dunkel"] .bf-zeile.alle, html[data-theme="dunkel"] .einheit-zeile.an, html[data-theme="dunkel"] label.hint-35a { background: #1f2124; border-color: var(--line); color: var(--text); }
+html[data-theme="dunkel"] .erin-kopf { background: linear-gradient(120deg, #2a241c, #1d1f22 60%); border-color: var(--line); }
+html[data-theme="dunkel"] .osa-plan { background: linear-gradient(180deg, #24211c 0%, #1b1d20 60%); }
+html[data-theme="dunkel"] .osa-kpis .osa-kpi { background: #221f1a; }
+html[data-theme="dunkel"] .osa-ki { background: #182224; border-color: #24383a; }
+html[data-theme="dunkel"] .abschluss-unten { background: linear-gradient(120deg, #2a241c, #1b1d20 70%); border-color: #4a3d2b; }
+html[data-theme="dunkel"] .abschluss-unten.zu { background: linear-gradient(120deg, #13261a, #1b1d20 70%); border-color: #24563a; }
+html[data-theme="dunkel"] .board-spalte, html[data-theme="dunkel"] .kal-tag.leer, html[data-theme="dunkel"] .dok-ansicht .dok-bild { background: #17181b; border-color: var(--line); }
+html[data-theme="dunkel"] .notiz { background: #26231a; border-color: #4a422a; }
+html[data-theme="dunkel"] .bank-verbunden { background: #14221a; border-color: #24563a; }
+html[data-theme="dunkel"] .ichat-blase { background: #26282c; }
+html[data-theme="dunkel"] .ki-msg.fehler, html[data-theme="dunkel"] tr.frist-ueber td { background: rgba(255,46,69,.12); border-color: rgba(255,46,69,.3); }
+html[data-theme="dunkel"] .objhead .thumb, html[data-theme="dunkel"] .thumb-s, html[data-theme="dunkel"] .oside-thumb { background: linear-gradient(135deg, #3a3128, #22201c); color: var(--accent-dark); }
+html[data-theme="dunkel"] .vertrag-symbol.da, html[data-theme="dunkel"] .erin-chip, html[data-theme="dunkel"] .auszug-ico, html[data-theme="dunkel"] .krad-tag { background: var(--accent-soft); color: var(--accent-dark); border-color: rgba(200,149,90,.35); }
+html[data-theme="dunkel"] .bf-haken { background: #141518; border-color: #4a4d53; }
+html[data-theme="dunkel"] .bf-zeile:hover, html[data-theme="dunkel"] .leit-zurueck:hover { background: #24272b; }
+html[data-theme="dunkel"] .k-termin, html[data-theme="dunkel"] .k-erinnerung, html[data-theme="dunkel"] .k-versammlung,
+html[data-theme="dunkel"] .k-vorgang, html[data-theme="dunkel"] .k-rechnung, html[data-theme="dunkel"] .k-ticket { filter: brightness(.45) saturate(1.4); color: #fff; }
+html[data-theme="dunkel"] .betrag-feld .betrag-eur { color: #8e9096; }
+html[data-theme="dunkel"] .betrag-feld input:focus + .betrag-eur { color: var(--accent-dark); }
+
+/* Scrollbalken */
+html[data-theme="dunkel"] { scrollbar-color: #3a3d42 #141517; }
+
+/* Druck bleibt hell */
+@media print { html[data-theme="dunkel"] body { background: #fff; color: #000; } }
+
+/* Schritt-Formulare (Mieter anlegen, Stammdaten, Erinnerungen) */
+html[data-theme="dunkel"] .erin-schritt:not(:last-of-type)::before { background: #34373c; }
+html[data-theme="dunkel"] .erin-nr { background: #24262a; color: var(--accent-dark); border-color: #4a4035; }
+html[data-theme="dunkel"] .erin-schritt.ok .erin-nr { background: var(--accent); color: #140f08; border-color: var(--accent); }
+html[data-theme="dunkel"] .erin-label { color: var(--accent-dark); }
+html[data-theme="dunkel"] .mieter-raster label > span:first-child, html[data-theme="dunkel"] .form label > span:first-child { color: #b9bbc0; }
+html[data-theme="dunkel"] .stammdaten-wert { color: #fff; }
+
+/* Sperrbildschirm: Carbon-Grund mit Bronze-Schimmer */
+html[data-theme="dunkel"] .sperre { background: radial-gradient(ellipse at 50% 32%, rgba(200,149,90,.12), transparent 55%), linear-gradient(rgba(8,9,10,.62), rgba(8,9,10,.8)), var(--carbon), #101113; }
+html[data-theme="dunkel"] .sperre-karte { border: 1px solid #34373c; box-shadow: 0 24px 70px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.04); }
+
+/* 3D-Stadt: Legende, Hinweis und Knopf auf dunklem Glas */
+html[data-theme="dunkel"] .leit-legende { color: #c9c6c0; }
+html[data-theme="dunkel"] .leit-legende span, html[data-theme="dunkel"] .leit-hinweis, html[data-theme="dunkel"] .leit-zurueck {
+  background: rgba(20,22,25,.82); border-color: rgba(200,149,90,.35); color: #d8d4cc; box-shadow: 0 2px 10px rgba(0,0,0,.35); }
+html[data-theme="dunkel"] .leit-zurueck:hover { background: #24272b; }
+
+/* Eigentümer blau, Mieter grün im Dunkelmodus */
+html[data-theme="dunkel"] { --eig: #8fb3f2; --eig-bg: rgba(95,137,216,.16); --eig-rand: rgba(95,137,216,.38); --mie: #84d39c; --mie-bg: rgba(91,176,111,.15); --mie-rand: rgba(91,176,111,.36); }
+html[data-theme="dunkel"] table.list tbody tr.zeile-eig:hover > td { background: rgba(95,137,216,.24); }
+html[data-theme="dunkel"] table.list tbody tr.zeile-mie:hover > td { background: rgba(91,176,111,.22); }
+html[data-theme="dunkel"] table.list tbody tr.zeile-eig > td, html[data-theme="dunkel"] table.list tbody tr.zeile-mie > td { border-bottom-color: var(--line); }
+/* Unterschrift: Feld bleibt weiß wie Papier */
+html[data-theme="dunkel"] .us-leer { background: var(--panel-2); border-color: #3a3d42; color: var(--muted); }
+html[data-theme="dunkel"] .us-flaeche, html[data-theme="dunkel"] .us-vorschau { border-color: #3a3d42; }
+
+/* Logo im Dunkelmodus: Grau aufgehellt, Bronze etwas leuchtender */
+html[data-theme="dunkel"] { --logo-grau: #d9d5cd; --logo-bronze: #c9a46c; --logo-glanz: #ffffff; }
+
+html[data-theme="dunkel"] .ordner-symbol .ordner-hinten { fill: #6c6f75; }
+html[data-theme="dunkel"] .ordner-symbol .ordner-vorne { fill: #8d9096; }
+html[data-theme="dunkel"] .ordner-symbol .ordner-blatt { fill: #d9d9d6; }
+html[data-theme="dunkel"] .ordner-symbol .ordner-nummer { fill: #3f4247; }

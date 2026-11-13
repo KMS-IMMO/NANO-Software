@@ -1,3 +1,6 @@
+import { BetragFeld } from './BetragFeld';
+import { betragZahl } from '../lib/betrag';
+import { MonatWahl } from './MonatWahl';
 // „Sollstellung hinzufügen“: mehrere Einheiten per Häkchen, einzelner Monat oder Zeitraum, Betrag aus den Stammdaten.
 import { useEffect, useMemo, useState } from 'react';
 import { Check, ChevronDown, Home } from 'lucide-react';
@@ -8,7 +11,7 @@ import { ALLE_ARTEN, monate, soll, stammdatenPosten, type Posten } from '../logi
 
 const ARTEN = [ALLE_ARTEN, 'Kaltmiete', 'NK', 'HK', 'USt', 'Hausgeld', 'Rücklage', 'Sonderumlage', 'Nachzahlung', 'Mahngebühr', 'Sonstiges'];
 const MIT_STAMMDATEN = new Set([ALLE_ARTEN, 'Kaltmiete', 'NK', 'HK', 'USt', 'Hausgeld', 'Rücklage']);
-const zahl = (s: string) => Number(String(s).replace(/\./g, '').replace(',', '.')) || 0;
+const zahl = (s: string) => betragZahl(s) ?? 0;
 const diesMonat = () => new Date().toISOString().slice(0, 7);
 const monatText = (m: string) => new Date(Number(m.slice(0, 4)), Number(m.slice(5, 7)) - 1).toLocaleDateString('de-DE', { month: 'short', year: 'numeric' });
 
@@ -112,12 +115,12 @@ export function SollstellungNeu({ objektId, onClose, onSaved }: { objektId: numb
               <button type="button" className={zeitraum === 'spanne' ? 'on' : ''} onClick={() => setZeitraum('spanne')}>Eigener Zeitraum</button>
             </div></div>
           {zeitraum === 'monat'
-            ? <label><span>Monat</span><input type="month" value={monat} onChange={(e) => setMonat(e.target.value)} /></label>
-            : <><label><span>Von Monat</span><input type="month" value={von} onChange={(e) => setVon(e.target.value)} /></label>
-                <label><span>Bis Monat</span><input type="month" value={bis} onChange={(e) => setBis(e.target.value)} /></label></>}
+            ? <label><span>Monat</span><MonatWahl value={monat} onChange={setMonat} /></label>
+            : <><label><span>Von Monat</span><MonatWahl value={von} onChange={setVon} /></label>
+                <label><span>Bis Monat</span><MonatWahl value={bis} onChange={setBis} /></label></>}
           <label><span>Art *</span><select value={art} onChange={(e) => setArt(e.target.value)}>{ARTEN.map((a) => <option key={a}>{a}</option>)}</select></label>
           <label><span>Betrag € {MIT_STAMMDATEN.has(art) ? '(leer = aus den Stammdaten)' : '*'}</span>
-            <input inputMode="decimal" value={eigen} onChange={(e) => setEigen(e.target.value)} placeholder={MIT_STAMMDATEN.has(art) ? 'aus Stammdaten' : '0,00'} /></label>
+            <BetragFeld value={eigen} onChange={(e) => setEigen(e.target.value)} placeholder={MIT_STAMMDATEN.has(art) ? 'aus Stammdaten' : '0,00'} /></label>
           <label><span>Fällig am Tag (leer = laut Vertrag, sonst 3.)</span><input type="number" min={1} max={28} value={tag} onChange={(e) => setTag(e.target.value)} placeholder="3" /></label>
         </div>
 

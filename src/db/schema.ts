@@ -1,4 +1,4 @@
-// Datenbankschema der NANO-Software (KMS Immobilien).
+// Datenbankschema der NEOSS-Software (KMS Immobilien).
 // Jede Migration läuft genau einmal; Änderungen immer als neue Migration anhängen.
 // Fachliche Grundlage: /mnt/project-files/kms-verwaltung/planung.md
 
@@ -635,5 +635,100 @@ CREATE TABLE fristen (
   notiz TEXT,
   erledigt_am TEXT                -- nur bei einmaligen Fristen
 );
+`,
+  // Migration 20: Buchen-Fenster – Rechnungsnummer-Pflicht je Konto, Buchungsjahr und Rechnungsnummer an der Buchung
+  `
+ALTER TABLE buchungskonten ADD COLUMN rechnung_pflicht INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE buchungen ADD COLUMN jahr INTEGER;
+ALTER TABLE buchungen ADD COLUMN rechnungsnr TEXT;
+UPDATE buchungskonten SET rechnung_pflicht = 1 WHERE art = 'Aufwand' AND (hdl = 1 OR hwl = 1);  -- § 35a verlangt eine Rechnung; weitere Konten im Kontenrahmen anhaken
+`,
+  // Migration 21: Erinnerungen mit Erstellungsdatum
+  `
+ALTER TABLE erinnerungen ADD COLUMN erstellt TEXT;
+`,
+  // Migration 22: Zahlweise der Mieter (Miete und Nebenkosten in einer Überweisung oder getrennt)
+  `
+ALTER TABLE objekte ADD COLUMN miete_zahlweise TEXT NOT NULL DEFAULT 'zusammen';  -- zusammen | getrennt
+`,
+  // Migration 23: Zahlweise je Mietvertrag (leer = wie Liegenschaft)
+  `
+ALTER TABLE mietvertraege ADD COLUMN zahlweise TEXT;  -- zusammen | getrennt | leer
+`,
+  // Migration 24: Mietverwaltung – Auszahlungen an den Eigentümer und Einzahlungen des Eigentümers. Kontoart „Eigentümer“:
+  // keine Einnahme und keine Ausgabe, ändert nur den Kontostand. Erscheint in der Abrechnung getrennt unter dem Ergebnis.
+  `
+INSERT OR IGNORE INTO buchungskonten (nummer, name, gruppe, art, euer, mwst, umlagefaehig) VALUES
+ ('1700', 'Auszahlung an Eigentümer', 'Eigentümer-Verrechnung', 'Eigentümer', 0, 0, 0),
+ ('1701', 'Einzahlung des Eigentümers', 'Eigentümer-Verrechnung', 'Eigentümer', 0, 0, 0);
+`,
+  // Migration 25: § 35a Abs. 1 EStG – Konten für geringfügige Beschäftigung im Haushalt (Minijob) getrennt ausweisen
+  `
+ALTER TABLE buchungskonten ADD COLUMN hbg INTEGER NOT NULL DEFAULT 0;
+`,
+  // Migration 26: Eigentümerversammlung digital – Tagesordnung (TOPs), Anwesenheit mit Vertretung, Stimmen je Eigentümer,
+  // Unterschrift zur Kenntnisnahme und Vorlagen mit Standard-TOPs. Platzhalter in Vorlagen: {jahr} = Jahr der Versammlung, {vorjahr}.
+  `
+ALTER TABLE versammlungen ADD COLUMN online INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE versammlungen ADD COLUMN leitung TEXT;
+ALTER TABLE versammlungen ADD COLUMN eingeladen_am TEXT;
+ALTER TABLE versammlungen ADD COLUMN beginn TEXT;
+ALTER TABLE versammlungen ADD COLUMN ende TEXT;
+ALTER TABLE versammlungen ADD COLUMN zaehlung TEXT NOT NULL DEFAULT 'Kopf';   -- Kopf (§ 25 Abs. 2 WEG) oder MEA
+ALTER TABLE beschluesse ADD COLUMN ja REAL;
+ALTER TABLE beschluesse ADD COLUMN nein REAL;
+ALTER TABLE beschluesse ADD COLUMN enthaltung REAL;
+ALTER TABLE beschluesse ADD COLUMN anfechtung_bis TEXT;
+CREATE TABLE versammlung_tops (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  versammlung_id INTEGER NOT NULL REFERENCES versammlungen(id) ON DELETE CASCADE,
+  nr INTEGER NOT NULL,
+  titel TEXT NOT NULL,
+  antrag TEXT,                         -- Beschlussantrag (Wortlaut)
+  beschluss INTEGER NOT NULL DEFAULT 0, -- 1 = Abstimmung, 0 = nur Information
+  notiz TEXT,                          -- Verlauf / Anmerkungen fürs Protokoll
+  erledigt INTEGER NOT NULL DEFAULT 0,
+  beschluss_id INTEGER REFERENCES beschluesse(id) ON DELETE SET NULL
+);
+CREATE TABLE versammlung_teilnehmer (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  versammlung_id INTEGER NOT NULL REFERENCES versammlungen(id) ON DELETE CASCADE,
+  person_id INTEGER NOT NULL REFERENCES personen(id),
+  einheiten TEXT,                      -- z. B. „WE 1, Stellplatz 3“
+  mea REAL,
+  status TEXT,                         -- Anwesend, Abwesend, Vertreten (leer = noch offen)
+  vertreter TEXT,
+  unterschrift TEXT,                   -- PNG (data:) der Kenntnisnahme
+  unterschrieben_am TEXT,
+  UNIQUE (versammlung_id, person_id)
+);
+CREATE TABLE versammlung_stimmen (
+  top_id INTEGER NOT NULL REFERENCES versammlung_tops(id) ON DELETE CASCADE,
+  teilnehmer_id INTEGER NOT NULL REFERENCES versammlung_teilnehmer(id) ON DELETE CASCADE,
+  stimme TEXT NOT NULL,                -- Ja, Nein, Enthaltung
+  PRIMARY KEY (top_id, teilnehmer_id)
+);
+CREATE TABLE top_vorlagen (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  art TEXT NOT NULL,                   -- Ordentliche Versammlung, Außerordentliche Versammlung, Umlaufbeschluss
+  nr INTEGER NOT NULL,
+  titel TEXT NOT NULL,
+  antrag TEXT,
+  beschluss INTEGER NOT NULL DEFAULT 0,
+  bedingung TEXT                       -- beirat = nur wenn die Amtszeit des Beirats endet
+);
+INSERT INTO top_vorlagen (art, nr, titel, antrag, beschluss, bedingung) VALUES
+ ('Ordentliche Versammlung', 1, 'Begrüßung, Feststellung der ordnungsgemäßen Einladung', NULL, 0, NULL),
+ ('Ordentliche Versammlung', 2, 'Bericht der Verwaltung', NULL, 0, NULL),
+ ('Ordentliche Versammlung', 3, 'Bericht des Verwaltungsbeirats', NULL, 0, NULL),
+ ('Ordentliche Versammlung', 4, 'Nachschüsse und Anpassungen aus der Jahresabrechnung {vorjahr}', 'Die Eigentümer beschließen die Nachschüsse und die Anpassung der Vorschüsse gemäß den Einzelabrechnungen {vorjahr} (§ 28 Abs. 2 WEG).', 1, NULL),
+ ('Ordentliche Versammlung', 5, 'Entlastung der Verwaltung für {vorjahr}', 'Der Verwaltung wird für das Wirtschaftsjahr {vorjahr} Entlastung erteilt.', 1, NULL),
+ ('Ordentliche Versammlung', 6, 'Entlastung des Verwaltungsbeirats für {vorjahr}', 'Dem Verwaltungsbeirat wird für das Wirtschaftsjahr {vorjahr} Entlastung erteilt.', 1, NULL),
+ ('Ordentliche Versammlung', 7, 'Vorschüsse nach dem Wirtschaftsplan {jahr}', 'Die Vorschüsse (Hausgeld) gemäß Wirtschaftsplan {jahr} werden beschlossen und gelten bis zur nächsten Beschlussfassung fort (§ 28 Abs. 1 WEG).', 1, NULL),
+ ('Ordentliche Versammlung', 8, 'Wahl des Verwaltungsbeirats', 'Zu Mitgliedern des Verwaltungsbeirats werden gewählt: …', 1, 'beirat'),
+ ('Ordentliche Versammlung', 9, 'Verschiedenes', NULL, 0, NULL),
+ ('Außerordentliche Versammlung', 1, 'Begrüßung, Feststellung der ordnungsgemäßen Einladung', NULL, 0, NULL),
+ ('Außerordentliche Versammlung', 2, 'Verschiedenes', NULL, 0, NULL),
+ ('Umlaufbeschluss', 1, 'Beschluss im Umlaufverfahren', 'Die Eigentümer beschließen in Textform (§ 23 Abs. 3 WEG): …', 1, NULL);
 `,
 ];

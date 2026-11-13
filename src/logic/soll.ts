@@ -45,14 +45,14 @@ export async function soll(row: Row): Promise<number> {
 
 /** Legt alle fehlenden Soll-Stellungen bis einschließlich `bisMonat` an (optional erst ab `von` und nur für eine Liegenschaft).
  *  Gibt die Anzahl neuer Posten zurück. Vorhandene Posten bleiben unverändert. */
-export async function sollStellen(bisMonat: string, opt: { von?: string; objektId?: number; nurHausgeld?: boolean } = {}): Promise<number> {
+export async function sollStellen(bisMonat: string, opt: { von?: string; objektId?: number; nurHausgeld?: boolean; vertragId?: number } = {}): Promise<number> {
   let n = 0;
   const imZeitraum = (m: string) => !opt.von || m >= opt.von;
   const nurObjekt = opt.objektId ? ` AND einheit_id IN (SELECT id FROM einheiten WHERE objekt_id = ${Number(opt.objektId)})` : '';
 
   // Mieten
   // Zahlt der Mieter an den Eigentümer (vermietete WEG-Einheit), entstehen bei uns keine Soll-Stellungen
-  const vertraege = opt.nurHausgeld ? [] : await db.select(`SELECT * FROM mietvertraege WHERE COALESCE(zahlung_an, 'Verwaltung') <> 'Eigentümer'${nurObjekt}`);
+  const vertraege = opt.nurHausgeld ? [] : await db.select(`SELECT * FROM mietvertraege WHERE COALESCE(zahlung_an, 'Verwaltung') <> 'Eigentümer'${nurObjekt}${opt.vertragId ? ` AND id = ${Number(opt.vertragId)}` : ''}`);
   const alleAnp = await db.select('SELECT * FROM mietanpassungen');
   for (const v of vertraege) {
     const anp = alleAnp.filter((a) => a.vertrag_id === v.id);
@@ -69,7 +69,7 @@ export async function sollStellen(bisMonat: string, opt: { von?: string; objektI
   }
 
   // Hausgeld (WEG): Schuldner ist der jeweilige Eigentümer im Monat
-  const hg = await db.select(`SELECT h.*, e.objekt_id, o.ruecklage_zahlweise FROM hausgeld h JOIN einheiten e ON e.id = h.einheit_id
+  const hg = opt.vertragId ? [] : await db.select(`SELECT h.*, e.objekt_id, o.ruecklage_zahlweise FROM hausgeld h JOIN einheiten e ON e.id = h.einheit_id
     JOIN objekte o ON o.id = e.objekt_id WHERE o.verwaltungsart = 'WEG'${opt.objektId ? ` AND o.id = ${Number(opt.objektId)}` : ''} ORDER BY h.gueltig_ab`);
   const eig = await db.select('SELECT * FROM eigentum ORDER BY anteil DESC');
   const einheiten = [...new Set(hg.map((h) => h.einheit_id))];
@@ -142,13 +142,28 @@ export async function stammdatenPosten(einheitIds: number[], monateListe: string
 /** Hausgeld-Posten einer Liegenschaft ab `abMonat` neu stellen, z. B. nach geändertem Hausgeld, Rücklage oder Zahlweise.
  *  Nur unbezahlte Posten werden ersetzt; bereits (teilweise) bezahlte bleiben unverändert. Gibt die Zahl neuer Posten zurück. */
 export async function hausgeldNeuStellen(objektId: number, abMonat: string): Promise<number> {
-  const bis = (await db.select(`SELECT MAX(s.monat) AS m FROM sollstellungen s JOIN einheiten e ON e.id = s.einheit_id
-    WHERE e.objekt_id = $1 AND s.art IN ('Hausgeld', 'Rücklage') AND s.monat >= $2`, [objektId, abMonat]))[0]?.m;
+  const r = (await db.select(`SELECT MIN(s.monat) AS a, MAX(s.monat) AS m FROM sollstellungen s JOIN einheiten e ON e.id = s.einheit_id
+    WHERE e.objekt_id = $1 AND s.art IN ('Hausgeld', 'Rücklage') AND s.monat >= $2`, [objektId, abMonat]))[0];
+  const bis = r?.m;
   if (!bis) return 0;
+  // Nie Monate vor dem ersten vorhandenen Posten neu anlegen (z. B. wenn die Sollstellung erst ab einem bestimmten Monat begonnen wurde)
+  if (r.a > abMonat) abMonat = r.a;
   await db.execute(`DELETE FROM sollstellungen WHERE art IN ('Hausgeld', 'Rücklage') AND monat >= $2 AND vertrag_id IS NULL
     AND einheit_id IN (SELECT id FROM einheiten WHERE objekt_id = $1)
     AND NOT EXISTS (SELECT 1 FROM buchungen b WHERE b.sollstellung_id = sollstellungen.id)`, [objektId, abMonat]);
   return sollStellen(bis, { von: abMonat, objektId, nurHausgeld: true });
+}
+
+/** Miet-Posten eines Vertrags neu stellen, z. B. nach einer Mietanpassung oder neuen Vorauszahlung.
+ *  Noch nicht (teilweise) bezahlte Posten werden mit den Beträgen gestellt, die im jeweiligen Monat gelten. Bezahlte bleiben unverändert. */
+export async function mieteNeuStellen(vertragId: number): Promise<number> {
+  const bis = (await db.select(`SELECT MAX(monat) AS m FROM sollstellungen WHERE vertrag_id = $1 AND art IN ('Kaltmiete', 'NK', 'HK', 'USt')`, [vertragId]))[0]?.m;
+  if (!bis) return 0;
+  const offen = `vertrag_id = $1 AND art IN ('Kaltmiete', 'NK', 'HK', 'USt') AND NOT EXISTS (SELECT 1 FROM buchungen b WHERE b.sollstellung_id = sollstellungen.id)`;
+  const vorher = (await db.select(`SELECT COUNT(*) AS n FROM sollstellungen WHERE ${offen}`, [vertragId]))[0]?.n ?? 0;
+  await db.execute(`DELETE FROM sollstellungen WHERE ${offen}`, [vertragId]);
+  await sollStellen(bis, { vertragId });
+  return Number(vorher);
 }
 
 /** Buchungskonto (Einnahme) je Art des offenen Postens */
@@ -159,7 +174,7 @@ export const KONTO_FUER_ART: Record<string, string> = {
 /** Offene Posten mit bezahltem Betrag, Objekt, Einheit und Schuldner */
 export const OP_SQL = `
   SELECT s.*, COALESCE((SELECT SUM(b.betrag) FROM buchungen b WHERE b.sollstellung_id = s.id), 0) AS bezahlt,
-    o.id AS objekt_id, o.name AS objekt, o.verwaltungsart, e.nummer AS einheit,
+    o.id AS objekt_id, o.name AS objekt, o.verwaltungsart, e.nummer AS einheit, e.lfd_nr AS einheit_lfd,
     TRIM(COALESCE(p.firma, '') || CASE WHEN p.firma IS NOT NULL AND p.nachname IS NOT NULL THEN ', ' ELSE '' END ||
       COALESCE(p.nachname, '') || CASE WHEN p.vorname IS NOT NULL THEN ', ' || p.vorname ELSE '' END) AS schuldner
   FROM sollstellungen s

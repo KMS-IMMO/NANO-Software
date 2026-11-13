@@ -1,4 +1,8 @@
 // Buchhaltung: Buchungsjournal mit manueller Buchung, Buchungsregeln, Kontenübersicht (GuV) und Berichte.
+import { BetragFeld } from '../components/BetragFeld';
+import { betragZahl } from '../lib/betrag';
+import { OffeneUmsaetze } from '../components/OffeneUmsaetze';
+import { AuszugImport } from '../components/AuszugImport';
 import { useEffect, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { BarChart3, BookOpen, Download, FileSpreadsheet, FileText, Gavel, Paperclip, Pencil, PiggyBank, Plus, Receipt, Sparkles, Trash2, Users, User } from 'lucide-react';
@@ -6,18 +10,23 @@ import { EntityTable, datum, eur, num } from '../components/EntityTable';
 import { db, insert, remove, update, type Row } from '../db';
 import { einheitLabel, personLabel } from '../db/labels';
 import { OP_SQL } from '../logic/soll';
-import { csv, dDatum, geld, listePdf } from '../lib/pdf';
+import { csv, dDatum, einnahmenAusgabenPdf, geld, listePdf } from '../lib/pdf';
 import { oeffnen, speichern } from '../lib/dateien';
 import { useObjektKontext } from '../logic/objektKontext';
 import { RechnungErfassen } from '../components/RechnungErfassen';
 import { BELEGE_SQL, BuchungBelege } from '../components/BuchungBelege';
 import { DatevDialog } from '../components/DatevDialog';
+import { BuchenDialog } from '../components/BuchenDialog';
 import { Wiederkehrend } from '../components/Wiederkehrend';
-import { buchungLoeschen, loeschHinweis } from '../logic/buchung';
+import { BJ, buchungLoeschen, loeschHinweis } from '../logic/buchung';
 import { gesperrt, sperrText } from '../logic/abschluss';
+import { ruecklageMonate, ruecklageZeitraum } from '../logic/ruecklage';
+
+// Konten der Erhaltungsrücklage: bei einer WEG nicht in der GuV, sondern im eigenen Rücklagen-Ausweis
+const RL_KONTEN = ['1260', '1261', '1262'];
 
 const heute = () => new Date().toISOString().slice(0, 10);
-const zahl = (s: string) => Number(String(s).replace(/\./g, '').replace(',', '.')) || 0;
+const zahl = (s: string) => betragZahl(s) ?? 0;
 const kontoOptions = `SELECT id AS value, nummer || ' ' || name AS label, hdl, hwl FROM buchungskonten ORDER BY nummer`;
 
 function useObjekte() {
@@ -52,14 +61,34 @@ export function JournalPage() {
   const [rEdit, setREdit] = useState<Row | null>(null);
   const [belegFuer, setBelegFuer] = useState<Row | null>(null);
   const [datev, setDatev] = useState(false);
+  const [buchen, setBuchen] = useState(false);
+  const [bankVersion, setBankVersion] = useState(0);
+  const [wahl, setWahl] = useState<Set<number>>(new Set());
 
   useEffect(() => { db.select(kontoOptions).then(setKonten); }, []);
+  // Jahr mit Buchungen zeigen: hat das gewählte Jahr keine, das neueste Jahr mit Buchungen wählen
+  const jahrPruefen = async () => {
+    const wo = objekt !== '' ? `WHERE b.objekt_id = ${Number(objekt)}` : '';
+    const r = (await db.select(`SELECT MAX(${BJ('b')}) AS j, SUM(CASE WHEN ${BJ('b')} = ${Number(jahr)} THEN 1 ELSE 0 END) AS n FROM buchungen b ${wo}`))[0];
+    if (r?.j && !Number(r.n) && Number(r.j) !== jahr) setJahr(Number(r.j));
+  };
+  useEffect(() => { jahrPruefen(); }, [objekt]);
+  useEffect(() => { setWahl(new Set()); }, [objekt, jahr, monat, kontoWahl.join(',')]);
+  const nachBank = (t?: string) => { if (t) setInfo(t); load(); jahrPruefen(); };
+  async function auswahlLoeschen() {
+    const liste = rows.filter((r) => wahl.has(r.id));
+    for (const r of liste) { const sp = await gesperrt(Number(r.objekt_id), r.datum); if (sp) { setInfo(sperrText(sp)); return; } }
+    const bank = liste.filter((r) => r.bankumsatz_id).length;
+    if (!window.confirm(`${liste.length} Buchung(en) über zusammen ${eur(liste.reduce((a, r) => a + Math.abs(Number(r.betrag)), 0))} löschen?${bank ? `\n\n${bank} davon stammen aus dem Kontoauszug. Die Bankumsätze stehen danach wieder oben unter „Aus dem Kontoauszug“ zum Buchen bereit.` : ''}`)) return;
+    for (const r of liste) await buchungLoeschen(Number(r.id));
+    setWahl(new Set()); setInfo(`${liste.length} Buchung(en) gelöscht.`); load(); setBankVersion((v) => v + 1);
+  }
   const load = async () => {
-    const w = [`substr(b.datum, 1, 4) = '${jahr}'`];
+    const w = [`${BJ('b')} = ${Number(jahr)}`];
     if (monat) w.push(`substr(b.datum, 6, 2) = '${monat}'`);
     if (objekt !== '') w.push(`b.objekt_id = ${Number(objekt)}`);
     if (kontoWahl.length) w.push(`b.buchungskonto_id IN (${kontoWahl.map(Number).join(',')})`);
-    setRows(await db.select(`SELECT b.*, k.nummer, k.name AS konto, o.name AS objekt, e.nummer AS einheit, COALESCE(f.name, rf.name) AS firma, r.rechnungsnr, ${BELEGE_SQL} AS belege
+    setRows(await db.select(`SELECT b.*, k.nummer, k.name AS konto, k.art AS kontoart, o.name AS objekt, e.nummer AS einheit, COALESCE(f.name, rf.name) AS firma, COALESCE(b.rechnungsnr, r.rechnungsnr) AS rechnungsnr, ${BELEGE_SQL} AS belege
       FROM buchungen b LEFT JOIN buchungskonten k ON k.id = b.buchungskonto_id LEFT JOIN objekte o ON o.id = b.objekt_id LEFT JOIN einheiten e ON e.id = b.einheit_id
       LEFT JOIN firmen f ON f.id = b.firma_id LEFT JOIN rechnungen r ON r.id = b.rechnung_id LEFT JOIN firmen rf ON rf.id = r.firma_id
       WHERE ${w.join(' AND ')} ORDER BY b.datum, b.id`));
@@ -90,7 +119,7 @@ export function JournalPage() {
     const fname = String(edit.firma ?? '').trim();
     if (fname) {
       const da = (await db.select('SELECT id FROM firmen WHERE lower(name) = lower($1)', [fname]))[0];
-      firma_id = da ? da.id : await insert('firmen', { name: fname });
+      firma_id = da ? da.id : await insert('firmen', { name: fname, gewerk: 'Lieferant' });
     }
     const basis = { datum: edit.datum, objekt_id: Number(edit.objekt_id), buchungskonto_id: Number(edit.buchungskonto_id), text: edit.text || null, firma_id };
     // § 35a-Anteil nur bei Konten mit HDL/HWL und nur für Ausgaben
@@ -123,7 +152,7 @@ export function JournalPage() {
     if (sp) { setEdit(null); setInfo(sperrText(sp)); return; }
     const h = loeschHinweis(r);
     if (!window.confirm(`Buchung ${r.id} über ${eur(Math.abs(Number(r.alt_betrag ?? r.betrag)))} löschen?${h ? '\n\n' + h : ''}`)) return;
-    await buchungLoeschen(Number(r.id)); setEdit(null); setInfo(`Buchung ${r.id} gelöscht.`); load();
+    await buchungLoeschen(Number(r.id)); setEdit(null); setInfo(`Buchung ${r.id} gelöscht.`); load(); setBankVersion((v) => v + 1);
   }
   const bearbeiten = (r: Row) => { setFehler(''); setModus('buchung'); setEdit({ ...r, firma: r.firma ?? '', alt_betrag: r.betrag, alt_datum: r.datum, alt_objekt: r.objekt_id, anteil_35a: r.anteil_35a == null ? '' : String(r.anteil_35a).replace('.', ','), richtung: r.betrag > 0 ? 'Einnahme' : 'Ausgabe', betrag: String(Math.abs(r.betrag)).replace('.', ',') }); };
   async function rechnungLoeschen(r: Row) {
@@ -140,7 +169,7 @@ export function JournalPage() {
     if (sp) { setFehler(sperrText(sp)); return; }
     let firma_id: number | null = rEdit.firma_id ?? null;
     const fname = String(rEdit.firma ?? '').trim();
-    if (fname) { const da = (await db.select('SELECT id FROM firmen WHERE lower(name) = lower($1)', [fname]))[0]; firma_id = da ? da.id : await insert('firmen', { name: fname }); }
+    if (fname) { const da = (await db.select('SELECT id FROM firmen WHERE lower(name) = lower($1)', [fname]))[0]; firma_id = da ? da.id : await insert('firmen', { name: fname, gewerk: 'Lieferant' }); }
     else firma_id = null;
     const lohn = String(rEdit.anteil_lohn ?? '').trim() === '' ? null : Math.abs(zahl(String(rEdit.anteil_lohn)));
     if (lohn !== null && lohn > betrag + 0.005) { setFehler('Der § 35a-Anteil kann nicht größer sein als der Betrag.'); return; }
@@ -161,6 +190,15 @@ export function JournalPage() {
     const head = ['Bu.-Nr.', 'Datum', 'Liegenschaft', 'Konto', 'Unternehmen', 'Buchungstext', 'Soll', 'Haben'];
     if (art === 'csv') {
       await ablegen(csv(head, rows.map((r) => [r.id, datum(r.datum), r.objekt, `${r.nummer ?? ''} ${r.konto ?? ''}`.trim(), r.firma, r.text, r.betrag < 0 ? -r.betrag : null, r.betrag > 0 ? r.betrag : null])), `Buchungsjournal ${bez}.csv`);
+    } else if (objekt !== '') {
+      // Eine Liegenschaft: auf dem Briefpapier, nach Konten gegliedert, als Anlage zur Jahresabrechnung
+      const o = (await db.select('SELECT name, strasse, plz, ort, verwaltungsart FROM objekte WHERE id = $1', [Number(objekt)]))[0] ?? {};
+      const bis = monat ? new Date(jahr, Number(monat), 0).getDate() : 31, mm = monat ? String(monat).padStart(2, '0') : '';
+      const zeitraum = `Zeitraum ${monat ? `01.${mm}.${jahr} bis ${bis}.${mm}.${jahr}` : `01.01.${jahr} bis 31.12.${jahr}`}${kontoText ? ` · nur Konten ${kontoText}` : ''}`;
+      await ablegen(await einnahmenAusgabenPdf({ objekt: o.name ?? bez, adresse: [o.strasse, [o.plz, o.ort].filter(Boolean).join(' ')].filter(Boolean).join(', '), zeitraum,
+        anlage: monat ? '' : `Anlage zur ${o.verwaltungsart === 'WEG' ? 'Hausgeldabrechnung' : 'Eigentümerabrechnung'} ${jahr}`,
+        buchungen: rows.map((r) => ({ datum: r.datum, konto: r.nummer ? `${r.nummer} ${r.konto}` : 'ohne Konto', firma: r.firma, text: r.text, einheit: r.einheit, betrag: Number(r.betrag), eigentuemer: r.kontoart === 'Eigentümer' })) }),
+        `Einnahmen und Ausgaben ${o.name ?? ''} ${monat ? mm + '-' : ''}${jahr}.pdf`.replace(/\s+/g, ' '));
     } else {
       await ablegen(await listePdf('Buchungsjournal', bez, head,
         rows.map((r) => [String(r.id), dDatum(r.datum), r.objekt ?? '', `${r.nummer ?? ''} ${r.konto ?? 'ohne Konto'}`, r.firma ?? '', r.text ?? '', r.betrag < 0 ? geld(-r.betrag) : '', r.betrag > 0 ? geld(r.betrag) : '']),
@@ -185,9 +223,12 @@ export function JournalPage() {
         <button onClick={() => exportieren('csv')}><FileSpreadsheet size={16} />CSV</button>
         <button onClick={() => exportieren('pdf')}><Download size={16} />PDF</button>
         <button onClick={() => setDatev(true)} title="Buchungsstapel für den Steuerberater mit Belegen"><Download size={16} />DATEV</button>
-        <button className="primary" onClick={() => { setFehler(''); setModus('rechnung'); setEdit({ datum: heute(), richtung: 'Ausgabe', objekt_id: objekt || '' }); }}><Plus size={16} />Buchung erfassen</button>
+        <button onClick={() => { setFehler(''); setModus('rechnung'); setEdit({ datum: heute(), richtung: 'Ausgabe', objekt_id: objekt || '' }); }}><Receipt size={16} />Rechnung erfassen</button>
+        <button className="primary" onClick={() => setBuchen(true)}><Plus size={16} />Buchen</button>
       </section>
       {info && <p className="info">{info}</p>}
+      <AuszugImport objektId={objekt === '' ? null : Number(objekt)} kompakt onDone={() => { setBankVersion((v) => v + 1); nachBank(); }} />
+      <OffeneUmsaetze objektId={objekt === '' ? null : Number(objekt)} version={bankVersion} onChange={nachBank} />
       <div className="seg">
         <button className={ansicht === 'buchungen' ? 'on' : ''} onClick={() => setAnsicht('buchungen')}>Buchungen ({rows.length})</button>
         <button className={ansicht === 'rechnungen' ? 'on' : ''} onClick={() => setAnsicht('rechnungen')}>Offene Rechnungen ({offeneRechnungen.length})</button>
@@ -197,7 +238,7 @@ export function JournalPage() {
         <section className="card">
           <div className="card-head"><h2 className="title-ico"><Receipt size={22} />Offene Rechnungen</h2><span className="muted">noch nicht bezahlt: <b className="neg">{eur(offeneRechnungen.reduce((a, r) => a + Number(r.betrag), 0))}</b></span></div>
           {offeneRechnungen.length === 0 ? <p className="muted">Keine offenen Rechnungen.</p> : (
-            <div className="tablewrap"><table className="list">
+            <div className="tablewrap"><table className="list gross">
               <thead><tr><th>Datum</th><th>Fällig</th><th>Unternehmen</th><th>Rechnungs-Nr.</th><th>Konto</th><th>Einheit</th><th className="num">Betrag</th><th /></tr></thead>
               <tbody>{offeneRechnungen.map((r) => (
                 <tr key={r.id}>
@@ -215,33 +256,38 @@ export function JournalPage() {
       ) : (
       <section className="card">
         <div className="card-head"><h2 className="title-ico"><BookOpen size={22} />Buchungen ({rows.length})</h2></div>
+        {wahl.size > 0 && (
+          <div className="auswahl-leiste">
+            <b>{wahl.size} ausgewählt</b>
+            <button className="danger" onClick={auswahlLoeschen}><Trash2 size={14} /> Buchungen löschen</button>
+            <button className="link" onClick={() => setWahl(new Set())}>Auswahl aufheben</button>
+          </div>)}
         {rows.length === 0 ? <p className="muted">Keine Buchungen im Zeitraum.</p> : (
-          <div className="tablewrap"><table className="list">
-            <thead><tr><th>Bu.-Nr.</th><th>Datum</th><th>Liegenschaft</th><th>Konto</th><th>Unternehmen</th><th>Buchungstext</th><th className="num">Soll</th><th className="num">Haben</th><th /></tr></thead>
+          <div className="tablewrap"><table className="list gross">
+            <thead><tr><th className="wahl"><input type="checkbox" title="Alle auswählen" checked={rows.length > 0 && rows.every((r) => wahl.has(r.id))}
+              onChange={(e) => setWahl(e.target.checked ? new Set(rows.map((r) => r.id)) : new Set())} /></th><th>Bu.-Nr.</th><th>Datum</th><th>{fix ? 'Einheit' : 'Liegenschaft'}</th><th>Konto</th><th>Unternehmen</th><th>Buchungstext</th><th className="num">Soll</th><th className="num">Haben</th><th /></tr></thead>
             <tbody>{rows.map((r) => (
               <tr key={r.id}>
-                <td>{r.id}</td><td>{datum(r.datum)}</td><td>{r.objekt}<div className="muted small">{r.einheit ?? (r.betrag < 0 ? 'alle Einheiten' : '')}</div></td>
+                <td className="wahl"><input type="checkbox" checked={wahl.has(r.id)} onChange={() => setWahl((w) => { const n = new Set(w); if (n.has(r.id)) n.delete(r.id); else n.add(r.id); return n; })} /></td>
+                <td>{r.id}</td><td>{datum(r.datum)}</td><td>{!fix && r.objekt}<div className={fix ? '' : 'muted small'}>{r.einheit ?? (r.betrag < 0 ? 'alle Einheiten' : fix ? 'gesamtes Objekt' : '')}</div></td>
                 <td>{r.nummer ? `${r.nummer} ${r.konto}` : <span className="tag">ohne Konto</span>}</td>
                 <td>{r.firma ?? <span className="muted">–</span>}</td>
                 <td className="small">{r.text}{r.rechnungsnr && !String(r.text ?? "").includes(r.rechnungsnr) ? <span className="muted"> · Rechnung {r.rechnungsnr}</span> : ''}{r.bankumsatz_id ? <span className="muted"> · Bank</span> : ''}</td>
-                <td className="num neg">{r.betrag < 0 ? eur(-r.betrag) : '–'}</td><td className="num">{r.betrag > 0 ? eur(r.betrag) : '–'}</td>
+                <td className="num neg">{r.betrag < 0 ? eur(-r.betrag) : '–'}</td><td className="num pos">{r.betrag > 0 ? eur(r.betrag) : '–'}</td>
                 <td className="actions nowrap"><button className={'icon-btn beleg-btn ' + (r.belege ? 'hat' : 'leer')} title={r.belege ? `${r.belege} Beleg(e) ansehen oder anhängen` : 'Beleg anhängen'} onClick={() => setBelegFuer(r)}><Paperclip size={15} />{r.belege > 0 && <small>{r.belege}</small>}</button>
                   <button className="icon-btn" title="Buchung bearbeiten" onClick={() => bearbeiten(r)}><Pencil size={15} /></button>
                   <button className="icon-btn" title="Buchung löschen" onClick={() => loeschen(r)}><Trash2 size={15} /></button></td>
               </tr>))}
             </tbody>
-            <tfoot><tr><td colSpan={6}>Summe</td><td className="num neg">{eur(soll)}</td><td className="num">{eur(haben)}</td><td /></tr></tfoot>
+            <tfoot><tr><td colSpan={7}>Summe</td><td className="num neg">{eur(soll)}</td><td className="num">{eur(haben)}</td><td /></tr></tfoot>
           </table></div>)}
-        <p className="muted small">Mit dem Stift änderst du eine Buchung, mit dem Papierkorb löschst du sie. Neue Rechnungen und Buchungen legst du über „Buchung erfassen“ an.
-          Gelöschte Bankbuchungen erscheinen wieder als offener Umsatz unter „Bank &amp; Zuordnung“.</p>
+        <p className="muted small">Mit dem Stift änderst du eine Buchung, mit dem Papierkorb löschst du sie. Neue Einnahmen und Ausgaben buchst du über „Buchen“, Rechnungen mit Beleg über „Rechnung erfassen“.
+          Mit den Häkchen wählst du mehrere Buchungen zum Löschen aus. Gelöschte Bankbuchungen stehen danach wieder oben unter „Aus dem Kontoauszug“ zum Buchen bereit.</p>
       </section>)}
       {edit && (
         <div className="modal-bg" onClick={() => setEdit(null)}>
           <div className={'modal' + (modus === 'rechnung' && !edit.id ? ' breit' : '')} onClick={(e) => e.stopPropagation()}>
-            <div className="card-head"><h3>{edit.id ? 'Buchung bearbeiten' : 'Buchung erfassen'}</h3>
-              {!edit.id && <div className="seg">
-                <button className={modus === 'rechnung' ? 'on' : ''} onClick={() => setModus('rechnung')}>Rechnung / Gutschrift</button>
-                <button className={modus === 'buchung' ? 'on' : ''} onClick={() => setModus('buchung')}>Einfache Buchung</button></div>}</div>
+            <div className="card-head"><h3>{edit.id ? 'Buchung bearbeiten' : 'Rechnung / Gutschrift erfassen'}</h3></div>
             {modus === 'rechnung' && !edit.id
               ? <RechnungErfassen objektFest={fix?.id} onSaved={(t) => { setInfo(t); setEdit(null); load(); }} />
               : <>
@@ -258,6 +304,8 @@ export function JournalPage() {
                 </div></>}
           </div>
         </div>)}
+      {buchen && <BuchenDialog vorlage={{ objektId: fix?.id ?? (objekt === '' ? undefined : Number(objekt)) }} onClose={() => setBuchen(false)}
+        onSaved={(t) => { setBuchen(false); setInfo(t); load(); }} />}
       {datev && <DatevDialog objekte={objekte} objekt={fix?.id ?? (objekt === '' ? undefined : Number(objekt))} fest={!!fix} jahr={jahr} monat={monat} onClose={() => setDatev(false)} />}
       {belegFuer && (
         <div className="modal-bg" onClick={() => setBelegFuer(null)}>
@@ -279,9 +327,9 @@ export function JournalPage() {
               <label><span>Rechnungs-Nr.</span><input value={rEdit.rechnungsnr ?? ''} onChange={(e) => setREdit({ ...rEdit, rechnungsnr: e.target.value })} /></label>
               <label><span>Buchungskonto *</span><select value={rEdit.buchungskonto_id ?? ''} onChange={(e) => setREdit({ ...rEdit, buchungskonto_id: e.target.value })}>
                 {konten.map((k) => <option key={k.value} value={k.value}>{k.label}</option>)}</select></label>
-              <label><span>Betrag € *</span><input inputMode="decimal" value={rEdit.betrag ?? ''} onChange={(e) => setREdit({ ...rEdit, betrag: e.target.value })} /></label>
+              <label><span>Betrag *</span><BetragFeld value={rEdit.betrag ?? ''} onChange={(e) => setREdit({ ...rEdit, betrag: e.target.value })} /></label>
               {(() => { const k = konten.find((x) => Number(x.value) === Number(rEdit.buchungskonto_id)); return k && (k.hdl || k.hwl) ? (
-                <label><span>davon § 35a-Anteil (Arbeitskosten) €</span><input inputMode="decimal" placeholder="leer = ganzer Betrag" value={rEdit.anteil_lohn ?? ''} onChange={(e) => setREdit({ ...rEdit, anteil_lohn: e.target.value })} /></label>) : null; })()}
+                <label><span>davon § 35a-Anteil (Arbeitskosten)</span><BetragFeld placeholder="leer = ganzer Betrag" value={rEdit.anteil_lohn ?? ''} onChange={(e) => setREdit({ ...rEdit, anteil_lohn: e.target.value })} /></label>) : null; })()}
             </div>
             {fehler && <p className="error">{fehler}</p>}
             <div className="row end"><button className="danger" onClick={() => { const r = rEdit; setREdit(null); rechnungLoeschen(r); }}>Löschen</button><span className="grow" />
@@ -317,7 +365,7 @@ function BuchungForm({ edit, setEdit, objekte, konten, fest }: { edit: Row; setE
   const [einheiten, setEinheiten] = useState<Row[]>([]);
   const [firmen, setFirmen] = useState<Row[]>([]);
   useEffect(() => { db.select('SELECT id, name FROM firmen ORDER BY name').then(setFirmen); }, []);
-  useEffect(() => { if (edit.objekt_id) db.select(`SELECT e.id, ${einheitLabel('e')} AS nummer FROM einheiten e WHERE e.objekt_id = $1 ORDER BY e.nummer`, [Number(edit.objekt_id)]).then(setEinheiten); }, [edit.objekt_id]);
+  useEffect(() => { if (edit.objekt_id) db.select(`SELECT e.id, ${einheitLabel('e')} AS nummer FROM einheiten e WHERE e.objekt_id = $1 ORDER BY e.lfd_nr, e.nummer`, [Number(edit.objekt_id)]).then(setEinheiten); }, [edit.objekt_id]);
   const set = (k: string, v: any) => setEdit({ ...edit, [k]: v });
   const anteile: Record<string, string> = edit.anteile ?? {};
   const gesamt = Math.abs(zahl(String(edit.betrag ?? '')));
@@ -341,10 +389,10 @@ function BuchungForm({ edit, setEdit, objekte, konten, fest }: { edit: Row; setE
         {einheiten.map((x) => <option key={x.id} value={x.id}>{x.nummer}</option>)}</select></label>
       <label className="wide"><span>Konto *</span><select value={edit.buchungskonto_id ?? ''} onChange={(e) => set('buchungskonto_id', e.target.value)}>
         <option value="">– bitte wählen –</option>{konten.map((k) => <option key={k.value} value={k.value}>{k.label}</option>)}</select></label>
-      <label><span>Betrag € *</span><input inputMode="decimal" value={edit.betrag ?? ''} onChange={(e) => setEdit({ ...edit, betrag: e.target.value, ...(edit.einheit_id === 'eigen' && gewaehlt.length ? { anteile: {} } : {}) })} /></label>
+      <label><span>Betrag *</span><BetragFeld value={edit.betrag ?? ''} onChange={(e) => setEdit({ ...edit, betrag: e.target.value, ...(edit.einheit_id === 'eigen' && gewaehlt.length ? { anteile: {} } : {}) })} /></label>
       {(() => { const k = konten.find((x) => Number(x.value) === Number(edit.buchungskonto_id)); return k && (k.hdl || k.hwl) && edit.richtung !== 'Einnahme' ? (
         <label className="wide hint-35a"><span>davon § 35a-Anteil (Arbeitskosten) € · {k.hdl ? 'haushaltsnahe Dienstleistung' : 'Handwerkerleistung'}</span>
-          <input inputMode="decimal" placeholder="leer = ganzer Betrag" value={edit.anteil_35a ?? ''} onChange={(e) => set('anteil_35a', e.target.value)} />
+          <BetragFeld placeholder="leer = ganzer Betrag" value={edit.anteil_35a ?? ''} onChange={(e) => set('anteil_35a', e.target.value)} />
           <small className="muted">Dieser Betrag erscheint in der Abrechnung als § 35a-Anteil. Ohne Eintrag zählt der ganze Betrag.</small></label>) : null; })()}
       <label><span>Unternehmen</span><input list="buchung-firmen" value={edit.firma ?? ''} placeholder="z. B. Stadtwerke, Handwerker" onChange={(e) => set('firma', e.target.value)} /></label>
       <datalist id="buchung-firmen">{firmen.map((f) => <option key={f.id} value={f.name} />)}</datalist>
@@ -356,7 +404,7 @@ function BuchungForm({ edit, setEdit, objekte, konten, fest }: { edit: Row; setE
             return (
               <div key={x.id} className="row">
                 <label className="check grow"><input type="checkbox" checked={an} onChange={() => umschalten(String(x.id))} />{x.nummer}</label>
-                {an && <input className="cell" inputMode="decimal" value={anteile[x.id]} onChange={(e) => set('anteile', { ...anteile, [x.id]: e.target.value })} />}
+                {an && <BetragFeld zelle className="cell" value={anteile[x.id]} onChange={(e) => set('anteile', { ...anteile, [x.id]: e.target.value })} />}
               </div>);
           })}
           <p className={'small ' + (gewaehlt.length && Math.abs(summe - gesamt) > 0.005 ? 'warn' : 'muted')}>Summe {eur(summe)} von {eur(gesamt)}. Beim Anhaken wird gleichmäßig aufgeteilt, danach kannst du die Beträge ändern.</p>
@@ -399,23 +447,33 @@ export function RegelnPage() {
 
 const MON = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'];
 
-function Jahresuebersicht({ objektId }: { objektId: number }) {
+function Jahresuebersicht({ objektId, weg }: { objektId: number; weg: boolean }) {
   const [jahr, setJahr] = useState(new Date().getFullYear());
   const [d, setD] = useState<{ ist: { e: number; a: number }[]; vj: { e: number; a: number }[]; sollRest: number[]; top: Row[] } | null>(null);
   useEffect(() => {
     (async () => {
       const monate = async (j: number) => {
-        const r = await db.select(`SELECT CAST(substr(datum, 6, 2) AS INTEGER) AS m, SUM(CASE WHEN betrag > 0 THEN betrag ELSE 0 END) AS e, SUM(CASE WHEN betrag < 0 THEN -betrag ELSE 0 END) AS a
-          FROM buchungen WHERE objekt_id = $1 AND substr(datum, 1, 4) = $2 GROUP BY m`, [objektId, String(j)]);
-        return Array.from({ length: 12 }, (_, i) => { const x = r.find((y) => Number(y.m) === i + 1); return { e: Number(x?.e) || 0, a: Number(x?.a) || 0 }; });
+        const r = await db.select(`SELECT CAST(substr(b.datum, 6, 2) AS INTEGER) AS m, SUM(CASE WHEN b.betrag > 0 THEN b.betrag ELSE 0 END) AS e, SUM(CASE WHEN b.betrag < 0 THEN -b.betrag ELSE 0 END) AS a,
+          SUM(CASE WHEN k.nummer = '1010' THEN b.betrag ELSE 0 END) AS hg
+          FROM buchungen b LEFT JOIN buchungskonten k ON k.id = b.buchungskonto_id WHERE b.objekt_id = $1 AND substr(b.datum, 1, 4) = $2 AND COALESCE(k.art, '') <> 'Eigentümer'
+          ${weg ? `AND COALESCE(k.nummer, '') NOT IN ('1260', '1261', '1262')` : ''} GROUP BY m`, [objektId, String(j)]);
+        // WEG: Rücklagenanteil des Hausgelds ist keine Einnahme der Bewirtschaftung. Wie in der GuV wird der Jahresanteil
+        // laut Hausgeld-Soll aus den Hausgeldeingängen (Konto 1010) herausgerechnet, in der Reihenfolge der Eingänge.
+        let rest = weg ? (await ruecklageMonate(objektId, j)).reduce((a, b) => a + b, 0) : 0;
+        return Array.from({ length: 12 }, (_, i) => {
+          const x = r.find((y) => Number(y.m) === i + 1), e = Number(x?.e) || 0;
+          const ab = Math.min(rest, Math.max(0, Number(x?.hg) || 0), e); rest -= ab;
+          return { e: e - ab, a: Number(x?.a) || 0 };
+        });
       };
       const soll = await db.select(`SELECT CAST(substr(s.monat, 6, 2) AS INTEGER) AS m, SUM(s.betrag) AS b FROM sollstellungen s JOIN einheiten e ON e.id = s.einheit_id
         WHERE e.objekt_id = $1 AND substr(s.monat, 1, 4) = $2 GROUP BY m`, [objektId, String(jahr)]);
+      const rlSoll = weg ? await ruecklageMonate(objektId, jahr) : Array(12).fill(0);
       const top = await db.select(`SELECT k.nummer, k.name, -SUM(b.betrag) AS summe FROM buchungen b JOIN buchungskonten k ON k.id = b.buchungskonto_id
-        WHERE b.objekt_id = $1 AND substr(b.datum, 1, 4) = $2 AND b.betrag < 0 GROUP BY k.id ORDER BY summe DESC LIMIT 5`, [objektId, String(jahr)]);
-      setD({ ist: await monate(jahr), vj: await monate(jahr - 1), sollRest: Array.from({ length: 12 }, (_, i) => Number(soll.find((y) => Number(y.m) === i + 1)?.b) || 0), top });
+        WHERE b.objekt_id = $1 AND substr(b.datum, 1, 4) = $2 AND b.betrag < 0 AND k.art <> 'Eigentümer' ${weg ? `AND k.nummer NOT IN ('1260', '1261', '1262')` : ''} GROUP BY k.id ORDER BY summe DESC LIMIT 5`, [objektId, String(jahr)]);
+      setD({ ist: await monate(jahr), vj: await monate(jahr - 1), sollRest: Array.from({ length: 12 }, (_, i) => Math.max(0, (Number(soll.find((y) => Number(y.m) === i + 1)?.b) || 0) - rlSoll[i])), top });
     })();
-  }, [objektId, jahr]);
+  }, [objektId, jahr, weg]);
   if (!d) return null;
 
   const jetzt = new Date();
@@ -484,12 +542,26 @@ export function AuswertungPage() {
   useEffect(() => { if (objekte.length && objekt === '') setObjekt(objekte[0].id); }, [objekte]);
   useEffect(() => {
     if (objekt === '') return;
-    db.select(`SELECT k.nummer, k.name, k.gruppe, SUM(b.betrag) AS summe FROM buchungen b LEFT JOIN buchungskonten k ON k.id = b.buchungskonto_id
+    db.select(`SELECT k.nummer, k.name, k.gruppe, k.art, SUM(b.betrag) AS summe FROM buchungen b LEFT JOIN buchungskonten k ON k.id = b.buchungskonto_id
       WHERE b.objekt_id = $1 AND b.datum BETWEEN $2 AND $3 GROUP BY b.buchungskonto_id ORDER BY k.nummer`, [objekt, von, bis]).then(setRows);
     db.select(`SELECT b.*, b.anfangssaldo + COALESCE((SELECT SUM(u.betrag) FROM bankumsaetze u WHERE u.bankkonto_id = b.id
       AND u.datum <= $2 AND (b.saldo_datum IS NULL OR u.datum > b.saldo_datum)), 0) AS saldo FROM bankkonten b WHERE b.objekt_id = $1`, [objekt, bis]).then(setBanken);
   }, [objekt, von, bis]);
-  const ertraege = rows.filter((r) => r.summe > 0), aufwand = rows.filter((r) => r.summe < 0);
+  const weg = objekte.find((o) => o.id === objekt)?.verwaltungsart === 'WEG';
+  const [rl, setRl] = useState<Awaited<ReturnType<typeof ruecklageZeitraum>> | null>(null);
+  useEffect(() => {
+    if (objekt === '' || !weg) { setRl(null); return; }
+    ruecklageZeitraum(Number(objekt), von, bis).then(setRl).catch(() => setRl(null));
+  }, [objekt, von, bis, weg]);
+  // WEG: Hausgeld und Rücklagenzahlungen getrennt. Der Rücklagenanteil (laut Hausgeld-Soll) kommt aus Konto 1010 heraus
+  // und erscheint mit Entnahmen und Zinsen nur im Ausweis der Erhaltungsrücklage.
+  const hgSumme = Number(rows.find((r) => r.nummer === '1010')?.summe) || 0;
+  const rlZahlung = weg && rl ? Math.min(Math.max(0, hgSumme), rl.zufuehrung) : 0;
+  const eigRows = rows.filter((r) => r.art === 'Eigentümer' && Math.abs(r.summe) > 0.004);
+  const sEig = eigRows.reduce((a, r) => a + Number(r.summe), 0);
+  const guvRows = !weg ? rows.filter((r) => r.art !== 'Eigentümer') : rows.filter((r) => !RL_KONTEN.includes(r.nummer)).map((r) => r.nummer === '1010'
+    ? { ...r, name: 'Hausgeld ohne Rücklagenanteil', summe: r.summe - rlZahlung } : r).filter((r) => Math.abs(r.summe) > 0.004);
+  const ertraege = guvRows.filter((r) => r.summe > 0), aufwand = guvRows.filter((r) => r.summe < 0);
   const sE = ertraege.reduce((a, r) => a + r.summe, 0), sA = aufwand.reduce((a, r) => a - r.summe, 0);
   const zeile = (r: Row, wert: number) => <tr key={(r.nummer ?? 'x') + wert}><td>{r.nummer ?? '–'}</td><td>{r.name ?? 'ohne Konto (Überzahlung / Guthaben)'}</td><td className="num">{eur(wert)}</td></tr>;
   return (
@@ -500,11 +572,12 @@ export function AuswertungPage() {
         <label className="inline">von <input type="date" value={von} onChange={(e) => setVon(e.target.value)} /></label>
         <label className="inline">bis <input type="date" value={bis} onChange={(e) => setBis(e.target.value)} /></label>
       </section>
-      {objekt !== '' && <Jahresuebersicht objektId={Number(objekt)} />}
+      {objekt !== '' && <Jahresuebersicht objektId={Number(objekt)} weg={weg} />}
       <div className="kpis">
         <div className="kpi"><span>Erträge</span><b>{eur(sE)}</b></div>
         <div className="kpi"><span>Aufwendungen</span><b className="neg">{eur(sA)}</b></div>
         <div className="kpi"><span>Ergebnis (Überschuss / Fehlbetrag)</span><b className={sE - sA < 0 ? 'neg' : ''}>{eur(sE - sA)}</b></div>
+        {weg && rl && <div className="kpi"><span>Erhaltungsrücklage {datum(bis)}</span><b>{eur(rl.bestand)}</b><small>Zuführung {eur(rlZahlung)}</small></div>}
         <div className="kpi"><span>Kontostände {datum(bis)}</span><b>{eur(banken.reduce((a, b) => a + Number(b.saldo), 0))}</b><small>{banken.length} Bankkonten</small></div>
       </div>
       <section className="card">
@@ -519,8 +592,35 @@ export function AuswertungPage() {
             {aufwand.map((r) => zeile(r, -r.summe))}
             <tr className="sum"><td colSpan={2}>Summe Aufwendungen</td><td className="num">{eur(sA)}</td></tr>
           </tbody>
-          <tfoot><tr><td colSpan={2}>Ergebnis</td><td className={'num ' + (sE - sA < 0 ? 'neg' : '')}>{eur(sE - sA)}</td></tr></tfoot>
+          <tfoot><tr><td colSpan={2}>{weg ? 'Ergebnis der Bewirtschaftung (ohne Rücklage)' : 'Ergebnis'}</td><td className={'num ' + (sE - sA < 0 ? 'neg' : '')}>{eur(sE - sA)}</td></tr></tfoot>
         </table>
+        {!weg && eigRows.length > 0 && <>
+          <div className="card-head" style={{ marginTop: 18 }}><h2>Auszahlungen an den Eigentümer</h2></div>
+          <table className="list">
+            <tbody>
+              <tr><td>–</td><td>Ergebnis</td><td className="num">{eur(sE - sA)}</td></tr>
+              {eigRows.map((r) => <tr key={r.nummer}><td>{r.nummer}</td><td>{Number(r.summe) < 0 ? '− ' : '+ '}{r.name}</td><td className={'num ' + (Number(r.summe) < 0 ? 'neg' : '')}>{eur(Math.abs(Number(r.summe)))}</td></tr>)}
+            </tbody>
+            <tfoot><tr><td colSpan={2}>Veränderung des Kontostands</td><td className={'num ' + (sE - sA + sEig < 0 ? 'neg' : '')}>{eur(sE - sA + sEig)}</td></tr></tfoot>
+          </table>
+          <p className="muted small">Auszahlungen an den Eigentümer sind keine Ausgaben. Sie mindern das Ergebnis nicht, nur den Kontostand.</p>
+        </>}
+        {weg && rl && <>
+          <div className="card-head" style={{ marginTop: 18 }}><h2 className="title-ico"><PiggyBank size={22} />Erhaltungsrücklage {datum(von)} – {datum(bis)}</h2></div>
+          <table className="list">
+            <thead><tr><th>Konto</th><th>Bezeichnung</th><th className="num">Betrag</th></tr></thead>
+            <tbody>
+              <tr><td>–</td><td>Bestand am {datum(rl.vorTag)}</td><td className="num">{eur(rl.anfangsbestand)}</td></tr>
+              {rl.uebernahme > 0 && <tr><td>–</td><td>+ Übernahmebestand</td><td className="num">{eur(rl.uebernahme)}</td></tr>}
+              <tr><td>1010</td><td>+ Rücklagenzahlungen aus dem Hausgeld</td><td className="num">{eur(rlZahlung)}</td></tr>
+              {rl.zufuehrung - rlZahlung > 0.004 && <tr><td>–</td><td>+ Rücklagenanteil laut Hausgeld noch offen</td><td className="num">{eur(rl.zufuehrung - rlZahlung)}</td></tr>}
+              <tr><td>1262</td><td>+ Zinsen</td><td className="num">{eur(rl.zinsen)}</td></tr>
+              <tr><td>1261</td><td>− Entnahmen</td><td className="num neg">{eur(rl.entnahme)}</td></tr>
+            </tbody>
+            <tfoot><tr><td colSpan={2}>Bestand am {datum(bis)}</td><td className="num">{eur(rl.bestand)}</td></tr></tfoot>
+          </table>
+          <p className="muted small">Die Rücklagenzahlungen gehören den Eigentümern und sind kein Ertrag der Bewirtschaftung. Der Rücklagenanteil wird nach dem Hausgeld je Einheit aus Konto 1010 herausgerechnet.</p>
+        </>}
         {banken.length > 0 && <>
           <div className="card-head" style={{ marginTop: 18 }}><h2>Bankkonten</h2></div>
           <table className="list"><tbody>{banken.map((b) => <tr key={b.id}><td>{b.name}<div className="muted small">{b.bank} · {b.iban}</div></td><td className="num">{eur(Number(b.saldo))}</td></tr>)}</tbody></table>
@@ -540,7 +640,7 @@ export function BerichtePage() {
   const mieterliste = async (art: 'pdf' | 'csv') => {
     const r = await db.select(`SELECT o.name AS objekt, e.nummer, ${personLabel('p')} AS mieter, p.telefon, p.email, v.beginn, v.ende, v.kaltmiete, v.nk_vorauszahlung + v.hk_vorauszahlung AS vz, v.kaution
       FROM mietvertraege v JOIN einheiten e ON e.id = v.einheit_id JOIN objekte o ON o.id = e.objekt_id JOIN personen p ON p.id = v.mieter_id
-      WHERE v.ende IS NULL OR v.ende >= date('now') ORDER BY o.name, e.nummer`);
+      WHERE v.ende IS NULL OR v.ende >= date('now') ORDER BY o.name, e.lfd_nr, e.nummer`);
     const head = ['Liegenschaft', 'Einheit', 'Mieter', 'Telefon', 'E-Mail', 'Beginn', 'Ende', 'Kaltmiete', 'Vorauszahlungen', 'Kaution'];
     if (art === 'csv') return ablegen(csv(head, r.map((x) => [x.objekt, x.nummer, x.mieter, x.telefon, x.email, datum(x.beginn), datum(x.ende), x.kaltmiete, x.vz, x.kaution])), `Mieterliste ${heute()}.csv`);
     return ablegen(await listePdf('Mieterliste', `Stand ${dDatum(heute())}`, head, r.map((x) => [x.objekt, x.nummer, x.mieter, x.telefon ?? '', x.email ?? '', dDatum(x.beginn), x.ende ? dDatum(x.ende) : 'unbefristet', geld(x.kaltmiete), geld(x.vz), geld(x.kaution ?? 0)]),
@@ -549,14 +649,14 @@ export function BerichtePage() {
   const eigentuemerliste = async (art: 'pdf' | 'csv') => {
     const r = await db.select(`SELECT o.name AS objekt, e.nummer, e.mea, o.gesamt_mea, ${personLabel('p')} AS name, p.strasse, p.plz, p.ort, p.telefon, p.email, ei.anteil
       FROM eigentum ei JOIN einheiten e ON e.id = ei.einheit_id JOIN objekte o ON o.id = e.objekt_id JOIN personen p ON p.id = ei.person_id
-      WHERE ei.bis IS NULL OR ei.bis >= date('now') ORDER BY o.name, e.nummer`);
+      WHERE ei.bis IS NULL OR ei.bis >= date('now') ORDER BY o.name, e.lfd_nr, e.nummer`);
     const head = ['Liegenschaft', 'Einheit', 'MEA', 'MEA-Anteil', 'Eigentümer', 'Anschrift', 'Telefon', 'E-Mail'];
     const anteil = (x: Row) => x.gesamt_mea ? `${num((x.mea / x.gesamt_mea) * 100)} %` : '';
     if (art === 'csv') return ablegen(csv(head, r.map((x) => [x.objekt, x.nummer, x.mea, anteil(x), x.name, [x.strasse, [x.plz, x.ort].filter(Boolean).join(' ')].filter(Boolean).join(', '), x.telefon, x.email])), `Eigentümerliste ${heute()}.csv`);
     return ablegen(await listePdf('Eigentümerliste', `Stand ${dDatum(heute())}`, head, r.map((x) => [x.objekt, x.nummer, num(x.mea, 0), anteil(x), x.name, [x.strasse, [x.plz, x.ort].filter(Boolean).join(' ')].filter(Boolean).join(', '), x.telefon ?? '', x.email ?? ''])), `Eigentümerliste ${heute()}.pdf`);
   };
   const opListe = async () => {
-    const r = await db.select(`SELECT objekt, einheit, schuldner, art, monat, faellig, betrag, bezahlt, mahnstufe FROM (${OP_SQL}) WHERE betrag - bezahlt > 0.005 AND faellig <= date('now') ORDER BY objekt, einheit, faellig`);
+    const r = await db.select(`SELECT objekt, einheit, schuldner, art, monat, faellig, betrag, bezahlt, mahnstufe FROM (${OP_SQL}) WHERE betrag - bezahlt > 0.005 AND faellig <= date('now') ORDER BY objekt, einheit_lfd, einheit, faellig`);
     const offen = r.reduce((a, x) => a + x.betrag - x.bezahlt, 0);
     return ablegen(await listePdf('Offene Posten', `Fällig bis ${dDatum(heute())}`, ['Liegenschaft', 'Einheit', 'Schuldner', 'Posten', 'Monat', 'Fällig', 'Soll', 'Gezahlt', 'Offen', 'Mahnstufe'],
       r.map((x) => [x.objekt, x.einheit, x.schuldner, x.art, x.monat, dDatum(x.faellig), geld(x.betrag), geld(x.bezahlt), geld(x.betrag - x.bezahlt), x.mahnstufe ? String(x.mahnstufe) : '']),

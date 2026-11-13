@@ -1,4 +1,6 @@
 // Nebenkostenabrechnung je Objekt und Kalenderjahr (Mietverwaltung und vermietete WEG-Einheiten).
+import { BetragFeld } from '../components/BetragFeld';
+import { betragZahl } from '../lib/betrag';
 import { useEffect, useState } from 'react';
 import { db, type Row } from '../db';
 import { wid } from '../db/labels';
@@ -6,8 +8,8 @@ import { AbrechnungsUebersicht } from '../components/AbrechnungsUebersicht';
 import { SchluesselWahl, schluesselText } from '../components/SchluesselWahl';
 import { AbschlussKarte } from '../components/AbschlussKarte';
 import { useObjektKontext } from '../logic/objektKontext';
-import { eur, num, datum } from '../components/EntityTable';
-import { tageImJahr, type Position, type Schluessel } from '../logic/verteilung';
+import { eur, farbe, num, datum } from '../components/EntityTable';
+import { nichtVerteilteKosten, tageImJahr, type Position, type Schluessel } from '../logic/verteilung';
 import { HEIZ_KONTO, nkBerechnen, type NkErgebnis } from '../logic/nebenkosten';
 import { Brief, absender, dDatum, geld } from '../lib/pdf';
 import { oeffnen, speichern } from '../lib/dateien';
@@ -116,6 +118,8 @@ export function NebenkostenPage() {
   const oAkt = objekte.find((x) => x.id === objekt);
   const werteFehlen = [...pos.filter((p) => p.schluessel === 'Verbrauch' && !einheiten.some((e) => zahl(verbr[`${e.id}-${p.konto_id}`] ?? '') > 0)),
     ...summenAbweichung.map((x) => x.p)].map((p) => `${p.nummer} ${p.name}`);
+  // Kosten, die mangels Werten (Verbrauch, Messdienst, Personen) bei niemandem ankommen
+  const nichtVerteilt = nichtVerteilteKosten(pos, erg);
   const heizFehlt = pos.some((p) => p.nummer === HEIZ_KONTO) && !Object.values(heiz).some((x) => zahl(x.heizkosten) || zahl(x.warmwasser));
 
   return (
@@ -134,6 +138,7 @@ export function NebenkostenPage() {
           { ok: mieter.length > 0, sperrt: true, text: 'Mieter mit Abrechnung im Jahr vorhanden' },
           { ok: !werteFehlen.length, sperrt: true, text: 'Werte für Verbrauch und manuelle Verteilung eingetragen', hinweis: werteFehlen.length ? `Fehlt bei: ${werteFehlen.join(', ')}` : undefined },
           { ok: !heizFehlt, sperrt: false, text: 'Heizkosten laut Messdienst eingetragen', hinweis: heizFehlt ? `Konto ${HEIZ_KONTO} wird sonst nach Schlüssel verteilt.` : undefined },
+          { ok: !nichtVerteilt.length, sperrt: true, text: 'Alle Kosten sind vollständig verteilt', hinweis: nichtVerteilt.length ? `Nicht verteilt: ${nichtVerteilt.map((x) => `${x.name} ${eur(x.rest)}`).join(', ')}` : undefined },
         ]}
         vorschau={vorschauPdf} ablegen={pdfs} buchen={buchen} buchenText="Ergebnis als offene Posten buchen"
         ergebnis={() => ({ kosten: Math.round(kosten * 100) / 100, saldo: Math.round(mieter.reduce((a, r) => a + r.saldo, 0) * 100) / 100, mieter: mieter.length })}
@@ -142,36 +147,41 @@ export function NebenkostenPage() {
       <div className="kpis">
         <div className="kpi"><span>Umlagefähige Kosten</span><b>{eur(kosten)}</b></div>
         <div className="kpi"><span>Vorauszahlungen{mieter.some((r) => r.ueberEigentuemer) ? ' (gezahlt bzw. laut Vertrag)' : ' (gezahlt)'}</span><b>{eur(mieter.reduce((a, r) => a + r.vz, 0))}</b></div>
-        <div className="kpi"><span>Nachzahlungen − Guthaben</span><b>{eur(mieter.reduce((a, r) => a + r.saldo, 0))}</b></div>
-        <div className="kpi"><span>{weg ? 'Anteil selbst genutzt / nicht vermietet' : 'Anteil Leerstand (Eigentümer)'}</span><b>{eur(leer.reduce((a, r) => a + r.summe, 0))}</b></div>
+        <div className="kpi"><span>Nachzahlungen − Guthaben</span><b className={farbe(mieter.reduce((a, r) => a + r.saldo, 0))}>{eur(mieter.reduce((a, r) => a + r.saldo, 0))}</b></div>
+        {weg ? <div className="kpi"><span>Mieter in der Abrechnung</span><b>{mieter.length}</b><small>{einheiten.length - new Set(mieter.map((r) => r.einheit.id)).size} Einheiten nicht vermietet</small></div>
+          : <div className="kpi"><span>Anteil Leerstand (Eigentümer)</span><b>{eur(leer.reduce((a, r) => a + r.summe, 0))}</b></div>}
       </div>
 
       <fieldset className="gesperrt" disabled={!!zu}>
       <section className="card">
         <div className="card-head"><h2>Eingaben je Einheit für {jahr}</h2><button onClick={eingabenSpeichern}>Speichern und neu berechnen</button></div>
         <table className="list">
-          <thead><tr><th>Einheit</th><th className="num">Fläche</th><th className="num">Heizkosten lt. Messdienst €</th><th className="num">Warmwasser lt. Messdienst €</th>
+          <thead><tr><th>Einheit</th><th className="num">Fläche</th><th className="num">Heizkosten lt. Messdienst</th><th className="num">Warmwasser lt. Messdienst</th>
             {verbrauchsKonten.map((k) => <th key={k.konto_id} className="num">{k.schluessel === 'Summe' ? `Betrag € ${k.name}` : `Verbrauch ${k.name}`}</th>)}</tr></thead>
           <tbody>{einheiten.map((e) => (
             <tr key={e.id}>
               <td>{e.nummer}</td><td className="num">{num(e.flaeche)}</td>
               {(['heizkosten', 'warmwasser'] as const).map((f) => (
-                <td key={f} className="num"><input className="cell" inputMode="decimal" value={heiz[e.id]?.[f] ?? ''}
+                <td key={f} className="num"><BetragFeld zelle className="cell" placeholder="" value={heiz[e.id]?.[f] ?? ''}
                   onChange={(ev) => setHeiz({ ...heiz, [e.id]: { heizkosten: heiz[e.id]?.heizkosten ?? '', warmwasser: heiz[e.id]?.warmwasser ?? '', [f]: ev.target.value } })} /></td>
               ))}
               {verbrauchsKonten.map((k) => (
-                <td key={k.konto_id} className="num"><input className="cell" inputMode="decimal" value={verbr[`${e.id}-${k.konto_id}`] ?? ''}
-                  onChange={(ev) => setVerbr({ ...verbr, [`${e.id}-${k.konto_id}`]: ev.target.value })} /></td>
+                <td key={k.konto_id} className="num">{k.schluessel === 'Summe'
+                  ? <BetragFeld zelle className="cell" placeholder="" value={verbr[`${e.id}-${k.konto_id}`] ?? ''} onChange={(ev) => setVerbr({ ...verbr, [`${e.id}-${k.konto_id}`]: ev.target.value })} />
+                  : <input className="cell" inputMode="decimal" value={verbr[`${e.id}-${k.konto_id}`] ?? ''}
+                  onChange={(ev) => setVerbr({ ...verbr, [`${e.id}-${k.konto_id}`]: ev.target.value })} />}</td>
               ))}
             </tr>))}
           </tbody>
         </table>
         <p className="muted small">Sobald Messdienst-Werte eingetragen sind, wird Konto {HEIZ_KONTO} danach verteilt. Spalten für Verbrauch bzw. feste Beträge erscheinen für Konten mit Schlüssel „Verbrauch“ oder „Summe“.</p>
+        {nichtVerteilt.length > 0 && <p className="warn">Nicht verteilt, weil Werte fehlen: {nichtVerteilt.map((x) => `${x.name} ${eur(x.rest)}`).join(', ')}. Bitte Verbrauch, Messdienst oder Personenzahl eintragen oder den Schlüssel ändern.</p>}
         {summenAbweichung.map(({ p, s }) => <p key={p.konto_id} className="warn">Schlüssel „Summe“ bei {p.name}: eingetragen {eur(s)}, Kosten laut Buchhaltung {eur(p.betrag)}. Bitte prüfen.</p>)}
       </section>
       </fieldset>
 
       {objekt !== '' && <AbrechnungsUebersicht objekt={Number(objekt)} jahr={jahr} pos={pos} titel={`Abrechnungsübersicht ${jahr}: umlagefähige Kosten`} nurUmlagefaehig
+        mitEinnahmen={!weg} einnahmeKonten={['1001', '1002']} einnahmenTitel="Vorauszahlungen der Mieter"
         onChanged={zu ? undefined : (t) => { setInfo(t); setStand((x) => x + 1); laden(); }}
         schluessel={(p) => zu ? <>{schluesselText(p.schluessel)}</> : <SchluesselWahl objekt={Number(objekt)} jahr={jahr} p={p} onChanged={(t) => { setInfo(t); laden(); }} anteile={(k) => {
           const m: Record<number, number> = {};
@@ -183,7 +193,7 @@ export function NebenkostenPage() {
         {erg.length === 0 ? <p className="muted">Keine Nutzer im Jahr.</p> : (
           <table className="list">
             <thead><tr><th>Einheit</th><th>Nutzer</th><th>Zeitraum</th><th className="num">Kostenanteil</th><th className="num">Vorauszahlung</th><th className="num">Ergebnis</th><th className="num">§35a HDL / HWL</th></tr></thead>
-            <tbody>{erg.map((r) => (
+            <tbody>{erg.filter((r) => !weg || r.nutzer.art === 'Mieter').map((r) => (
               <tr key={r.nutzer.key}>
                 <td>{r.einheit.nummer}</td>
                 <td>{r.nutzer.art === 'Leerstand' ? <span className="tag">{weg ? 'Eigentümer (selbst genutzt / nicht vermietet)' : 'Leerstand / nicht vermietet · Eigentümer'}</span>
@@ -196,12 +206,23 @@ export function NebenkostenPage() {
               </tr>))}
             </tbody>
           </table>)}
+        {weg && <p className="muted small">Hier steht nur, was die Mieter betrifft: umlagefähige Kosten und ihre Vorauszahlungen. Hausgeld, Erhaltungsrücklage und die Anteile selbst genutzter Einheiten gehören den Eigentümern und stehen nur in der Hausgeldabrechnung. Diese Abrechnung ändert an der Hausgeldabrechnung nichts.</p>}
       </section>
+      {objekt !== '' && oAkt && <AbschlussKarte unten objekt={Number(objekt)} jahr={jahr} art="Nebenkosten" stand={stand} ordner={[oAkt.name, 'Nebenkostenabrechnungen', String(jahr)]}
+        extra={[
+          { ok: mieter.length > 0, sperrt: true, text: 'Mieter mit Abrechnung im Jahr vorhanden' },
+          { ok: !werteFehlen.length, sperrt: true, text: 'Werte für Verbrauch und manuelle Verteilung eingetragen', hinweis: werteFehlen.length ? `Fehlt bei: ${werteFehlen.join(', ')}` : undefined },
+          { ok: !heizFehlt, sperrt: false, text: 'Heizkosten laut Messdienst eingetragen', hinweis: heizFehlt ? `Konto ${HEIZ_KONTO} wird sonst nach Schlüssel verteilt.` : undefined },
+          { ok: !nichtVerteilt.length, sperrt: true, text: 'Alle Kosten sind vollständig verteilt', hinweis: nichtVerteilt.length ? `Nicht verteilt: ${nichtVerteilt.map((x) => `${x.name} ${eur(x.rest)}`).join(', ')}` : undefined },
+        ]}
+        vorschau={vorschauPdf} ablegen={pdfs} buchen={buchen} buchenText="Ergebnis als offene Posten buchen"
+        ergebnis={() => ({ kosten: Math.round(kosten * 100) / 100, saldo: Math.round(mieter.reduce((a, r) => a + r.saldo, 0) * 100) / 100, mieter: mieter.length })}
+        onStatus={(a, t) => { setZu(a); if (t) setInfo(t); }} />}
     </>
   );
 }
 
-const zahl = (s: string) => Number(String(s).replace(/\./g, '').replace(',', '.')) || 0;
+const zahl = (s: string) => betragZahl(s) ?? 0;
 
 /** Eigentümer der Einheit am Jahresende (bei vermieteten WEG-Einheiten der Vermieter) */
 async function vermieter(einheitId: number, jahr: number): Promise<string> {
@@ -229,10 +250,7 @@ function abrechnungPdf(b: Brief, o: Row, jahr: number, r: NkErgebnis, eigentueme
     : (r.saldo > 0
       ? `Bitte überweisen Sie die Nachzahlung von ${geld(r.saldo)} innerhalb von 30 Tagen nach Erhalt dieser Abrechnung.`
       : `Ihr Guthaben von ${geld(Math.abs(r.saldo))} erstatten wir Ihnen bzw. verrechnen es mit der nächsten Miete.`));
-  if (r.hdl || r.hwl) {
-    b.absatz('Bescheinigung nach § 35a EStG: In Ihren Kosten sind folgende Anteile enthalten (Arbeitskosten laut Rechnungen):', 2);
-    b.tabelle(['Art', 'Betrag'], [['Haushaltsnahe Dienstleistungen (§ 35a Abs. 2)', geld(r.hdl)], ['Handwerkerleistungen (§ 35a Abs. 3)', geld(r.hwl)]]);
-  }
+  if (r.hdl || r.hwl || r.hbg) b.steuer35a(r, 'mieter');
   b.absatz('Belege können nach Terminvereinbarung bei uns eingesehen werden. Einwendungen gegen diese Abrechnung sind innerhalb von zwölf Monaten nach Zugang mitzuteilen.');
   b.gruss();
   return b;

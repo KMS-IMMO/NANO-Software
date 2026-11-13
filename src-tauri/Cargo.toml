@@ -32,3 +32,8 @@ fints-rs = "0.2"
 keyring = { version = "3", features = ["apple-native", "windows-native"] }
 tokio = { version = "1", features = ["sync"] }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", features = ["NSArray", "NSData", "NSDictionary", "NSString", "NSError"] }
+objc2-vision = { version = "0.3", features = ["VNRequestHandler", "VNRequest", "VNRecognizeTextRequest", "VNObservation", "VNTypes", "VNDefines", "objc2-core-foundation"] }

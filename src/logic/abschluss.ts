@@ -2,6 +2,7 @@
 // Vor dem Abschluss prüft das Programm, ob das Jahr vorbei ist und alles gebucht wurde.
 // Nach dem Abschluss sind Buchungen und Rechnungen des Jahres für diese Liegenschaft gesperrt, bis der Abschluss aufgehoben wird.
 import { db, type Row } from '../db';
+import { BJ } from './buchung';
 
 export type AbschlussArt = 'WEG' | 'Nebenkosten';
 export const ABSCHLUSS_TEXT: Record<AbschlussArt, string> = { WEG: 'Hausgeldabrechnung', Nebenkosten: 'Nebenkostenabrechnung' };
@@ -43,7 +44,7 @@ export async function pruefen(objekt: number, jahr: number, art: AbschlussArt, e
   const rech = Number((await db.select(`SELECT COUNT(*) AS n FROM rechnungen r WHERE r.objekt_id = $1 AND r.bezahlt_am IS NULL AND r.datum BETWEEN $2 AND $3
     AND NOT EXISTS (SELECT 1 FROM buchungen b WHERE b.rechnung_id = r.id)`, [objekt, von, bis]))[0]?.n ?? 0);
   out.push({ ok: !rech, sperrt: false, text: 'Alle Rechnungen des Jahres sind bezahlt gebucht', hinweis: rech ? `${rech} Rechnungen sind noch offen. Sie zählen trotzdem als Kosten.` : undefined });
-  const ohneKonto = Number((await db.select(`SELECT COUNT(*) AS n FROM buchungen WHERE objekt_id = $1 AND buchungskonto_id IS NULL AND datum BETWEEN $2 AND $3`, [objekt, von, bis]))[0]?.n ?? 0);
+  const ohneKonto = Number((await db.select(`SELECT COUNT(*) AS n FROM buchungen WHERE objekt_id = $1 AND buchungskonto_id IS NULL AND ${BJ('')} = CAST(substr($2, 1, 4) AS INTEGER)`, [objekt, von]))[0]?.n ?? 0);
   out.push({ ok: !ohneKonto, sperrt: true, text: 'Jede Buchung hat ein Buchungskonto', hinweis: ohneKonto ? `${ohneKonto} Buchungen ohne Konto unter „Einnahmen & Ausgaben“.` : undefined });
   if (art === 'WEG') {
     const hg = Number((await db.select(`SELECT COUNT(*) AS n FROM sollstellungen s JOIN einheiten e ON e.id = s.einheit_id

@@ -99,13 +99,13 @@ export function KiAssistent() {
             {ohneSchluessel ? (
               <div className="ki-schluessel">
                 <KeyRound size={22} />
-                <p><b>API-Schlüssel fehlt.</b> Der Assistent nutzt Claude von Anthropic. Lege unter console.anthropic.com einen Schlüssel an und füge ihn hier ein. Er wird nur in der NANO-Datenbank auf diesem Rechner gespeichert.</p>
+                <p><b>API-Schlüssel fehlt.</b> Der Assistent nutzt Claude von Anthropic. Lege unter console.anthropic.com einen Schlüssel an und füge ihn hier ein. Er wird nur in der NEOSS-Datenbank auf diesem Rechner gespeichert.</p>
                 <input type="password" placeholder="sk-ant-…" value={neuerSchluessel} onChange={(e) => setNeuerSchluessel(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && schluesselSpeichern()} />
                 <button className="primary" onClick={schluesselSpeichern} disabled={!neuerSchluessel.trim()}>Speichern</button>
               </div>
             ) : msgs.length === 0 ? (
               <div className="ki-start">
-                <p>Hallo! Ich kenne die Daten in NANO und helfe dir bei Fragen, Auswertungen, Terminen und Aufgaben. Ändern oder löschen kann ich nichts.</p>
+                <p>Hallo! Ich kenne die Daten in NEOSS und helfe dir bei Fragen, Auswertungen, Terminen und Aufgaben. Ändern oder löschen kann ich nichts.</p>
                 {VORSCHLAEGE.map((v) => <button key={v} className="ki-vorschlag" onClick={() => senden(v)}>{v}</button>)}
               </div>
             ) : null}
