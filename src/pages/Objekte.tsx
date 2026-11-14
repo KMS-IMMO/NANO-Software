@@ -6,7 +6,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { BJ } from '../logic/buchung';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, Pencil, BarChart3, CalendarDays, CircleCheck, FileDown, CalendarClock, CalendarRange, BookOpen, Building2, ClipboardList, Coins, DoorOpen, FileSignature, FileText, FolderOpen, Gavel, Home, Landmark, Layers, ListChecks, Mail,
-  Maximize2, PiggyBank, Scale, Trash2, User, Users, Wallet, Wrench } from 'lucide-react';
+  KeyRound, Maximize2, PiggyBank, Plus, Scale, Trash2, User, Users, Wallet, Wrench } from 'lucide-react';
 import { BeschluesseTab, RuecklagenTab, VorgaengeTab, WirtschaftsplanTab } from './Weg';
 import { VersammlungenBereich, VersammlungListe, VollmachtenListe } from './Versammlungen';
 import { EntityTable, datum, eur, num, type Field } from '../components/EntityTable';
@@ -367,6 +367,20 @@ function EinheitenTab({ objektId, weg, onChange }: { objektId: number; weg: bool
       title={rest < -0.005 ? 'Die NK-Vorauszahlung des Mieters ist höher als das Hausgeld ohne Rücklage. Bitte Hausgeld oder Mietvertrag prüfen.' : 'Aufteilung des Hausgelds'}>
       {teile.join(' · ')}</span></span>;
   };
+  // WEG: Klick auf den Eigentümer öffnet seine Seite (Daten, Hausgeld anpassen, Zahlungen). Mehrere Eigentümer: je ein Chip.
+  const eigentuemerZelle = (_: any, r: Row) => {
+    const liste = String(r.eig_liste ?? '').split('\u001e').filter(Boolean).map((x) => x.split('\u001f'));
+    if (!liste.length) return <button type="button" className="link klick-neu" onClick={(e) => { e.stopPropagation(); nav(`/objekte/${objektId}/eigentuemer`); }}>
+      <Plus size={13} />Eigentümer eintragen</button>;
+    return <span className="chip-reihe">{liste.map(([id, name]) => (
+      <button key={id} type="button" className="rolle-chip eigentuemer klick" title="Eigentümer öffnen: Daten, Hausgeld anpassen, Zahlungen"
+        onClick={(e) => { e.stopPropagation(); nav(`/objekte/${objektId}/eigentum/${id}`); }}>{name}</button>))}</span>;
+  };
+  // Klick auf den Mieter öffnet den Mietvertrag. Nicht vermietet: „Vermieten“ öffnet das Fenster mit allen Angaben zur Vermietung.
+  const mieterZelle = (v: any, r: Row) => v
+    ? <button type="button" className="rolle-chip mieter klick" title="Mietvertrag öffnen" onClick={(e) => { e.stopPropagation(); oeffnen(r); }}>{v}</button>
+    : <button type="button" className="link klick-neu" title={r.nutzung === 'Miete' ? 'Vermietet, aber der Mieter ist noch nicht erfasst' : 'Wohnung vermieten: Mieter, Mietbeginn, Miete und Vorauszahlungen eintragen'}
+        onClick={(e) => { e.stopPropagation(); setNeuFuer(r); }}><KeyRound size={13} />{r.nutzung === 'Miete' ? 'Mieter eintragen' : 'Vermieten'}</button>;
   const status = (_: any, r: Row) => (Number(r.soll) || 0) === 0 ? <span className="muted">–</span>
     : r.saldo > 0.005 ? <span className={'pill ' + (r.ist > 0.005 ? 'teil' : 'offen')}>{r.ist > 0.005 ? 'Teilweise' : 'Offen'}</span> : <span className="pill bezahlt">Bezahlt</span>;
   return (
@@ -388,13 +402,13 @@ function EinheitenTab({ objektId, weg, onChange }: { objektId: number; weg: bool
         { key: 'personenzahl', label: 'Personenzahl (ohne Mietvertrag)', type: 'number', hideInTable: true },
         { key: 'personen', label: 'Personen', type: 'number', computed: true, format: (v) => num(v, 0), sum: true },
         { key: 'notiz', label: 'Notiz', type: 'textarea', hideInTable: true },
-        ...(weg ? [{ key: 'eigentuemer', label: 'Eigentümer', computed: true, format: (v: any) => v ? <span className="rolle-chip eigentuemer">{v}</span> : '–' },
+        ...(weg ? [{ key: 'eigentuemer', label: 'Eigentümer', computed: true, format: eigentuemerZelle },
           { key: 'eig_telefon', label: 'Telefon', computed: true, format: (v: any) => v || '–' },
           { key: 'eig_email', label: 'E-Mail', computed: true, format: (v: any) => v ? <a href={`mailto:${v}`}>{v}</a> : '–' },
           { key: 'eig_anschrift', label: 'Anschrift Eigentümer', computed: true, format: anschrift },
           { key: 'vermietet', label: 'Vom Eigentümer vermietet (auch wenn der Mieter hier nicht erfasst ist)', type: 'checkbox', hideInTable: true, wide: true,
             hinweis: (w: Row) => (w.vermietet ? 'Bitte die Anschrift des Eigentümers eintragen (Spalte „Anschrift Eigentümer“), damit die Post nicht an die Wohnung geht.' : null) }] : []),
-        { key: 'mieter', label: 'Mieter (aktuell)', computed: true, format: (v: any) => v ? <span className="rolle-chip mieter">{v}</span> : <span className="muted">–</span> },
+        { key: 'mieter', label: 'Mieter (aktuell)', computed: true, format: mieterZelle },
         { key: 'monat', label: weg ? 'Hausgeld (Soll) / Monat' : 'Miete warm / Monat', type: 'number', geld: true, computed: true, format: weg ? hausgeldZelle : eur, sum: true },
         ...(weg ? [{ key: 'nk_vz', label: 'NK-VZ Mieter / Monat', type: 'number', geld: true, computed: true, format: (v: any) => v != null ? eur(v) : '–', sum: true }] : []),
         { key: 'ist', label: `Zahlungseingang ${jahr}`, type: 'number', geld: true, computed: true, format: eur, sum: true },
@@ -406,6 +420,8 @@ function EinheitenTab({ objektId, weg, onChange }: { objektId: number; weg: bool
           ((SELECT o.objekt_nr FROM objekte o WHERE o.id = e.objekt_id) || '-' || substr('00' || COALESCE(e.lfd_nr, 0), -2, 2)) AS wid,
           (SELECT GROUP_CONCAT(${personLabel('p')}, '; ') FROM eigentum ei JOIN personen p ON p.id = ei.person_id
              WHERE ei.einheit_id = e.id AND (ei.bis IS NULL OR ei.bis >= date('now'))) AS eigentuemer,
+          (SELECT GROUP_CONCAT(x, char(30)) FROM (SELECT ei.id || char(31) || ${personLabel('p')} AS x FROM eigentum ei JOIN personen p ON p.id = ei.person_id
+             WHERE ei.einheit_id = e.id AND (ei.bis IS NULL OR ei.bis >= date('now')) ORDER BY COALESCE(ei.anteil, 100) DESC, ei.id)) AS eig_liste,
           (SELECT GROUP_CONCAT(p.telefon, '; ') FROM eigentum ei JOIN personen p ON p.id = ei.person_id
              WHERE ei.einheit_id = e.id AND (ei.bis IS NULL OR ei.bis >= date('now')) AND p.telefon IS NOT NULL) AS eig_telefon,
           (SELECT GROUP_CONCAT(p.email, '; ') FROM eigentum ei JOIN personen p ON p.id = ei.person_id
@@ -436,7 +452,7 @@ function EinheitenTab({ objektId, weg, onChange }: { objektId: number; weg: bool
       onOpen={oeffnen}
       version={version}
     />
-    <p className="muted small">Klick auf eine Einheit ohne Mieter öffnet „Mieter anlegen“, bei vermieteten Einheiten den Mietvertrag. Mit dem Stift rechts änderst du die Daten der Wohnung.</p>
+    <p className="muted small">{weg ? 'Klick auf den Eigentümer öffnet seine Daten mit Hausgeld und Zahlungen. ' : ''}Klick auf den Mieter öffnet den Mietvertrag, „Vermieten“ legt einen neuen Mieter an. Mit dem Stift rechts änderst du die Daten der Wohnung.</p>
     {hinweis && <p className="tab-hinweis">{hinweis.text} <button className="link" onClick={() => nav(`/objekte/${objektId}/vertrag/${hinweis.vertrag}`)}>Mietvertrag öffnen (PDF hinterlegen)</button></p>}
     {neuFuer && objekt && <MieterAnlegen einheit={neuFuer} objekt={objekt} onClose={() => setNeuFuer(null)}
       onSaved={(vid, text) => { setNeuFuer(null); setHinweis({ text, vertrag: vid }); setVersion((x) => x + 1); onChange(); }} />}

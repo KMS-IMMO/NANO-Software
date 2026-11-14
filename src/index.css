@@ -1245,3 +1245,16 @@ table.list td.einzug { padding-left: 28px; color: var(--muted); }
 .hg-zelle { display: inline-flex; flex-direction: column; align-items: flex-end; gap: 2px; }
 .hg-teile { font-size: 11.5px; color: var(--muted); white-space: nowrap; }
 .hg-teile.neg { color: var(--neg); }
+
+/* WEG-Einheitenliste: Eigentümer und Mieter anklickbar */
+button.rolle-chip.klick { border: 0; cursor: pointer; font-family: inherit; }
+button.rolle-chip.klick:hover { filter: brightness(.96); text-decoration: underline; text-underline-offset: 2px; }
+button.rolle-chip.klick:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.chip-reihe { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+button.link.klick-neu { display: inline-flex; align-items: center; gap: 4px; font-size: 12.5px; font-weight: 600; white-space: nowrap; }
+/* Eigentümer-Seite */
+.eigentum-raster { align-items: start; margin-top: 16px; }
+.eigentum-raster > .card { margin: 0; }
+table.list.kompakt td, table.list.kompakt th { padding-top: 6px; padding-bottom: 6px; }
+.unter-titel { font-size: 14px; margin: 18px 0 6px; }
+.hausgeld-anpassen .form { margin-bottom: 8px; }
