@@ -754,4 +754,8 @@ CREATE TABLE zaehlerstaende (
   UNIQUE (einheit_id, jahr, buchungskonto_id)
 );
 `,
+  // 29: WEG – Wohnung vom Eigentümer vermietet (auch ohne bei uns erfassten Mieter); dann braucht es die Anschrift des Eigentümers
+  `
+ALTER TABLE einheiten ADD COLUMN vermietet INTEGER NOT NULL DEFAULT 0;
+`,
 ];

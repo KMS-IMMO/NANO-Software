@@ -43,7 +43,11 @@ async function laden(id: number | null): Promise<Daten> {
         WHERE e.objekt_id = x.id AND v.beginn <= (strftime('%Y', 'now') - 1) || '-12-31' AND (v.ende IS NULL OR v.ende >= (strftime('%Y', 'now') - 1) || '-01-01'))
         AND NOT EXISTS (SELECT 1 FROM abrechnungen a WHERE a.objekt_id = x.id AND a.art = 'Nebenkosten' AND a.jahr = strftime('%Y', 'now') - 1 AND a.status IN ('Abgeschlossen', 'Gebucht'))) nk_offen,
       (SELECT COUNT(*) FROM objekte x WHERE ${o('x.id')} AND x.verwaltungsart = 'WEG' AND EXISTS (SELECT 1 FROM einheiten e WHERE e.objekt_id = x.id)
-        AND NOT EXISTS (SELECT 1 FROM abrechnungen a WHERE a.objekt_id = x.id AND a.art = 'WEG' AND a.jahr = strftime('%Y', 'now') - 1 AND a.status = 'Abgeschlossen')) weg_offen`))[0] ?? {};
+        AND NOT EXISTS (SELECT 1 FROM abrechnungen a WHERE a.objekt_id = x.id AND a.art = 'WEG' AND a.jahr = strftime('%Y', 'now') - 1 AND a.status = 'Abgeschlossen')) weg_offen,
+      (SELECT COUNT(*) FROM einheiten e JOIN objekte x ON x.id = e.objekt_id WHERE ${o('x.id')} AND x.verwaltungsart = 'WEG'
+        AND (COALESCE(e.vermietet, 0) = 1 OR EXISTS (SELECT 1 FROM mietvertraege v WHERE v.einheit_id = e.id AND ${AKTIV}))
+        AND EXISTS (SELECT 1 FROM eigentum ei JOIN personen p ON p.id = ei.person_id WHERE ei.einheit_id = e.id AND (ei.bis IS NULL OR ei.bis >= date('now'))
+          AND (TRIM(COALESCE(p.strasse, '')) = '' OR TRIM(COALESCE(p.plz, '')) = '' OR TRIM(COALESCE(p.ort, '')) = ''))) ohne_anschrift`))[0] ?? {};
   const z = (await db.select(`SELECT COALESCE(SUM(betrag), 0) soll, COALESCE(SUM(MIN(bezahlt, betrag)), 0) ist
       FROM (${OP_SQL}) WHERE ${o('objekt_id')} AND monat = $1 AND art IN ('Kaltmiete', 'NK', 'HK', 'USt', 'Hausgeld', 'Rücklage')`, [monat()]))[0] ?? {};
   const leer = Number((await db.select(`SELECT COUNT(*) n FROM einheiten e JOIN objekte o ON o.id = e.objekt_id
@@ -203,6 +207,8 @@ function ZuTun({ k, d, pfad, weg }: { k: Row; d: Daten | null; pfad: (unter: str
     { n: n(k.soll_fehlt), text: `Mietverträge ohne Sollstellung für ${new Date().toLocaleDateString('de-DE', { month: 'long' })}`, knopf: 'Erzeugen', ziel: pfad('sollstellungen', '/sollstellungen') },
     ...(weg !== true ? [{ n: n(k.nk_offen), text: `Nebenkostenabrechnung ${vj} offen (Frist 31.12.${vj + 1})`, knopf: 'Abrechnen', ziel: pfad('nebenkosten', '/nebenkosten') }] : []),
     ...(weg !== false ? [{ n: n(k.weg_offen), text: `Hausgeldabrechnung ${vj} nicht abgeschlossen`, knopf: 'Abrechnen', ziel: pfad('hausgeldabrechnung', '/weg-abrechnung') }] : []),
+    ...(weg !== false ? [{ n: n(k.ohne_anschrift), text: n(k.ohne_anschrift) === 1 ? 'vermietete Wohnung ohne Anschrift des Eigentümers' : 'vermietete Wohnungen ohne Anschrift des Eigentümers',
+      knopf: 'Eintragen', ziel: pfad('', '/objekte') }] : []),
     { n: n(k.rechnungen), text: n(k.rechnungen) === 1 ? 'Rechnung unbezahlt' : 'Rechnungen unbezahlt', knopf: 'Bezahlen', ziel: pfad('rechnungen', '/rechnungen') },
     { n: n(k.vorgaenge), text: 'Instandhaltungen offen', knopf: 'Ansehen', ziel: pfad('instandhaltung', '/instandhaltung') },
     ...(weg !== false ? [{ n: n(k.beschluesse), text: 'Beschlüsse in Umsetzung', knopf: 'Ansehen', ziel: pfad('beschluesse', '/beschluesse') }] : []),

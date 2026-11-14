@@ -1,10 +1,11 @@
 import { BetragFeld } from '../components/BetragFeld';
 import { betragZahl, betragText } from '../lib/betrag';
 import { MieterAnlegen } from '../components/MieterAnlegen';
-import { useEffect, useMemo, useState } from 'react';
+import { EigentuemerAnschrift } from '../components/EigentuemerAnschrift';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { BJ } from '../logic/buchung';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, BarChart3, CalendarDays, CircleCheck, FileDown, CalendarClock, CalendarRange, BookOpen, Building2, ClipboardList, Coins, DoorOpen, FileSignature, FileText, FolderOpen, Gavel, Home, Landmark, Layers, ListChecks, Mail,
+import { ArrowLeft, Pencil, BarChart3, CalendarDays, CircleCheck, FileDown, CalendarClock, CalendarRange, BookOpen, Building2, ClipboardList, Coins, DoorOpen, FileSignature, FileText, FolderOpen, Gavel, Home, Landmark, Layers, ListChecks, Mail,
   Maximize2, PiggyBank, Scale, Trash2, User, Users, Wallet, Wrench } from 'lucide-react';
 import { BeschluesseTab, RuecklagenTab, VorgaengeTab, WirtschaftsplanTab } from './Weg';
 import { VersammlungenBereich, VersammlungListe, VollmachtenListe } from './Versammlungen';
@@ -339,7 +340,18 @@ function EinheitenTab({ objektId, weg, onChange }: { objektId: number; weg: bool
   const [neuFuer, setNeuFuer] = useState<Row | null>(null);
   const [version, setVersion] = useState(0);
   const [hinweis, setHinweis] = useState<{ text: string; vertrag: number } | null>(null);
+  const [anschriftFuer, setAnschriftFuer] = useState<Row | null>(null);
   useEffect(() => { db.select('SELECT * FROM objekte WHERE id = $1', [objektId]).then((r) => setObjekt(r[0] ?? null)); }, [objektId]);
+  // Anschrift des Eigentümers: bei vermieteten Wohnungen Pflicht, sonst geht die Post an die Wohnung
+  const anschrift = (v: any, r: Row) => {
+    if (!Number(r.eig_n)) return <span className="muted">–</span>;
+    const knopf = (inhalt: ReactNode, klasse: string, titel: string) => (
+      <button type="button" className={'link anschrift-knopf ' + klasse} title={titel} onClick={(e) => { e.stopPropagation(); setAnschriftFuer(r); }}>{inhalt}<Pencil size={13} /></button>);
+    if (!Number(r.eig_ohne)) return <span className="anschrift-zelle">{v}{knopf(null, 'muted', 'Anschrift ändern')}</span>;
+    return <span className="anschrift-zelle">{v ? <>{v}<br /></> : null}{r.nutzung === 'Miete'
+      ? knopf('fehlt', 'neg', 'Wohnung ist vermietet: Anschrift des Eigentümers eintragen')
+      : knopf('wie Wohnung', 'muted', 'Post geht an die Wohnung. Wohnt der Eigentümer woanders: Anschrift eintragen')}</span>;
+  };
   // Klick auf die Einheit: ohne laufenden Mietvertrag das Fenster „Mieter anlegen“, sonst den Mietvertrag öffnen. Der Stift bearbeitet die Wohnungsdaten.
   const oeffnen = async (r: Row) => {
     const v = (await db.select(`SELECT id FROM mietvertraege WHERE einheit_id = $1 AND (ende IS NULL OR ende >= date('now')) ORDER BY beginn DESC LIMIT 1`, [r.id]))[0];
@@ -358,7 +370,7 @@ function EinheitenTab({ objektId, weg, onChange }: { objektId: number; weg: bool
         { key: 'wid', label: 'W-ID', computed: true, format: (v: any) => <b className="nowrap">{v}</b> },
         { key: 'nummer', label: 'Nr.', required: true, format: (v) => <b>{v}</b> },
         { key: 'typ', label: 'Bezeichnung', type: 'select', options: EINHEIT_TYPEN, required: true },
-        { key: 'nutzung', label: 'Nutzung', computed: true, format: (v: any) => v === 'Miete' ? <span className="pill künftig">Miete</span>
+        { key: 'nutzung', label: 'Nutzung', computed: true, format: (v: any) => v === 'Miete' ? <span className="pill künftig">{weg ? 'Vermietet' : 'Miete'}</span>
             : v === 'Leerstand' ? <span className="pill offen">Leerstand</span> : <span className="badge">Eigentum</span> },
         { key: 'lage', label: 'Etage / Lage' },
         { key: 'flaeche', label: 'Fläche (m²)', type: 'number', sum: true },
@@ -368,7 +380,10 @@ function EinheitenTab({ objektId, weg, onChange }: { objektId: number; weg: bool
         { key: 'notiz', label: 'Notiz', type: 'textarea', hideInTable: true },
         ...(weg ? [{ key: 'eigentuemer', label: 'Eigentümer', computed: true, format: (v: any) => v ? <span className="rolle-chip eigentuemer">{v}</span> : '–' },
           { key: 'eig_telefon', label: 'Telefon', computed: true, format: (v: any) => v || '–' },
-          { key: 'eig_email', label: 'E-Mail', computed: true, format: (v: any) => v ? <a href={`mailto:${v}`}>{v}</a> : '–' }] : []),
+          { key: 'eig_email', label: 'E-Mail', computed: true, format: (v: any) => v ? <a href={`mailto:${v}`}>{v}</a> : '–' },
+          { key: 'eig_anschrift', label: 'Anschrift Eigentümer', computed: true, format: anschrift },
+          { key: 'vermietet', label: 'Vom Eigentümer vermietet (auch wenn der Mieter hier nicht erfasst ist)', type: 'checkbox', hideInTable: true, wide: true,
+            hinweis: (w: Row) => (w.vermietet ? 'Bitte die Anschrift des Eigentümers eintragen (Spalte „Anschrift Eigentümer“), damit die Post nicht an die Wohnung geht.' : null) }] : []),
         { key: 'mieter', label: 'Mieter (aktuell)', computed: true, format: (v: any) => v ? <span className="rolle-chip mieter">{v}</span> : <span className="muted">–</span> },
         { key: 'monat', label: weg ? 'Hausgeld (Soll) / Monat' : 'Miete warm / Monat', type: 'number', geld: true, computed: true, format: eur, sum: true },
         ...(weg ? [{ key: 'nk_vz', label: 'NK-VZ Mieter / Monat', type: 'number', geld: true, computed: true, format: (v: any) => v != null ? eur(v) : '–', sum: true }] : []),
@@ -385,9 +400,15 @@ function EinheitenTab({ objektId, weg, onChange }: { objektId: number; weg: bool
              WHERE ei.einheit_id = e.id AND (ei.bis IS NULL OR ei.bis >= date('now')) AND p.telefon IS NOT NULL) AS eig_telefon,
           (SELECT GROUP_CONCAT(p.email, '; ') FROM eigentum ei JOIN personen p ON p.id = ei.person_id
              WHERE ei.einheit_id = e.id AND (ei.bis IS NULL OR ei.bis >= date('now')) AND p.email IS NOT NULL) AS eig_email,
+          (SELECT GROUP_CONCAT(a, '; ') FROM (SELECT DISTINCT TRIM(p.strasse) || ', ' || TRIM(p.plz) || ' ' || TRIM(p.ort) AS a FROM eigentum ei JOIN personen p ON p.id = ei.person_id
+             WHERE ei.einheit_id = e.id AND (ei.bis IS NULL OR ei.bis >= date('now')) AND TRIM(COALESCE(p.strasse, '')) <> '' AND TRIM(COALESCE(p.plz, '')) <> '' AND TRIM(COALESCE(p.ort, '')) <> '')) AS eig_anschrift,
+          (SELECT COUNT(DISTINCT ei.person_id) FROM eigentum ei WHERE ei.einheit_id = e.id AND (ei.bis IS NULL OR ei.bis >= date('now'))) AS eig_n,
+          (SELECT COUNT(DISTINCT ei.person_id) FROM eigentum ei JOIN personen p ON p.id = ei.person_id WHERE ei.einheit_id = e.id AND (ei.bis IS NULL OR ei.bis >= date('now'))
+             AND (TRIM(COALESCE(p.strasse, '')) = '' OR TRIM(COALESCE(p.plz, '')) = '' OR TRIM(COALESCE(p.ort, '')) = '')) AS eig_ohne,
           (SELECT ${personLabel('p')} FROM mietvertraege v JOIN personen p ON p.id = v.mieter_id WHERE v.einheit_id = e.id AND ${AKTIV()} LIMIT 1) AS mieter,
           (SELECT v.nk_vorauszahlung + v.hk_vorauszahlung FROM mietvertraege v WHERE v.einheit_id = e.id AND ${AKTIV()} LIMIT 1) AS nk_vz,
           CASE WHEN EXISTS (SELECT 1 FROM mietvertraege v WHERE v.einheit_id = e.id AND ${AKTIV()}) THEN 'Miete'
+               WHEN ${weg ? 1 : 0} = 1 AND COALESCE(e.vermietet, 0) = 1 THEN 'Miete'
                WHEN ${weg ? 1 : 0} = 1 THEN 'Eigentum' ELSE 'Leerstand' END AS nutzung,
           COALESCE((SELECT v.personenzahl FROM mietvertraege v WHERE v.einheit_id = e.id AND ${AKTIV()} LIMIT 1), e.personenzahl) AS personen,
           ${weg
@@ -408,6 +429,8 @@ function EinheitenTab({ objektId, weg, onChange }: { objektId: number; weg: bool
     {hinweis && <p className="tab-hinweis">{hinweis.text} <button className="link" onClick={() => nav(`/objekte/${objektId}/vertrag/${hinweis.vertrag}`)}>Mietvertrag öffnen (PDF hinterlegen)</button></p>}
     {neuFuer && objekt && <MieterAnlegen einheit={neuFuer} objekt={objekt} onClose={() => setNeuFuer(null)}
       onSaved={(vid, text) => { setNeuFuer(null); setHinweis({ text, vertrag: vid }); setVersion((x) => x + 1); onChange(); }} />}
+    {anschriftFuer && <EigentuemerAnschrift einheit={anschriftFuer} vermietet={anschriftFuer.nutzung === 'Miete'} onClose={() => setAnschriftFuer(null)}
+      onSaved={() => { setAnschriftFuer(null); setVersion((x) => x + 1); }} />}
     </>
   );
 }

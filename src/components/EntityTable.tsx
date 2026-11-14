@@ -248,7 +248,7 @@ export function EntityTable({ title, table, fields, listSql, listParams = [], fi
               {formFields.filter(sichtbar).map((f) => {
                 const fe = editing[f.key] ? fehlerVon(f, editing) : null, hi = hinweisVon(f, editing);
                 return (
-                <label key={f.key} className={f.wide || f.type === 'textarea' ? 'wide' : ''}>
+                <label key={f.key} className={[f.wide || f.type === 'textarea' ? 'wide' : '', f.type === 'checkbox' ? 'check-feld' : ''].filter(Boolean).join(' ')}>
                   <span>{f.label}{f.required ? ' *' : ''}</span>
                   {f.neuePerson
                     ? <PersonWahl f={f} value={editing[f.key]} opts={opts[f.key]} onChange={(v) => setzen(f, v)}

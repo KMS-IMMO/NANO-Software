@@ -1220,3 +1220,23 @@ table.list td.einzug { padding-left: 28px; color: var(--muted); }
 .datei-wahl { position: relative; display: flex; align-items: center; gap: 8px; border: 1px dashed var(--line); border-radius: 8px; padding: 8px 12px; cursor: pointer; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .datei-wahl input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
 .import-modal .tablewrap { max-height: 300px; overflow: auto; }
+
+/* Anschrift Eigentümer (WEG-Einheiten) */
+.anschrift-zelle { display: inline-flex; align-items: flex-start; gap: 4px; flex-wrap: wrap; min-width: 140px; }
+.anschrift-knopf { display: inline-flex; align-items: center; gap: 4px; padding: 0 2px; font-size: 13px; }
+.anschrift-knopf.neg { color: var(--neg); font-weight: 600; }
+.anschrift-knopf.muted { color: var(--muted); }
+.anschrift-knopf svg { opacity: .7; }
+.anschrift-modal { width: 640px; }
+.anschrift-person { margin: 14px 0 4px; }
+.anschrift-person > b { display: block; margin-bottom: 6px; }
+.anschrift-raster { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px 12px; }
+.anschrift-raster label { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; color: var(--muted); }
+.anschrift-raster .breit2 { grid-column: span 2; }
+@media (max-width: 640px) { .anschrift-raster { grid-template-columns: 1fr; } .anschrift-raster .breit2 { grid-column: auto; } }
+
+/* Ja/Nein-Felder im Formular: Kästchen links, Text daneben (statt eines breiten Balkens) */
+.form label.check-feld { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 4px 10px; align-self: end; padding: 8px 0; cursor: pointer; }
+.form label.check-feld > input[type=checkbox] { order: -1; width: 18px; height: 18px; min-height: 0; margin: 0; padding: 0; flex: none; accent-color: var(--accent-dark); box-shadow: none; }
+.form label.check-feld > span { flex: 1 1 0; min-width: 0; font-size: 14px; color: var(--text); }
+.form label.check-feld > small { flex-basis: 100%; }
