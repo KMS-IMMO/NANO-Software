@@ -1269,3 +1269,8 @@ table.list.kompakt td, table.list.kompakt th { padding-top: 6px; padding-bottom:
 .rerf-kontakt { margin-top: 8px; gap: 10px; align-items: center; }
 .rerf-kontakt .muted svg { vertical-align: -2px; }
 .rerf .rerf-mehr { margin-top: 4px; }
+
+/* Ablage: Ordner „Einheiten“ mit einem Ordner je Einheit */
+.einheiten-kachel .ordner-bild { position: relative; }
+.einheiten-tuer { position: absolute; left: 50%; top: 58%; transform: translate(-50%, -50%); color: var(--accent-dark); opacity: .9; }
+.einheit-ordner .einheit-person { color: var(--muted); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
