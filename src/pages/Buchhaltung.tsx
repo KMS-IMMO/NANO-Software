@@ -287,7 +287,7 @@ export function JournalPage() {
       {edit && (
         <div className="modal-bg" onClick={() => setEdit(null)}>
           <div className={'modal' + (modus === 'rechnung' && !edit.id ? ' breit' : '')} onClick={(e) => e.stopPropagation()}>
-            <div className="card-head"><h3>{edit.id ? 'Buchung bearbeiten' : 'Rechnung / Gutschrift erfassen'}</h3></div>
+            {(modus !== 'rechnung' || edit.id) && <div className="card-head"><h3>{edit.id ? 'Buchung bearbeiten' : 'Rechnung / Gutschrift erfassen'}</h3></div>}
             {modus === 'rechnung' && !edit.id
               ? <RechnungErfassen objektFest={fix?.id} onSaved={(t) => { setInfo(t); setEdit(null); load(); }} />
               : <>

@@ -736,9 +736,9 @@ tr:hover .pill { transform: scale(1.04); }
 .modal.buchen-fenster { width: min(640px, 94vw); max-height: 92vh; overflow-y: auto; animation: bf-auf .45s var(--feder) backwards; }
 @keyframes bf-auf { from { opacity: 0; transform: translateY(24px) scale(.94) rotateX(8deg); } }
 .buchen-fenster .bf-umsatz { margin: -4px 0 4px; }
-.buchen-fenster .bf-kopf { display: flex; gap: 10px; flex-wrap: wrap; }
-.buchen-fenster .bf-kopf label { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; color: var(--muted); }
-.buchen-fenster .bf-kopf label.grow { flex: 1; min-width: 180px; }
+.buchen-fenster .bf-kopf, .rerf .bf-kopf { display: flex; gap: 10px; flex-wrap: wrap; }
+.buchen-fenster .bf-kopf label, .rerf .bf-kopf label { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; color: var(--muted); }
+.buchen-fenster .bf-kopf label.grow, .rerf .bf-kopf label.grow { flex: 1; min-width: 180px; }
 .bf-schritt { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; margin-top: 10px; background: var(--panel); animation: bf-schritt .5s var(--weich) backwards; }
 .bf-schritt > input, .bf-schritt > select { width: 100%; }
 @keyframes bf-schritt { from { opacity: 0; transform: translateY(12px); } }
@@ -1258,3 +1258,14 @@ button.link.klick-neu { display: inline-flex; align-items: center; gap: 4px; fon
 table.list.kompakt td, table.list.kompakt th { padding-top: 6px; padding-bottom: 6px; }
 .unter-titel { font-size: 14px; margin: 18px 0 6px; }
 .hausgeld-anpassen .form { margin-bottom: 8px; }
+
+/* Rechnung erfassen im Stil des Buchen-Fensters */
+.rerf .card-head { justify-content: space-between; }
+.rerf .rerf-form { gap: 8px; }
+.rerf .bf-schritt { margin-top: 4px; }
+.rerf .bf-kopf .betrag-feld, .rerf .bf-kopf label:last-child { min-width: 150px; }
+.rerf-mwst { gap: 12px; align-items: center; flex-wrap: wrap; }
+.rerf-objekt { margin: 0 0 4px; }
+.rerf-kontakt { margin-top: 8px; gap: 10px; align-items: center; }
+.rerf-kontakt .muted svg { vertical-align: -2px; }
+.rerf .rerf-mehr { margin-top: 4px; }
