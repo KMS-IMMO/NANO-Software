@@ -357,6 +357,16 @@ function EinheitenTab({ objektId, weg, onChange }: { objektId: number; weg: bool
     const v = (await db.select(`SELECT id FROM mietvertraege WHERE einheit_id = $1 AND (ende IS NULL OR ende >= date('now')) ORDER BY beginn DESC LIMIT 1`, [r.id]))[0];
     if (v) nav(`/objekte/${objektId}/vertrag/${v.id}`); else setNeuFuer(r);
   };
+  // WEG: Woraus besteht das Hausgeld? Rücklage, NK-Vorauszahlung des Mieters (laut Mietvertrag) und der Rest für den Eigentümer
+  const hausgeldZelle = (v: any, r: Row) => {
+    const hg = Number(v) || 0, rl = Number(r.hg_ruecklage) || 0, nk = r.nutzung === 'Miete' && r.nk_vz != null ? Number(r.nk_vz) || 0 : 0;
+    if (!hg || (!rl && !nk)) return eur(v);
+    const rest = Math.round((hg - rl - nk) * 100) / 100;
+    const teile = [rl ? `Rücklage ${eur(rl)}` : '', nk ? `NK Mieter ${eur(nk)}` : '', nk ? `Eigentümer ${eur(rest)}` : ''].filter(Boolean);
+    return <span className="hg-zelle">{eur(v)}<span className={'hg-teile' + (rest < -0.005 ? ' neg' : '')}
+      title={rest < -0.005 ? 'Die NK-Vorauszahlung des Mieters ist höher als das Hausgeld ohne Rücklage. Bitte Hausgeld oder Mietvertrag prüfen.' : 'Aufteilung des Hausgelds'}>
+      {teile.join(' · ')}</span></span>;
+  };
   const status = (_: any, r: Row) => (Number(r.soll) || 0) === 0 ? <span className="muted">–</span>
     : r.saldo > 0.005 ? <span className={'pill ' + (r.ist > 0.005 ? 'teil' : 'offen')}>{r.ist > 0.005 ? 'Teilweise' : 'Offen'}</span> : <span className="pill bezahlt">Bezahlt</span>;
   return (
@@ -385,7 +395,7 @@ function EinheitenTab({ objektId, weg, onChange }: { objektId: number; weg: bool
           { key: 'vermietet', label: 'Vom Eigentümer vermietet (auch wenn der Mieter hier nicht erfasst ist)', type: 'checkbox', hideInTable: true, wide: true,
             hinweis: (w: Row) => (w.vermietet ? 'Bitte die Anschrift des Eigentümers eintragen (Spalte „Anschrift Eigentümer“), damit die Post nicht an die Wohnung geht.' : null) }] : []),
         { key: 'mieter', label: 'Mieter (aktuell)', computed: true, format: (v: any) => v ? <span className="rolle-chip mieter">{v}</span> : <span className="muted">–</span> },
-        { key: 'monat', label: weg ? 'Hausgeld (Soll) / Monat' : 'Miete warm / Monat', type: 'number', geld: true, computed: true, format: eur, sum: true },
+        { key: 'monat', label: weg ? 'Hausgeld (Soll) / Monat' : 'Miete warm / Monat', type: 'number', geld: true, computed: true, format: weg ? hausgeldZelle : eur, sum: true },
         ...(weg ? [{ key: 'nk_vz', label: 'NK-VZ Mieter / Monat', type: 'number', geld: true, computed: true, format: (v: any) => v != null ? eur(v) : '–', sum: true }] : []),
         { key: 'ist', label: `Zahlungseingang ${jahr}`, type: 'number', geld: true, computed: true, format: eur, sum: true },
         { key: 'saldo', label: 'Offener Saldo', type: 'number', computed: true, sum: true,
@@ -407,6 +417,7 @@ function EinheitenTab({ objektId, weg, onChange }: { objektId: number; weg: bool
              AND (TRIM(COALESCE(p.strasse, '')) = '' OR TRIM(COALESCE(p.plz, '')) = '' OR TRIM(COALESCE(p.ort, '')) = '')) AS eig_ohne,
           (SELECT ${personLabel('p')} FROM mietvertraege v JOIN personen p ON p.id = v.mieter_id WHERE v.einheit_id = e.id AND ${AKTIV()} LIMIT 1) AS mieter,
           (SELECT v.nk_vorauszahlung + v.hk_vorauszahlung FROM mietvertraege v WHERE v.einheit_id = e.id AND ${AKTIV()} LIMIT 1) AS nk_vz,
+          (SELECT h.davon_ruecklage FROM hausgeld h WHERE h.einheit_id = e.id AND h.gueltig_ab <= date('now') ORDER BY h.gueltig_ab DESC LIMIT 1) AS hg_ruecklage,
           CASE WHEN EXISTS (SELECT 1 FROM mietvertraege v WHERE v.einheit_id = e.id AND ${AKTIV()}) THEN 'Miete'
                WHEN ${weg ? 1 : 0} = 1 AND COALESCE(e.vermietet, 0) = 1 THEN 'Miete'
                WHEN ${weg ? 1 : 0} = 1 THEN 'Eigentum' ELSE 'Leerstand' END AS nutzung,

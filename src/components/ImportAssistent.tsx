@@ -126,6 +126,8 @@ export function ImportAssistent({ ziel: zielStart, rolle: rolleStart, onClose, o
         } else {
           const da = (await db.select('SELECT id FROM einheiten WHERE objekt_id = $1 AND LOWER(TRIM(nummer)) = LOWER($2)', [Number(objekt), String(d.nummer)]))[0];
           if (da) { doppelt++; log.push(`${nr}: Einheit ${d.nummer} gibt es schon, übersprungen`); continue; }
+          // In der WEG zahlt der Mieter an seinen Eigentümer; bei uns wird nur das Hausgeld gefordert
+          const weg = (await db.select('SELECT verwaltungsart FROM objekte WHERE id = $1', [Number(objekt)]))[0]?.verwaltungsart === 'WEG';
           const eid = await insert('einheiten', { objekt_id: Number(objekt), nummer: d.nummer, typ: d.typ ?? 'Wohnung', lage: d.lage ?? null, flaeche: d.flaeche ?? null, mea: d.mea ?? null, personenzahl: d.personenzahl ?? null });
           neu++;
           if (d.m_nachname || d.m_firma) {
@@ -134,7 +136,7 @@ export function ImportAssistent({ ziel: zielStart, rolle: rolleStart, onClose, o
               [String(p.nachname ?? p.firma), String(p.vorname ?? '')]))[0];
             const mid = vorhanden?.id ?? await insert('personen', { rolle: 'Mieter', ...p });
             await insert('mietvertraege', { einheit_id: eid, mieter_id: mid, beginn: d.beginn, kaltmiete: d.kaltmiete ?? 0, nk_vorauszahlung: d.nk ?? 0, hk_vorauszahlung: d.hk ?? 0,
-              kaution: d.kaution ?? 0, personenzahl: d.personenzahl ?? 1, faellig_tag: 3, zahlung_an: 'Verwaltung', mietart: 'Standard' });
+              kaution: d.kaution ?? 0, personenzahl: d.personenzahl ?? 1, faellig_tag: 3, zahlung_an: weg ? 'Eigentümer' : 'Verwaltung', mietart: 'Standard' });
             vertraege++;
           }
         }
