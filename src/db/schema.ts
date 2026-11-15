@@ -841,4 +841,16 @@ INSERT OR IGNORE INTO einstellungen (schluessel, wert) VALUES
  ('ms_postfaecher', '["Info@kms.koeln","Kontakt@kms.koeln","Service@kms.koeln","Payment@kms.koeln","Ablesung@kms.koeln"]'),
  ('ms_kalender', '1'), ('ms_akte_auto', '1');
 `,
+  // 31: Splittbuchung – ein Betrag (z. B. Abschlag Strom und Wasser) auf mehrere Konten; Teile tragen die Nummer der Aufteilung.
+  //     Gemerkte Aufteilungen je Zahlungspartner werden beim nächsten Umsatz vorgeschlagen.
+  `
+ALTER TABLE buchungen ADD COLUMN aufteilung INTEGER;
+CREATE INDEX buchungen_aufteilung ON buchungen(aufteilung);
+CREATE TABLE aufteilung_vorlagen (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  schluessel TEXT NOT NULL UNIQUE,  -- IBAN oder Name des Zahlungspartners (klein geschrieben)
+  name TEXT,
+  teile TEXT NOT NULL               -- JSON: [{ konto_id, anteil, text }]
+);
+`,
 ];

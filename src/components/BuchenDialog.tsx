@@ -3,7 +3,7 @@
 import { BetragFeld } from './BetragFeld';
 import { betragZahl, betragText } from '../lib/betrag';
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as KE, type PointerEvent as PE } from 'react';
-import { Check, Search } from 'lucide-react';
+import { Check, Plus, Search, Split, X } from 'lucide-react';
 import { db, insert, type Row } from '../db';
 import { einheitLabel, einheitPerson } from '../db/labels';
 import { eur } from './EntityTable';
@@ -12,6 +12,21 @@ import { gesperrt, sperrText } from '../logic/abschluss';
 const zahl = (s: string) => betragZahl(s) ?? 0;
 const r2 = (n: number) => Math.round(n * 100) / 100;
 const heute = () => new Date().toISOString().slice(0, 10);
+
+/** Teil einer Splittbuchung: Konto, Betrag, eigener Text und § 35a-Anteil */
+type Teil = { konto: number | null; betrag: string; text: string; a35: string };
+/** Schlüssel für gemerkte Aufteilungen: IBAN des Zahlungspartners, sonst sein Name */
+export const partnerSchluessel = (u?: Row | null) => String(u?.gegen_iban || u?.gegenpartei || '').replace(/\s+/g, '').toLowerCase();
+/** Verteilt `gesamt` auf Gewichte; der Rundungsrest geht auf den größten Teil, damit die Summe auf den Cent stimmt */
+export function verteileCent(gesamt: number, gewichte: number[]): number[] {
+  const s = gewichte.reduce((a, b) => a + b, 0);
+  if (!s) return gewichte.map(() => 0);
+  const t = gewichte.map((g) => Math.floor((gesamt * g / s) * 100 + 1e-6) / 100);
+  const rest = r2(gesamt - t.reduce((a, b) => a + b, 0));
+  const i = gewichte.indexOf(Math.max(...gewichte));
+  t[i] = r2(t[i] + rest);
+  return t;
+}
 
 /* ---------- Konto-Rad ---------- */
 
@@ -141,6 +156,10 @@ export function BuchenDialog({ vorlage, onClose, onSaved }: { vorlage: BuchenVor
   const [a35, setA35] = useState('');
   const [fehler, setFehler] = useState('');
   const [laeuft, setLaeuft] = useState(false);
+  const [teile, setTeile] = useState<Teil[]>([]);              // leer = ein Konto, sonst Splittbuchung
+  const [aktiv, setAktiv] = useState(0);                       // Teil, dessen Konto das Rad gerade setzt
+  const [merken, setMerken] = useState(false);
+  const [vorgeschlagen, setVorgeschlagen] = useState('');
   const rgRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -148,6 +167,18 @@ export function BuchenDialog({ vorlage, onClose, onSaved }: { vorlage: BuchenVor
     if (vorlage.objektId == null) db.select('SELECT id, name FROM objekte ORDER BY name').then((o) => {
       setObjekte(o);
       if (u && objekt === '') db.select('SELECT objekt_id FROM bankkonten WHERE id = $1', [u.bankkonto_id]).then((r) => { if (r[0]?.objekt_id) setObjekt(r[0].objekt_id); });
+    });
+    // Gemerkte Aufteilung für diesen Zahlungspartner vorschlagen
+    const sl = partnerSchluessel(u);
+    if (sl) db.select('SELECT * FROM aufteilung_vorlagen WHERE schluessel = $1', [sl]).then((r) => {
+      const v = r[0]; if (!v) return;
+      try {
+        const t = JSON.parse(v.teile) as { konto_id: number; anteil: number; text?: string }[];
+        if (t.length < 2) return;
+        const b = verteileCent(Math.abs(Number(u!.betrag)), t.map((x) => x.anteil));
+        setTeile(t.map((x, i) => ({ konto: x.konto_id, betrag: betragText(b[i]), text: x.text ?? '', a35: '' })));
+        setAktiv(0); setMerken(true); setVorgeschlagen(v.name || u!.gegenpartei || '');
+      } catch { /* defekte Vorlage: ignorieren */ }
     });
   }, []);
   useEffect(() => {
@@ -164,17 +195,46 @@ export function BuchenDialog({ vorlage, onClose, onSaved }: { vorlage: BuchenVor
     const passt = (k: Row) => richtung === 'Einnahme' ? ['Einnahme', 'Ertrag'].includes(k.art) || k.nummer === '1701' : ['Aufwand', 'Ertrag'].includes(k.art) || k.nummer === '1700';
     return [...da.filter(passt), ...da.filter((k) => !passt(k))];
   }, [konten, richtung, weg]);
-  const k = konten.find((x) => Number(x.id) === konto);
-  const mit35 = !!k && !!(k.hdl || k.hwl) && richtung === 'Ausgabe';
-  const mitRg = !!k?.rechnung_pflicht;
+  const split = teile.length > 0;
+  const radWert = split ? teile[aktiv]?.konto ?? null : konto;
+  const radWahl = (id: number) => { if (split) setTeile((t) => t.map((x, i) => i === aktiv ? { ...x, konto: id } : x)); else setKonto(id); };
+  const kontoVon = (id: number | null) => konten.find((x) => Number(x.id) === id);
+  const k = kontoVon(split ? radWert : konto);
+  const ist35 = (x?: Row) => !!x && !!(x.hdl || x.hwl) && richtung === 'Ausgabe';
+  const mit35 = !split && ist35(k);
+  const rgKonto = split ? teile.map((t) => kontoVon(t.konto)).find((x) => x?.rechnung_pflicht) : k?.rechnung_pflicht ? k : undefined;
+  const mitRg = !!rgKonto;
   const gesamt = Math.abs(zahl(betrag));
+  const teilSumme = r2(teile.reduce((a, t) => a + Math.abs(zahl(t.betrag)), 0));
+  const offen = r2(gesamt - teilSumme);
+  const aufteilen = () => {
+    setTeile([{ konto, betrag: '', text: '', a35: '' }, { konto: null, betrag: '', text: '', a35: '' }]);
+    setAktiv(konto ? 1 : 0); setSuche('');
+  };
+  const teilSetzen = (i: number, w: Partial<Teil>) => setTeile((t) => {
+    const n = t.map((x, j) => j === i ? { ...x, ...w } : x);
+    // Bei zwei Teilen bekommt der andere automatisch den Rest
+    if (w.betrag !== undefined && n.length === 2 && gesamt) {
+      const rest = r2(gesamt - Math.abs(zahl(w.betrag)));
+      if (rest >= 0) n[1 - i] = { ...n[1 - i], betrag: betragText(rest) };
+    }
+    return n;
+  });
+  const teilDazu = () => { setTeile((t) => [...t, { konto: null, betrag: offen > 0 ? betragText(offen) : '', text: '', a35: '' }]); setAktiv(teile.length); };
+  const teilWeg = (i: number) => {
+    const n = teile.filter((_, j) => j !== i);
+    if (n.length < 2) { setKonto(n[0]?.konto ?? konto); setTeile([]); setAktiv(0); return; }
+    setTeile(n); setAktiv(Math.min(aktiv, n.length - 1));
+  };
+  // Rest in den Teil schreiben, der noch leer ist (bequem beim zweiten Teil)
+  const restHier = (i: number) => teilSetzen(i, { betrag: betragText(r2(Math.abs(zahl(teile[i].betrag)) + offen)) });
 
   const suchen = (s: string) => {
     setSuche(s);
     const t = s.trim().toLowerCase();
     if (!t) return;
     const treffer = liste.find((x) => String(x.nummer).startsWith(t)) ?? liste.find((x) => String(x.name).toLowerCase().includes(t));
-    if (treffer) setKonto(Number(treffer.id));
+    if (treffer) radWahl(Number(treffer.id));
   };
 
   const verteilen = (ids: string[]) => {
@@ -192,9 +252,20 @@ export function BuchenDialog({ vorlage, onClose, onSaved }: { vorlage: BuchenVor
   async function buchen() {
     setFehler('');
     if (objekt === '') { setFehler('Bitte die Liegenschaft wählen.'); return; }
-    if (!konto) { setFehler('Bitte ein Konto auf dem Rad wählen.'); return; }
+    if (!split && !konto) { setFehler('Bitte ein Konto auf dem Rad wählen.'); return; }
     if (!datum || !gesamt) { setFehler('Bitte Datum und Betrag angeben.'); return; }
-    if (mitRg && !rechnungsnr.trim()) { setFehler(`Das Konto ${k?.nummer} verlangt eine Rechnungsnummer.`); rgRef.current?.focus(); return; }
+    if (split) {
+      const ohne = teile.findIndex((t) => !t.konto);
+      if (ohne >= 0) { setAktiv(ohne); setFehler(`Bitte für Teil ${ohne + 1} ein Konto auf dem Rad wählen.`); return; }
+      const leer = teile.findIndex((t) => !Math.abs(zahl(t.betrag)));
+      if (leer >= 0) { setFehler(`Bitte für Teil ${leer + 1} einen Betrag eingeben.`); return; }
+      if (Math.abs(offen) > 0.005) { setFehler(offen > 0 ? `Es sind noch ${eur(offen)} nicht verteilt.` : `Die Teile sind zusammen ${eur(-offen)} höher als der Betrag.`); return; }
+      for (const [i, t] of teile.entries()) {
+        const a = t.a35.trim() === '' ? 0 : Math.abs(zahl(t.a35));
+        if (a > Math.abs(zahl(t.betrag)) + 0.005) { setFehler(`Der § 35a-Anteil von Teil ${i + 1} ist größer als sein Betrag.`); return; }
+      }
+    }
+    if (mitRg && !rechnungsnr.trim()) { setFehler(`Das Konto ${rgKonto?.nummer} verlangt eine Rechnungsnummer.`); rgRef.current?.focus(); return; }
     if (wahl.length > 1 && Math.abs(summe - gesamt) > 0.005) { setFehler(`Die Beträge der Einheiten (${eur(summe)}) ergeben nicht den Gesamtbetrag (${eur(gesamt)}).`); return; }
     const anteil35 = mit35 && a35.trim() !== '' ? Math.abs(zahl(a35)) : null;
     if (anteil35 !== null && anteil35 > gesamt + 0.005) { setFehler(`Der § 35a-Anteil (${eur(anteil35)}) kann nicht größer sein als der Betrag (${eur(gesamt)}).`); return; }
@@ -205,11 +276,35 @@ export function BuchenDialog({ vorlage, onClose, onSaved }: { vorlage: BuchenVor
       const vz = u ? Math.sign(u.betrag) || -1 : richtung === 'Einnahme' ? 1 : -1;
       const basis = { datum, objekt_id: Number(objekt), buchungskonto_id: konto, text: text.trim() || null, jahr: jahr === jahrNr ? null : jahr,
         rechnungsnr: rechnungsnr.trim() || null, bankumsatz_id: u?.id ?? null };
-      const teile: [number | null, number][] = wahl.length === 0 ? [[null, gesamt]] : wahl.length === 1 ? [[Number(wahl[0]), gesamt]] : wahl.map((id) => [Number(id), zahl(anteile[id] ?? '')]);
-      for (const [eid, b] of teile) await insert('buchungen', { ...basis, einheit_id: eid, betrag: vz * b,
+      if (split) {
+        // Jeder Teil auf sein Konto; bei mehreren Einheiten wird jeder Teil im Verhältnis der Einheiten-Beträge verteilt
+        const gew = wahl.length > 1 ? wahl.map((id) => zahl(anteile[id] ?? '')) : [1];
+        const eids: (number | null)[] = wahl.length === 0 ? [null] : wahl.length === 1 ? [Number(wahl[0])] : wahl.map(Number);
+        let gruppe: number | null = null;
+        for (const t of teile) {
+          const tb = Math.abs(zahl(t.betrag)), stuecke = verteileCent(tb, gew);
+          const a = t.a35.trim() === '' || !ist35(kontoVon(t.konto)) ? null : Math.abs(zahl(t.a35));
+          for (const [j, eid] of eids.entries()) {
+            const id: number = await insert('buchungen', { ...basis, buchungskonto_id: t.konto, einheit_id: eid, betrag: vz * stuecke[j],
+              text: [text.trim(), t.text.trim()].filter(Boolean).join(' · ') || null, aufteilung: gruppe,
+              anteil_35a: a === null || !tb ? null : r2(a * stuecke[j] / tb) });
+            if (gruppe === null) { gruppe = id; await db.execute('UPDATE buchungen SET aufteilung = $1 WHERE id = $1', [id]); }
+          }
+        }
+        const sl = partnerSchluessel(u);
+        if (sl && merken) await db.execute(`INSERT INTO aufteilung_vorlagen (schluessel, name, teile) VALUES ($1, $2, $3)
+          ON CONFLICT(schluessel) DO UPDATE SET name = excluded.name, teile = excluded.teile`,
+          [sl, u?.gegenpartei ?? null, JSON.stringify(teile.map((t) => ({ konto_id: t.konto, anteil: r2(Math.abs(zahl(t.betrag)) / gesamt * 10000) / 10000, text: t.text.trim() })))]);
+        else if (sl && vorgeschlagen && !merken) await db.execute('DELETE FROM aufteilung_vorlagen WHERE schluessel = $1', [sl]);
+        if (u) await db.execute(`UPDATE bankumsaetze SET status = 'zugeordnet' WHERE id = $1`, [u.id]);
+        onSaved(`${eur(gesamt)} auf ${teile.length} Konten aufgeteilt: ${teile.map((t) => `${kontoVon(t.konto)?.nummer} ${eur(Math.abs(zahl(t.betrag)))}`).join(', ')}${sl && merken ? '. Die Aufteilung wird beim nächsten Umsatz vorgeschlagen' : ''}.`);
+        return;
+      }
+      const eTeile: [number | null, number][] = wahl.length === 0 ? [[null, gesamt]] : wahl.length === 1 ? [[Number(wahl[0]), gesamt]] : wahl.map((id) => [Number(id), zahl(anteile[id] ?? '')]);
+      for (const [eid, b] of eTeile) await insert('buchungen', { ...basis, einheit_id: eid, betrag: vz * b,
         anteil_35a: anteil35 === null || !gesamt ? null : r2(anteil35 * b / gesamt) });
       if (u) await db.execute(`UPDATE bankumsaetze SET status = 'zugeordnet' WHERE id = $1`, [u.id]);
-      onSaved(`${eur(gesamt)} auf ${k?.nummer} ${k?.name} gebucht${teile.length > 1 ? ` (${teile.length} Einheiten)` : ''}${jahr !== jahrNr ? `, Buchungsjahr ${jahr}` : ''}.`);
+      onSaved(`${eur(gesamt)} auf ${k?.nummer} ${k?.name} gebucht${eTeile.length > 1 ? ` (${eTeile.length} Einheiten)` : ''}${jahr !== jahrNr ? `, Buchungsjahr ${jahr}` : ''}.`);
     } catch (e: any) {
       setFehler('Buchen fehlgeschlagen: ' + (e?.message ?? e)); setLaeuft(false);
     }
@@ -233,8 +328,31 @@ export function BuchenDialog({ vorlage, onClose, onSaved }: { vorlage: BuchenVor
         <div className="bf-schritt" style={{ animationDelay: '.05s' }}>
           <div className="bf-titel"><span className="bf-nr">1</span>Konto
             <label className="bf-suche"><Search size={14} /><input placeholder="Nummer oder Name …" value={suche} onChange={(e) => suchen(e.target.value)} /></label></div>
-          {liste.length > 0 && <KontoRad konten={liste} wert={konto} onWahl={setKonto} />}
-          {k && <p className="bf-gewaehlt"><Check size={14} /> {k.nummer} {k.name}<span className="muted"> · {k.gruppe}</span></p>}
+          {liste.length > 0 && <KontoRad konten={liste} wert={radWert} onWahl={radWahl} />}
+          {!split && k && <p className="bf-gewaehlt"><Check size={14} /> {k.nummer} {k.name}<span className="muted"> · {k.gruppe}</span></p>}
+          {!split && <button className="link bf-aufteilen" onClick={aufteilen}><Split size={14} /> Auf mehrere Konten aufteilen</button>}
+          {split && <div className="bf-teile">
+            {vorgeschlagen && <p className="muted small bf-vorschlag">Aufteilung wie beim letzten Mal für {vorgeschlagen} vorgeschlagen. Beträge bitte prüfen.</p>}
+            {teile.map((t, i) => {
+              const kt = kontoVon(t.konto);
+              return (
+                <div key={i} className={'bf-teil' + (i === aktiv ? ' aktiv' : '')} onClick={() => setAktiv(i)}>
+                  <span className="bf-teil-nr">{i + 1}</span>
+                  <span className="bf-teil-konto">{kt ? <><b>{kt.nummer}</b> {kt.name}</> : <span className="muted">{i === aktiv ? 'Konto auf dem Rad wählen' : 'Klicken und Konto wählen'}</span>}</span>
+                  <input className="bf-teil-text" placeholder="Text (z. B. Wasser)" value={t.text} onClick={(e) => e.stopPropagation()} onFocus={() => setAktiv(i)} onChange={(e) => teilSetzen(i, { text: e.target.value })} />
+                  <BetragFeld zelle value={t.betrag} onFocus={() => setAktiv(i)} onChange={(e) => teilSetzen(i, { betrag: e.target.value })} />
+                  {ist35(kt) && <BetragFeld zelle value={t.a35} title="davon Arbeitskosten nach § 35a, leer = keine" placeholder="§ 35a" onFocus={() => setAktiv(i)} onChange={(e) => teilSetzen(i, { a35: e.target.value })} />}
+                  {!ist35(kt) && <span />}
+                  <button className="icon-btn" title={`Teil ${i + 1} entfernen`} onClick={(e) => { e.stopPropagation(); teilWeg(i); }}><X size={14} /></button>
+                </div>);
+            })}
+            <div className="bf-teil-fuss">
+              <button className="link" onClick={teilDazu}><Plus size={14} /> Weiteren Teil</button>
+              <span className="grow" />
+              {gesamt > 0 && <span className={'bf-rest ' + (Math.abs(offen) < 0.005 ? 'ok' : 'offen')}>{Math.abs(offen) < 0.005 ? <><Check size={13} /> vollständig verteilt</> : offen > 0 ? <>noch {eur(offen)} zu verteilen{teile[aktiv] && <button className="link" onClick={() => restHier(aktiv)}>in Teil {aktiv + 1}</button>}</> : <>{eur(-offen)} zu viel</>}</span>}
+            </div>
+            {partnerSchluessel(u) && <label className="check small"><input type="checkbox" checked={merken} onChange={(e) => setMerken(e.target.checked)} /> Aufteilung für {u?.gegenpartei || 'diesen Zahlungspartner'} merken und beim nächsten Mal vorschlagen</label>}
+          </div>}
         </div>
 
         <div className="bf-schritt" style={{ animationDelay: '.12s' }}>
@@ -270,7 +388,7 @@ export function BuchenDialog({ vorlage, onClose, onSaved }: { vorlage: BuchenVor
         </div>
 
         {mitRg && <div className="bf-schritt bf-neu">
-          <div className="bf-titel"><span className="bf-nr">4</span>Rechnungsnummer <span className="muted small">vom Konto {k?.nummer} verlangt</span></div>
+          <div className="bf-titel"><span className="bf-nr">4</span>Rechnungsnummer <span className="muted small">vom Konto {rgKonto?.nummer} verlangt</span></div>
           <input ref={rgRef} value={rechnungsnr} onChange={(e) => setRechnungsnr(e.target.value)} placeholder="z. B. RE-2026-0815" />
         </div>}
 

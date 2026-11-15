@@ -749,6 +749,23 @@ tr:hover .pill { transform: scale(1.04); }
 .bf-suche { margin-left: auto; display: flex; align-items: center; gap: 6px; font-weight: 400; color: var(--muted); }
 .bf-suche input { width: 190px; padding: 5px 8px; font-size: 13px; }
 .bf-gewaehlt { margin: 8px 0 0; display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--accent-dark); font-weight: 600; }
+.teil-tag { background: var(--accent-soft); color: var(--accent-dark); margin-left: 6px; white-space: nowrap; }
+.bf-aufteilen { display: inline-flex; align-items: center; gap: 6px; margin-top: 8px; font-size: 13px; }
+.bf-teile { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+.bf-vorschlag { margin: 0 0 2px; }
+.bf-teil { display: grid; grid-template-columns: 26px minmax(0, 1.4fr) minmax(0, 1fr) 120px auto auto; align-items: center; gap: 8px; padding: 6px 8px;
+  border: 1px solid var(--line); border-radius: 10px; background: var(--panel); cursor: pointer; transition: box-shadow .15s, background .15s; }
+.bf-teil.aktiv { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
+.bf-teil-nr { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 700; background: var(--line); }
+.bf-teil.aktiv .bf-teil-nr { background: var(--accent); color: #fff; }
+.bf-teil-konto { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.bf-teil-text { min-width: 0; font-size: 13px; }
+.bf-teil-fuss { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 13px; }
+.bf-teil-fuss .link, .bf-rest .link { display: inline-flex; align-items: center; gap: 4px; }
+.bf-rest { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
+.bf-rest.ok { color: var(--accent-dark); }
+.bf-rest.offen { color: #b45309; }
+@media (max-width: 640px) { .bf-teil { grid-template-columns: 26px minmax(0, 1fr) auto; } .bf-teil-text { grid-column: 2 / -1; } }
 
 .krad { position: relative; height: 230px; perspective: 700px; perspective-origin: 50% 50%; overflow: hidden; cursor: grab; outline: none; border-radius: 10px; user-select: none; touch-action: none;
   background: linear-gradient(#f3efe7, #fff 30%, #fff 70%, #f3efe7); }

@@ -18,7 +18,7 @@ import { BELEGE_SQL, BuchungBelege } from '../components/BuchungBelege';
 import { DatevDialog } from '../components/DatevDialog';
 import { BuchenDialog } from '../components/BuchenDialog';
 import { Wiederkehrend } from '../components/Wiederkehrend';
-import { BJ, buchungLoeschen, loeschHinweis } from '../logic/buchung';
+import { BJ, aufteilungLoeschen, buchungLoeschen, loeschHinweis } from '../logic/buchung';
 import { buchungGesperrt, gesperrt, sperrText } from '../logic/abschluss';
 import { ruecklageMonate, ruecklageZeitraum } from '../logic/ruecklage';
 
@@ -79,8 +79,10 @@ export function JournalPage() {
     const liste = rows.filter((r) => wahl.has(r.id));
     for (const r of liste) { const sp = await buchungGesperrt(Number(r.objekt_id), r.datum, r.jahr); if (sp) { setInfo(sperrText(sp)); return; } }
     const bank = liste.filter((r) => r.bankumsatz_id).length;
-    if (!window.confirm(`${liste.length} Buchung(en) über zusammen ${eur(liste.reduce((a, r) => a + Math.abs(Number(r.betrag)), 0))} löschen?${bank ? `\n\n${bank} davon stammen aus dem Kontoauszug. Die Bankumsätze stehen danach wieder oben unter „Aus dem Kontoauszug“ zum Buchen bereit.` : ''}`)) return;
-    for (const r of liste) await buchungLoeschen(Number(r.id));
+    const gruppen = [...new Set(liste.filter((r) => r.aufteilung).map((r) => Number(r.aufteilung)))];
+    if (!window.confirm(`${liste.length} Buchung(en) über zusammen ${eur(liste.reduce((a, r) => a + Math.abs(Number(r.betrag)), 0))} löschen?${gruppen.length ? `\n\n${gruppen.length === 1 ? 'Eine Aufteilung wird' : `${gruppen.length} Aufteilungen werden`} dabei mit allen Teilen gelöscht.` : ''}${bank ? `\n\n${bank} davon stammen aus dem Kontoauszug. Die Bankumsätze stehen danach wieder oben unter „Aus dem Kontoauszug“ zum Buchen bereit.` : ''}`)) return;
+    for (const g of gruppen) await aufteilungLoeschen(g);
+    for (const r of liste) if (!r.aufteilung) await buchungLoeschen(Number(r.id));
     setWahl(new Set()); setInfo(`${liste.length} Buchung(en) gelöscht.`); load(); setBankVersion((v) => v + 1);
   }
   const load = async () => {
@@ -88,7 +90,7 @@ export function JournalPage() {
     if (monat) w.push(`substr(b.datum, 6, 2) = '${monat}'`);
     if (objekt !== '') w.push(`b.objekt_id = ${Number(objekt)}`);
     if (kontoWahl.length) w.push(`b.buchungskonto_id IN (${kontoWahl.map(Number).join(',')})`);
-    setRows(await db.select(`SELECT b.*, k.nummer, k.name AS konto, k.art AS kontoart, o.name AS objekt, e.nummer AS einheit, COALESCE(f.name, rf.name) AS firma, COALESCE(b.rechnungsnr, r.rechnungsnr) AS rechnungsnr, ${BELEGE_SQL} AS belege
+    setRows(await db.select(`SELECT b.*, (SELECT COUNT(*) FROM buchungen x WHERE x.aufteilung = b.aufteilung) AS teile_n, (SELECT COUNT(*) FROM buchungen x WHERE x.aufteilung = b.aufteilung AND x.id <= b.id) AS teil_nr, (SELECT SUM(x.betrag) FROM buchungen x WHERE x.aufteilung = b.aufteilung) AS teile_summe, k.nummer, k.name AS konto, k.art AS kontoart, o.name AS objekt, e.nummer AS einheit, COALESCE(f.name, rf.name) AS firma, COALESCE(b.rechnungsnr, r.rechnungsnr) AS rechnungsnr, ${BELEGE_SQL} AS belege
       FROM buchungen b LEFT JOIN buchungskonten k ON k.id = b.buchungskonto_id LEFT JOIN objekte o ON o.id = b.objekt_id LEFT JOIN einheiten e ON e.id = b.einheit_id
       LEFT JOIN firmen f ON f.id = b.firma_id LEFT JOIN rechnungen r ON r.id = b.rechnung_id LEFT JOIN firmen rf ON rf.id = r.firma_id
       WHERE ${w.join(' AND ')} ORDER BY b.datum, b.id`));
@@ -151,6 +153,13 @@ export function JournalPage() {
     const sp = await buchungGesperrt(Number(r.alt_objekt ?? r.objekt_id), r.alt_datum ?? r.datum, r.jahr);
     if (sp) { setEdit(null); setInfo(sperrText(sp)); return; }
     const h = loeschHinweis(r);
+    if (r.aufteilung) {
+      const teile = await db.select('SELECT id, objekt_id, datum, jahr FROM buchungen WHERE aufteilung = $1', [r.aufteilung]);
+      for (const t of teile) { const s2 = await buchungGesperrt(Number(t.objekt_id), t.datum, t.jahr); if (s2) { setEdit(null); setInfo(sperrText(s2)); return; } }
+      if (!window.confirm(`Diese Buchung ist Teil einer Aufteilung in ${teile.length} Teile. Alle Teile zusammen löschen?${h ? '\n\n' + h : ''}`)) return;
+      await aufteilungLoeschen(Number(r.aufteilung)); setEdit(null); setInfo(`Aufteilung mit ${teile.length} Teilen gelöscht.`); load(); setBankVersion((v) => v + 1);
+      return;
+    }
     if (!window.confirm(`Buchung ${r.id} über ${eur(Math.abs(Number(r.alt_betrag ?? r.betrag)))} löschen?${h ? '\n\n' + h : ''}`)) return;
     await buchungLoeschen(Number(r.id)); setEdit(null); setInfo(`Buchung ${r.id} gelöscht.`); load(); setBankVersion((v) => v + 1);
   }
@@ -272,7 +281,7 @@ export function JournalPage() {
                 <td>{r.id}</td><td>{datum(r.datum)}</td><td>{!fix && r.objekt}<div className={fix ? '' : 'muted small'}>{r.einheit ?? (r.betrag < 0 ? 'alle Einheiten' : fix ? 'gesamtes Objekt' : '')}</div></td>
                 <td>{r.nummer ? `${r.nummer} ${r.konto}` : <span className="tag">ohne Konto</span>}</td>
                 <td>{r.firma ?? <span className="muted">–</span>}</td>
-                <td className="small">{r.text}{r.rechnungsnr && !String(r.text ?? "").includes(r.rechnungsnr) ? <span className="muted"> · Rechnung {r.rechnungsnr}</span> : ''}{r.bankumsatz_id ? <span className="muted"> · Bank</span> : ''}</td>
+                <td className="small">{r.text}{r.rechnungsnr && !String(r.text ?? "").includes(r.rechnungsnr) ? <span className="muted"> · Rechnung {r.rechnungsnr}</span> : ''}{r.bankumsatz_id ? <span className="muted"> · Bank</span> : ''}{r.aufteilung ? <span className="tag teil-tag" title={`Teil ${r.teil_nr} von ${r.teile_n} einer Aufteilung über ${eur(Math.abs(Number(r.teile_summe)))}`}>Teil {r.teil_nr}/{r.teile_n}</span> : ''}</td>
                 <td className="num neg">{r.betrag < 0 ? eur(-r.betrag) : '–'}</td><td className="num pos">{r.betrag > 0 ? eur(r.betrag) : '–'}</td>
                 <td className="actions nowrap"><button className={'icon-btn beleg-btn ' + (r.belege ? 'hat' : 'leer')} title={r.belege ? `${r.belege} Beleg(e) ansehen oder anhängen` : 'Beleg anhängen'} onClick={() => setBelegFuer(r)}><Paperclip size={15} />{r.belege > 0 && <small>{r.belege}</small>}</button>
                   <button className="icon-btn" title="Buchung bearbeiten" onClick={() => bearbeiten(r)}><Pencil size={15} /></button>
@@ -292,6 +301,7 @@ export function JournalPage() {
               ? <RechnungErfassen objektFest={fix?.id} onSaved={(t) => { setInfo(t); setEdit(null); load(); }} />
               : <>
                 <BuchungForm edit={edit} setEdit={setEdit} objekte={objekte} konten={konten} fest={!!fix} />
+                {edit.id && edit.aufteilung && <p className="muted small">Teil {edit.teil_nr} von {edit.teile_n} einer Aufteilung über {eur(Math.abs(Number(edit.teile_summe)))}. Konto und Text änderst du hier. Zum neu Aufteilen löschst du die Aufteilung und buchst den Betrag neu.</p>}
                 {edit.id && (edit.bankumsatz_id || edit.sollstellung_id || edit.rechnung_id) && <p className="warn small">
                   Diese Buchung gehört {edit.bankumsatz_id ? 'zu einem Bankumsatz' : edit.sollstellung_id ? 'zu einem offenen Posten' : 'zu einer Rechnung'}. Konto, Text und Einheit kannst du frei ändern. Bei einem anderen Betrag fragt das Programm nach.</p>}
                 {edit.id && <BuchungBelege buchung={edit} onChange={load} />}
