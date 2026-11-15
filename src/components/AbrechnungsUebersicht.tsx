@@ -5,7 +5,7 @@
 import { BetragFeld } from './BetragFeld';
 import { loeschen as inPapierkorb } from '../db/papierkorb';
 import { Fragment, useEffect, useState, type ReactNode } from 'react';
-import { Check, ChevronDown, ChevronRight, Pencil, Plus, Trash2, X } from 'lucide-react';
+import { Check, ChevronDown, ChevronRight, Pencil, Plus, Trash2, Undo2, X } from 'lucide-react';
 import { db, type Row } from '../db';
 import { eur } from './EntityTable';
 import type { Position } from '../logic/verteilung';
@@ -122,11 +122,14 @@ export function AbrechnungsUebersicht({ objekt, jahr, pos, schluessel, stand = 0
   const [belege, setBelege] = useState<{ aus: Row[]; ein: Row[] }>({ aus: [], ein: [] });
   const [konten, setKonten] = useState<Row[]>([]);
   const [eigeneJahr, setEigeneJahr] = useState<Set<number>>(new Set());
+  const [raus, setRaus] = useState<Row[]>([]);   // aus der Abrechnung genommene Kostenpositionen
   const [offen, setOffen] = useState<Set<string>>(new Set());
   useEffect(() => {
     if (!objekt || jahr < 1900) return;
     belegeLaden(objekt, jahr).then(setBelege);
     db.select(`SELECT id, nummer, name, art, umlagefaehig FROM buchungskonten ORDER BY nummer`).then(setKonten);
+    db.select(`SELECT a.*, k.nummer, k.name FROM abrechnung_betraege a JOIN buchungskonten k ON k.id = a.buchungskonto_id
+      WHERE a.objekt_id = $1 AND a.jahr = $2 AND a.ausgeschlossen = 1 ${nurUmlagefaehig ? 'AND k.umlagefaehig = 1' : ''} ORDER BY k.nummer`, [objekt, jahr]).then(setRaus);
     db.select('SELECT buchungskonto_id FROM objekt_schluessel_jahr WHERE objekt_id = $1 AND jahr = $2', [objekt, jahr])
       .then((r) => setEigeneJahr(new Set(r.map((x) => Number(x.buchungskonto_id)))));
   }, [objekt, jahr, stand, pos, intern]);
@@ -180,6 +183,24 @@ export function AbrechnungsUebersicht({ objekt, jahr, pos, schluessel, stand = 0
     geaendert?.(`${p.nummer} ${p.name}: Gesamtkosten für die Abrechnung ${jahr} ${eur(b)} (gebucht ${eur(gebucht)}).`);
   }
 
+  // Kostenposition ganz aus der Abrechnung nehmen; die Buchungen bleiben in der Buchhaltung
+  async function herausnehmen(p: Position) {
+    const sp = await gesperrt(objekt, `${jahr}-01-01`);
+    if (sp) { onChanged?.(sperrText(sp)); return; }
+    if (!window.confirm(`${p.nummer} ${p.name} (${eur(p.betrag)}) aus der Abrechnung ${jahr} nehmen?\n\nDie Buchungen bleiben in der Buchhaltung. Unten unter „Aus der Abrechnung genommen“ holst du die Position jederzeit zurück.`)) return;
+    await db.execute(`INSERT INTO abrechnung_betraege (objekt_id, jahr, buchungskonto_id, betrag, grund, ausgeschlossen) VALUES ($1, $2, $3, $4, NULL, 1)
+      ON CONFLICT (objekt_id, jahr, buchungskonto_id) DO UPDATE SET ausgeschlossen = 1`, [objekt, jahr, p.konto_id, p.betrag]);
+    geaendert?.(`${p.nummer} ${p.name} ist nicht mehr in der Abrechnung ${jahr}.`);
+  }
+  async function zurueckholen(r: Row) {
+    const sp = await gesperrt(objekt, `${jahr}-01-01`);
+    if (sp) { onChanged?.(sperrText(sp)); return; }
+    // War vorher ein Betrag angepasst, bleibt er erhalten; sonst gilt wieder der gebuchte Betrag
+    if (r.grund) await db.execute('UPDATE abrechnung_betraege SET ausgeschlossen = 0 WHERE objekt_id = $1 AND jahr = $2 AND buchungskonto_id = $3', [objekt, jahr, r.buchungskonto_id]);
+    else await db.execute('DELETE FROM abrechnung_betraege WHERE objekt_id = $1 AND jahr = $2 AND buchungskonto_id = $3', [objekt, jahr, r.buchungskonto_id]);
+    geaendert?.(`${r.nummer} ${r.name} ist wieder in der Abrechnung ${jahr}.`);
+  }
+
   return (
     <section className="card abr-uebersicht">
       <div className="card-head"><h2>{titel ?? `Abrechnungsübersicht ${jahr}`}</h2>
@@ -219,7 +240,8 @@ export function AbrechnungsUebersicht({ objekt, jahr, pos, schluessel, stand = 0
                   <td className="num abr-betrag"><span className="abr-betrag-zeile">
                     {p.gebucht !== undefined && <span className="pill klein abr-angepasst" title={p.grund ?? 'Für die Abrechnung angepasst'}>angepasst</span>}
                     <b>{eur(p.betrag)}</b>
-                    {geaendert && <button className="icon-btn" title="Gesamtkosten für die Abrechnung anpassen" onClick={() => setAnp({ konto: p.konto_id, betrag: String(p.betrag.toFixed(2)).replace('.', ','), grund: p.grund ?? '' })}><Pencil size={14} /></button>}</span>
+                    {geaendert && <button className="icon-btn" title="Gesamtkosten für die Abrechnung anpassen" onClick={() => setAnp({ konto: p.konto_id, betrag: String(p.betrag.toFixed(2)).replace('.', ','), grund: p.grund ?? '' })}><Pencil size={14} /></button>}
+                    {geaendert && <button className="icon-btn" title="Kostenposition aus der Abrechnung nehmen" onClick={() => herausnehmen(p)}><Trash2 size={14} /></button>}</span>
                     {p.gebucht !== undefined && <div className="muted small">gebucht {eur(p.gebucht)}{p.grund ? ` · ${p.grund}` : ''}</div>}</td>
                 </tr>
                 {anp?.konto === p.konto_id && <tr className="abr-anpassen"><td /><td colSpan={5}>
@@ -240,6 +262,11 @@ export function AbrechnungsUebersicht({ objekt, jahr, pos, schluessel, stand = 0
           </tbody>))}
           <tfoot><tr><td /><td colSpan={4}>Summe Ausgaben gesamt</td><td className="num">{eur(summeAus)}</td></tr></tfoot>
         </table>)}
+      {raus.length > 0 && <div className="abr-raus">
+        <div><b>Aus der Abrechnung genommen</b><span className="muted small"> · die Buchungen bleiben in der Buchhaltung</span></div>
+        {raus.map((r) => <div key={r.buchungskonto_id} className="abr-raus-zeile"><span>{r.nummer} {r.name}</span><span className="grow" />
+          {geaendert && <button className="link" onClick={() => zurueckholen(r)}><Undo2 size={14} /> Wieder aufnehmen</button>}</div>)}
+      </div>}
       {mitEinnahmen && <>
         <h3 className="sec">{einnahmenTitel ?? 'Einnahmen'}</h3>
         {einnahmen.length === 0 ? <p className="muted">{einnahmeKonten ? `Keine Vorauszahlungen von Mietern im Jahr ${jahr} bei uns gebucht.` : `Keine Einnahmen im Jahr ${jahr} gebucht.`}</p> : (
@@ -259,7 +286,7 @@ export function AbrechnungsUebersicht({ objekt, jahr, pos, schluessel, stand = 0
       </>}
       <p className="muted small">Den Verteilerschlüssel wählst du je Buchungskonto. Er gilt nur für diese Liegenschaft und nur für {jahr}. Andere Jahre behalten ihren eigenen Schlüssel.
         Ohne eigene Wahl gilt der Standard unter „Umlageschlüssel“. Bei „Manuell“ trägst du den Betrag je Einheit selbst ein.
-        {geaendert && ' Beträge änderst oder löschst du in der aufgeklappten Zeile mit Stift und Papierkorb. Jede Änderung wird als Buchung gespeichert und gilt auch in der Buchhaltung. Mit dem Stift neben den Gesamtkosten passt du dagegen nur den Betrag für diese Abrechnung an, zum Beispiel Heizkosten laut Messdienst statt der Abschläge. Die Buchhaltung bleibt dann unverändert.'}</p>
+        {geaendert && ' Beträge änderst oder löschst du in der aufgeklappten Zeile mit Stift und Papierkorb. Jede Änderung wird als Buchung gespeichert und gilt auch in der Buchhaltung. Mit dem Stift neben den Gesamtkosten passt du dagegen nur den Betrag für diese Abrechnung an, zum Beispiel Heizkosten laut Messdienst statt der Abschläge. Mit dem Papierkorb daneben nimmst du die ganze Kostenposition aus der Abrechnung. In beiden Fällen bleibt die Buchhaltung unverändert.'}</p>
     </section>
   );
 }

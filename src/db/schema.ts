@@ -862,6 +862,7 @@ CREATE TABLE abrechnung_betraege (
   buchungskonto_id INTEGER NOT NULL REFERENCES buchungskonten(id) ON DELETE CASCADE,
   betrag REAL NOT NULL,
   grund TEXT,
+  ausgeschlossen INTEGER NOT NULL DEFAULT 0,   -- 1 = Kostenposition ganz aus der Abrechnung genommen
   PRIMARY KEY (objekt_id, jahr, buchungskonto_id)
 );
 `,

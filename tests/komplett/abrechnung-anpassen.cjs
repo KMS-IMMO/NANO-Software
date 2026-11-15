@@ -45,6 +45,15 @@ const { chromium } = require('playwright');
   await zeile('1200').locator('button[title="Gesamtkosten für die Abrechnung anpassen"]').click();
   await p.locator('.abr-anpassen button:has-text("Gebuchten Betrag nehmen")').click(); await p.waitForTimeout(1500);
   ok('Zurücksetzen: wieder 1.000,00 ohne „angepasst“', !(await zeile('1200').innerText()).includes('angepasst') && (await q('SELECT COUNT(*) n FROM abrechnung_betraege WHERE objekt_id = $1', [d.o]))[0].n === 0);
+  // Kostenposition aus der Abrechnung nehmen und zurückholen
+  await zeile('1200').locator('button[title="Kostenposition aus der Abrechnung nehmen"]').click(); await p.waitForTimeout(1500);
+  const raus = await p.evaluate(async ([o, k]) => { const v = await import('/src/logic/verteilung.ts'); return (await v.kostenErmitteln(o, 2025, false)).some((x) => x.konto_id === k); }, [d.o, d.heiz]);
+  ok('Heizkosten nicht mehr in der Abrechnung', raus === false && await zeile('1200').count() === 0);
+  ok('Liste „Aus der Abrechnung genommen“ zeigt 1200', (await p.locator('.abr-raus').innerText()).includes('1200'));
+  ok('Buchungen bleiben in der Buchhaltung', (await q('SELECT COUNT(*) n FROM buchungen WHERE objekt_id = $1 AND buchungskonto_id = $2', [d.o, d.heiz]))[0].n === 4);
+  await bild('herausnehmen.png');
+  await p.locator('.abr-raus button:has-text("Wieder aufnehmen")').click(); await p.waitForTimeout(1500);
+  ok('Wieder aufgenommen mit 1.000,00', (await zeile('1200').innerText()).includes('1.000,00') && await p.locator('.abr-raus').count() === 0);
   // 2) Verbrauch in €
   await zeile('1215').locator('select').selectOption('Verbrauch'); await p.waitForTimeout(600);
   const f = p.locator('.schl-fenster');

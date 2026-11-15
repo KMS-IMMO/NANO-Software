@@ -751,6 +751,9 @@ tr:hover .pill { transform: scale(1.04); }
 .bf-gewaehlt { margin: 8px 0 0; display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--accent-dark); font-weight: 600; }
 .abr-betrag-zeile { display: inline-flex; align-items: center; gap: 6px; justify-content: flex-end; }
 .abr-angepasst { background: var(--accent-soft); color: var(--accent-dark); }
+.abr-raus { margin-top: 12px; padding: 10px 14px; border: 1px dashed var(--line); border-radius: 10px; display: flex; flex-direction: column; gap: 6px; }
+.abr-raus-zeile { display: flex; align-items: center; gap: 10px; }
+.abr-raus .link { display: inline-flex; align-items: center; gap: 4px; }
 .teil-tag { background: var(--accent-soft); color: var(--accent-dark); margin-left: 6px; white-space: nowrap; }
 .bf-aufteilen { display: inline-flex; align-items: center; gap: 6px; margin-top: 8px; font-size: 13px; }
 .bf-teile { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
