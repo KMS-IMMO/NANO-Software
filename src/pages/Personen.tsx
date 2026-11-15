@@ -1,6 +1,7 @@
 import { User, Users, Hammer, MapPinOff } from 'lucide-react';
 import { EntityTable, eur } from '../components/EntityTable';
 import { personLabel } from '../db/labels';
+import { Schriftverkehr } from './Kommunikation';
 
 // Eine Person kann Mieter mehrerer Einheiten und zugleich Eigentümer sein: sie erscheint in jeder Liste, in der sie hinterlegt ist
 const ROLLE_SQL: Record<string, string> = {
@@ -18,6 +19,7 @@ export function PersonenPage({ rolle, titel }: { rolle?: 'Eigentümer' | 'Mieter
       newLabel={rolle ? `${rolle} hinzufügen` : 'Person hinzufügen'}
       table="personen"
       fixed={rolle ? { rolle } : undefined}
+      editExtra={(r) => <Schriftverkehr personId={r.id} />}
       fields={[
         ...(rolle ? [] : [{ key: 'rolle', label: 'Rolle', type: 'select' as const, options: ['Mieter', 'Eigentümer', 'Verwalter', 'Sonstige'], required: true }]),
         { key: 'anrede', label: 'Anrede', type: 'select', options: ['Herr', 'Frau', 'Divers', 'Firma', 'Eheleute'], hideInTable: true },
@@ -68,6 +70,7 @@ export function FirmenPage() {
       icon={<Hammer size={22} />}
       newLabel="Firma hinzufügen"
       table="firmen"
+      editExtra={(r) => <Schriftverkehr firmaId={r.id} />}
       fields={[
         { key: 'name', label: 'Firma', required: true, wide: true, format: (v, r) => <span className="firma-name">{v}{!(r.strasse && r.plz && r.ort) &&
             <span className="adresse-fehlt" title="Adresse fehlt. Zeile anklicken und Straße, PLZ, Ort, Telefon, E-Mail und IBAN eintragen."><MapPinOff size={14} />Adresse eintragen</span>}</span> },

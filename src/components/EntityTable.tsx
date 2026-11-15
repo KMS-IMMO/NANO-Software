@@ -66,11 +66,13 @@ interface Props {
   version?: number;
   /** Zusätzliche CSS-Klasse je Zeile, z. B. Farbe nach Rolle */
   rowClass?: (row: Row) => string | undefined;
+  /** Zusätzlicher Bereich unter dem Formular eines gespeicherten Datensatzes, z. B. Schriftverkehr */
+  editExtra?: (row: Row) => ReactNode;
 }
 
 type Opt = { value: string | number; label: string };
 
-export function EntityTable({ title, table, fields, listSql, listParams = [], fixed, onOpen, emptyText, onChange, groupBy, newLabel, icon, onNew, onDelete, version, rowClass }: Props) {
+export function EntityTable({ title, table, fields, listSql, listParams = [], fixed, onOpen, emptyText, onChange, groupBy, newLabel, icon, onNew, onDelete, version, rowClass, editExtra }: Props) {
   const [rows, setRows] = useState<Row[]>([]);
   const [editing, setEditing] = useState<Row | null>(null);
   const [opts, setOpts] = useState<Record<string, Opt[]>>({});
@@ -266,6 +268,7 @@ export function EntityTable({ title, table, fields, listSql, listParams = [], fi
               <button onClick={() => setEditing(null)}>Abbrechen</button>
               <button className="primary" onClick={save}>Speichern</button>
             </div>
+            {editing.id && editExtra?.(editing)}
           </div>
         </div>
       )}

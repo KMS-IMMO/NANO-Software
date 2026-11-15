@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AlarmClock, Calendar, ChevronLeft, ChevronRight, CircleCheck, Columns3, Plus, Printer, SquarePen, Trash2 } from 'lucide-react';
 import { db, insert, remove, update, type Row } from '../db';
+import { kalenderImHintergrund, status as msStatus } from '../logic/ms365';
 import { datum } from '../components/EntityTable';
 import { FirmenPage, PersonenPage } from './Personen';
 import { TERMINARTEN, terminKlasse } from '../logic/termine';
@@ -65,6 +66,8 @@ export function KalenderPage() {
   const [monat, setMonat] = useState(heute().slice(0, 7));
   const [eintraege, setEintraege] = useState<Eintrag[]>([]);
   const [edit, setEdit] = useState<Row | null>(null);
+  const [outlook, setOutlook] = useState(false);
+  useEffect(() => { msStatus().then((k) => setOutlook(!!k)).catch(() => {}); }, []);
   const load = async () => {
     const von = `${monat}-01`, bis = `${monat}-31`;
     const q = (sql: string) => db.select(sql, [von, bis]);
@@ -97,7 +100,7 @@ export function KalenderPage() {
     if (!edit?.titel || !edit.datum) return;
     const v = { titel: edit.titel, datum: edit.datum, uhrzeit: edit.uhrzeit || null, art: edit.art || null, objekt_id: edit.objekt_id ?? null, notiz: edit.notiz || null };
     if (edit.id) await update('termine', edit.id, v); else await insert('termine', v);
-    setEdit(null); load();
+    setEdit(null); load(); kalenderImHintergrund();
   }
   return (
     <>
@@ -127,7 +130,7 @@ export function KalenderPage() {
         <div className="kal-legende small muted" style={{ marginTop: 10 }}>
           {TERMINARTEN.map((t) => <span key={t.art}><i className={'kal-punkt ' + t.cls} />{t.art}</span>)}
           {Object.entries(FARBE).map(([a, c]) => <span key={a}><i className={'kal-punkt ' + c} />{a === 'Termin' ? 'Termin ohne Art' : a}</span>)}</div>
-        <p className="small muted" style={{ marginTop: 4 }}>Doppelklick auf einen Tag legt einen Termin an.</p>
+        <p className="small muted" style={{ marginTop: 4 }}>Doppelklick auf einen Tag legt einen Termin an. {outlook && 'Termine, Versammlungen und Fristen stehen auch in deinem Outlook-Kalender.'}</p>
       </section>
       {edit && <Modal titel={edit.id ? 'Termin bearbeiten' : 'Termin anlegen'} onClose={() => setEdit(null)}>
         <div className="form">
@@ -138,7 +141,7 @@ export function KalenderPage() {
           <label className="wide"><span>Liegenschaft</span><ObjektWahl value={edit.objekt_id} objekte={objekte} onChange={(v) => setEdit({ ...edit, objekt_id: v })} /></label>
           <label className="wide"><span>Notiz</span><textarea rows={3} value={edit.notiz ?? ''} onChange={(e) => setEdit({ ...edit, notiz: e.target.value })} /></label>
         </div>
-        <div className="row end">{edit.id && <button className="danger" onClick={async () => { await remove('termine', edit.id); setEdit(null); load(); }}>Löschen</button>}
+        <div className="row end">{edit.id && <button className="danger" onClick={async () => { await remove('termine', edit.id); setEdit(null); load(); kalenderImHintergrund(); }}>Löschen</button>}
           <span className="grow" /><button onClick={() => setEdit(null)}>Abbrechen</button><button className="primary" onClick={speichern}>Speichern</button></div>
       </Modal>}
     </>

@@ -30,8 +30,12 @@ tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
 fints-rs = "0.2"
 keyring = { version = "3", features = ["apple-native", "windows-native"] }
-tokio = { version = "1", features = ["sync"] }
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+tokio = { version = "1", features = ["sync", "net", "time", "io-util", "macros"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+sha2 = "0.10"
+base64 = "0.22"
+rand = "0.8"
+url = "2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"

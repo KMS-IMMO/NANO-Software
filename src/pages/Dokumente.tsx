@@ -4,9 +4,10 @@ import { loeschen as inPapierkorb } from '../db/papierkorb';
 import { db, type Row } from '../db';
 import { useObjektKontext } from '../logic/objektKontext';
 import { datum } from '../components/EntityTable';
-import { ablagePfad, oeffnen, sicher, speichern, type Ablage } from '../lib/dateien';
+import { ablagePfad, lesen, oeffnen, sicher, speichern, type Ablage } from '../lib/dateien';
+import { MailFenster, personWerte, type MailStart } from '../components/MailFenster';
 import { einheitLabel, einheitPerson, personLabel } from '../db/labels';
-import { DoorOpen, FileText } from 'lucide-react';
+import { DoorOpen, FileText, Mail } from 'lucide-react';
 import { OrdnerSymbol } from '../components/OrdnerSymbol';
 
 type Bezug = Exclude<Ablage['bezug'], 'Buchung'>;
@@ -63,6 +64,30 @@ export function DokumentePage() {
   const ansichtWaehlen = (a: 'Ordner' | 'Liste') => { setAnsicht(a); try { localStorage.setItem('nano-dokumente-ansicht', a); } catch { /* egal */ } };
   const vorWoche = new Date(Date.now() - 7 * 864e5).toISOString().slice(0, 10);
   const fileRef = useRef<HTMLInputElement>(null);
+  const [mail, setMail] = useState<MailStart | null>(null);
+
+  /** Dokument als E-Mail über Outlook senden; Empfänger aus Person oder Mietvertrag, Vorlage nach dem Dateinamen */
+  async function alsMail(d: Row) {
+    setInfo('');
+    const bytes = await lesen(d.pfad);
+    if (!bytes) { setInfo(`„${d.dateiname}“ wurde nicht gefunden.`); return; }
+    let personId: number | null = null, objektId: number | null = null, objekt = '';
+    if (d.bezug === 'Person') personId = d.bezug_id;
+    if (d.bezug === 'Mietvertrag') {
+      const v = (await db.select(`SELECT v.mieter_id, e.objekt_id, e.nummer FROM mietvertraege v JOIN einheiten e ON e.id = v.einheit_id WHERE v.id = $1`, [d.bezug_id]))[0];
+      personId = v?.mieter_id ?? null; objektId = v?.objekt_id ?? null;
+    }
+    if (d.bezug === 'Objekt') objektId = d.bezug_id;
+    if (d.bezug === 'Einheit') objektId = (await db.select(`SELECT objekt_id FROM einheiten WHERE id = $1`, [d.bezug_id]))[0]?.objekt_id ?? null;
+    if (objektId) objekt = (await db.select(`SELECT name FROM objekte WHERE id = $1`, [objektId]))[0]?.name ?? '';
+    const n = String(d.dateiname);
+    const vorlage = /nebenkosten|nk-abrechnung/i.test(n) ? 'Nebenkostenabrechnung' : /hausgeld/i.test(n) ? 'Hausgeldabrechnung' : /einladung/i.test(n) ? 'Einladung Eigentümerversammlung'
+      : /niederschrift|protokoll/i.test(n) ? 'Niederschrift' : /mahnung|zahlungserinnerung/i.test(n) ? 'Mahnung' : 'Allgemeiner Brief';
+    const p = await personWerte(personId);
+    setMail({ an: p.an, vorlage, dateien: [{ name: n, bytes }],
+      werte: { ...p.werte, Objekt: objekt, Jahr: n.match(/20\d\d/)?.[0] ?? '', Dokument: n.replace(/\.[a-z0-9]+$/i, '') },
+      akte: personId ? { person_id: personId, objekt_id: objektId, name: p.name } : null });
+  }
 
   useEffect(() => {
     (async () => {
@@ -223,7 +248,8 @@ export function DokumentePage() {
               <tr key={d.id}>
                 <td><button className="link" onClick={() => oeffnen(d.pfad)} title={d.pfad}><FileText size={15} /> {d.dateiname}</button></td>
                 <td className="muted small">{datum(d.hinzugefuegt)}</td>
-                <td className="num"><button className="link small muted" onClick={() => entfernen(d)}>entfernen</button></td>
+                <td className="num nowrap"><button className="link small" title="Über Outlook als E-Mail senden" onClick={() => alsMail(d)}><Mail size={13} />Als E-Mail</button>{' '}
+                  <button className="link small muted" onClick={() => entfernen(d)}>entfernen</button></td>
               </tr>))}
           </tbody></table>}
           {!kinder.length && !hier.length && <p className="muted small">Dieser Ordner ist leer. Dateien hierher ziehen oder „Durchsuchen…“ wählen.</p>}
@@ -246,12 +272,14 @@ export function DokumentePage() {
                     <div key={d.id} className="datei">
                       <button className="link" onClick={() => oeffnen(d.pfad)} title={d.pfad}>{d.dateiname}</button>
                       <span className="muted small">{datum(d.hinzugefuegt)}</span>
+                      <button className="link small" title="Über Outlook als E-Mail senden" onClick={() => alsMail(d)}><Mail size={13} />Als E-Mail</button>
                       <button className="link small muted" onClick={() => entfernen(d)}>entfernen</button>
                     </div>))}
                 </div>);
             })}
           </div>
           </>}
+          {mail && <MailFenster start={mail} onClose={() => setMail(null)} onGesendet={setInfo} />}
           {!vorlagenOrdner.length && <p className="muted small">Lege unter Einstellungen eine Ordnervorlage für „{bezug}“ an, dann erscheinen hier deine Ordner.</p>}
         </section>
       )}

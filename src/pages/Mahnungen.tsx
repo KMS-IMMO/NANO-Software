@@ -5,7 +5,9 @@ import { useObjektKontext } from '../logic/objektKontext';
 import { datum, eur } from '../components/EntityTable';
 import { OP_SQL } from '../logic/soll';
 import { Brief, absender, dDatum, geld } from '../lib/pdf';
-import { oeffnen, speichern } from '../lib/dateien';
+import { lesen, oeffnen, speichern } from '../lib/dateien';
+import { Mail } from 'lucide-react';
+import { MailFenster, personWerte, type MailStart } from '../components/MailFenster';
 
 export const STUFEN = ['', 'Zahlungserinnerung', '1. Mahnung', '2. Mahnung'];
 const heute = () => new Date().toISOString().slice(0, 10);
@@ -23,6 +25,21 @@ export function MahnungenPage() {
 
   const [verlauf, setVerlauf] = useState<Row[]>([]);
   const [vFilter, setVFilter] = useState<'alle' | 'offen' | 'beglichen'>('alle');
+  const [mail, setMail] = useState<MailStart | null>(null);
+
+  /** Mahnung als E-Mail über Outlook senden, das PDF hängt an */
+  async function alsMail(v: Row) {
+    setInfo('');
+    const p = await personWerte(v.person_id);
+    const bytes = v.pfad ? await lesen(v.pfad) : null;
+    const name = String(v.pfad ?? '').split(/[\\/]/).pop() || `${STUFEN[v.stufe]}.pdf`;
+    setMail({
+      an: p.an, vorlage: 'Mahnung', dateien: bytes ? [{ name, bytes }] : [],
+      werte: { ...p.werte, Name: p.name || v.schuldner, Mahnstufe: STUFEN[v.stufe], Objekt: v.objekt ?? '', Einheit: v.einheit ?? '', Betrag: eur(v.betrag + (Number(v.gebuehr) || 0)), Frist: datum(v.frist) },
+      akte: v.person_id ? { person_id: v.person_id, objekt_id: v.objekt_id, name: p.name || v.schuldner } : null,
+    });
+    if (!p.an) setInfo(`Für ${v.schuldner} ist keine E-Mail-Adresse hinterlegt. Bitte im Fenster eintragen oder in den Stammdaten ergänzen.`);
+  }
   const load = async () => {
     // Alle erstellten Mahnungen; beglichen, sobald alle gemahnten Posten bezahlt sind
     const mv = await db.select(`SELECT m.*, o.name AS objekt, e.nummer AS einheit FROM mahnungen m LEFT JOIN objekte o ON o.id = m.objekt_id LEFT JOIN einheiten e ON e.id = m.einheit_id
@@ -148,9 +165,11 @@ export function MahnungenPage() {
                 <td className="num">{eur(v.betrag + (Number(v.gebuehr) || 0))}{v.gebuehr ? <div className="muted small">inkl. {eur(v.gebuehr)} Gebühr</div> : null}</td>
                 <td className={'num ' + (v.beglichen ? '' : 'neg')}>{eur(v.rest)}</td>
                 <td><span className={'pill st-' + (v.beglichen ? 'beglichen' : 'offen')}>{v.beglichen ? 'beglichen' : 'offen'}</span></td>
-                <td className="actions">{v.pfad && <button className="link" onClick={() => oeffnen(v.pfad)}>PDF öffnen</button>}</td>
+                <td className="actions nowrap">{v.pfad && <button className="link" onClick={() => oeffnen(v.pfad)}>PDF öffnen</button>}
+                  {' '}<button className="link" title="Über Outlook als E-Mail senden" onClick={() => alsMail(v)}><Mail size={14} />Als E-Mail</button></td>
               </tr>))}</tbody>
           </table>)}
+        {mail && <MailFenster start={mail} onClose={() => setMail(null)} onGesendet={setInfo} />}
         <p className="muted small">Der Status springt automatisch auf „beglichen“, sobald die gemahnten Posten bezahlt sind, egal ob per Bankzuordnung oder von Hand.</p>
       </section>
     </>

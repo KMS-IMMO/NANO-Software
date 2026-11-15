@@ -2,7 +2,7 @@ import { lazy, Suspense, useEffect, useRef, useState, type ComponentType, type R
 import { HashRouter, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import {
   AlarmClock, Banknote, CalendarClock, Bell, Building2, Calendar, ChevronRight, CircleCheck, Columns3, Contact, CreditCard, FolderOpen, LayoutDashboard, Landmark, Lock,
-  Network, Receipt, Search, Settings, SquarePen, Trash2, FileSpreadsheet, KeyRound, UserCog, UserRound, Users,
+  Network, Receipt, Search, Settings, SquarePen, Trash2, FileSpreadsheet, KeyRound, UserCog, UserRound, Users, Mail, FileText, Unplug,
 } from 'lucide-react';
 import { db, mehrplatz, sicherheit, type Row } from './db';
 import { personLabel } from './db/labels';
@@ -14,6 +14,7 @@ import { ModalHelfer } from './components/ModalHelfer';
 import { DashboardPage } from './pages/Dashboard';
 import { autoAbruf, BANK_INFO } from './logic/bankAbruf';
 import { wiederkehrendErzeugen } from './logic/wiederkehrend';
+import { kalenderImHintergrund, MS_EVENT, ungelesen } from './logic/ms365';
 
 // Seiten erst laden, wenn sie gebraucht werden: Die App startet schneller (Dashboard sofort, Rest bei Bedarf)
 function seite(laden: () => Promise<Record<string, unknown>>, name: string) {
@@ -51,8 +52,11 @@ const KontaktePage = seite(() => import('./pages/Produktiv'), 'KontaktePage');
 const NotizenPage = seite(() => import('./pages/Produktiv'), 'NotizenPage');
 const TicketBoardsPage = seite(() => import('./pages/Produktiv'), 'TicketBoardsPage');
 const TodoPage = seite(() => import('./pages/Produktiv'), 'TodoPage');
+const PostfachPage = seite(() => import('./pages/Kommunikation'), 'PostfachPage');
+const TextvorlagenPage = seite(() => import('./pages/Kommunikation'), 'TextvorlagenPage');
+const Microsoft365Page = seite(() => import('./pages/Kommunikation'), 'Microsoft365Page');
 
-type Item = { to: string; label: string; icon?: ReactNode; sub?: string };
+type Item = { to: string; label: string; icon?: ReactNode; sub?: string; extra?: ReactNode };
 type Group = { label: string; icon: ReactNode; items: Item[] };
 type Abschnitt = { titel: string; eintraege: (Item | Group)[] };
 const I = 18;
@@ -98,12 +102,30 @@ const NAV: Abschnitt[] = [
     { to: '/todo', label: 'Todo', sub: 'Aufgaben', icon: <CircleCheck size={I} /> },
     { to: '/notizen', label: 'Notizen', icon: <SquarePen size={I} /> },
   ] },
+  { titel: 'Kommunikation', eintraege: [
+    { to: '/postfach', label: 'Postfach', sub: 'Outlook und freigegebene', icon: <Mail size={I} />, extra: <PostfachZahl /> },
+    { to: '/textvorlagen', label: 'Textvorlagen', icon: <FileText size={I} /> },
+    { to: '/microsoft-365', label: 'Microsoft 365', icon: <Unplug size={I} /> },
+  ] },
 ];
+
+/** Ungelesene Mails in allen Posteingängen, alle 5 Minuten neu gezählt */
+function PostfachZahl() {
+  const [n, setN] = useState(0);
+  useEffect(() => {
+    const zaehlen = () => ungelesen().then(setN).catch(() => setN(0));
+    const t = setTimeout(zaehlen, 2500);
+    const i = setInterval(zaehlen, 300e3);
+    window.addEventListener(MS_EVENT, zaehlen);
+    return () => { clearTimeout(t); clearInterval(i); window.removeEventListener(MS_EVENT, zaehlen); };
+  }, []);
+  return n > 0 ? <em className="nav-zahl" title={`${n} ungelesen`}>{n > 99 ? '99+' : n}</em> : null;
+}
 
 function NavEintrag({ n, kompakt }: { n: Item; kompakt: boolean }) {
   return (
     <NavLink to={n.to} end={n.to === '/'} className={'nav-item' + (n.sub ? ' zwei' : '')} title={kompakt ? n.label : undefined}>
-      {n.icon}<span>{n.label}{n.sub && <small>{n.sub}</small>}</span>
+      {n.icon}<span>{n.label}{n.sub && <small>{n.sub}</small>}</span>{n.extra}
     </NavLink>
   );
 }
@@ -231,7 +253,10 @@ function Rahmen() {
       wiederkehrendErzeugen().then((n) => n && f(new CustomEvent(BANK_INFO, { detail: `${n} wiederkehrende Rechnung${n > 1 ? 'en' : ''} angelegt` }))).catch(() => {});
     }, 1500);
     const stunde = setInterval(sichern, 3600e3);
-    return () => { window.removeEventListener(BANK_INFO, f); clearTimeout(t); clearInterval(stunde); };
+    // Outlook-Kalender: Termine, Versammlungen und Fristen beim Start und alle 15 Minuten abgleichen
+    const kal = setTimeout(kalenderImHintergrund, 6000);
+    const kalTakt = setInterval(kalenderImHintergrund, 900e3);
+    return () => { window.removeEventListener(BANK_INFO, f); clearTimeout(t); clearInterval(stunde); clearTimeout(kal); clearInterval(kalTakt); };
   }, []);
   return (
       <div className={'app' + (kompakt ? ' kompakt' : '')}>
@@ -293,6 +318,9 @@ function Rahmen() {
               <Route path="/tickets" element={<TicketBoardsPage />} />
               <Route path="/todo" element={<TodoPage />} />
               <Route path="/notizen" element={<NotizenPage />} />
+              <Route path="/postfach" element={<PostfachPage />} />
+              <Route path="/textvorlagen" element={<TextvorlagenPage />} />
+              <Route path="/microsoft-365" element={<Microsoft365Page />} />
             </Routes>
             </Suspense>
             </Seite>

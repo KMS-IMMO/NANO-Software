@@ -758,4 +758,87 @@ CREATE TABLE zaehlerstaende (
   `
 ALTER TABLE einheiten ADD COLUMN vermietet INTEGER NOT NULL DEFAULT 0;
 `,
+  // 30: Kommunikation mit Microsoft 365 – Mails in der Akte, Textvorlagen, Termine im Outlook-Kalender
+  `
+CREATE TABLE mails (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  postfach TEXT,                   -- 'me' oder Adresse des freigegebenen Postfachs
+  graph_id TEXT,                   -- Kennung der Mail bei Microsoft
+  conversation_id TEXT,            -- Unterhaltung: Antworten werden darüber erkannt
+  richtung TEXT NOT NULL,          -- 'aus' (gesendet) oder 'ein' (empfangen)
+  von TEXT, an TEXT, betreff TEXT,
+  datum TEXT NOT NULL,
+  text TEXT,
+  anhaenge TEXT,                   -- Dateinamen, durch „; “ getrennt
+  person_id INTEGER REFERENCES personen(id) ON DELETE SET NULL,
+  firma_id INTEGER REFERENCES firmen(id) ON DELETE SET NULL,
+  objekt_id INTEGER REFERENCES objekte(id) ON DELETE SET NULL,
+  abgelegt TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+);
+CREATE INDEX mails_person ON mails(person_id);
+CREATE INDEX mails_unterhaltung ON mails(conversation_id);
+CREATE TABLE mail_vorlagen (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  betreff TEXT,
+  text TEXT
+);
+INSERT INTO mail_vorlagen (name, betreff, text) VALUES
+ ('Mahnung', '{Mahnstufe}: {Objekt}, {Einheit}', '{Briefanrede},
+
+für {Einheit} in {Objekt} sind noch {Betrag} offen. Die {Mahnstufe} finden Sie im Anhang.
+
+Bitte überweisen Sie den Betrag bis zum {Frist}.
+
+Mit freundlichen Grüßen
+{Sachbearbeiter}
+KMS Immobilienverwaltung'),
+ ('Nebenkostenabrechnung', 'Nebenkostenabrechnung {Jahr}: {Objekt}, {Einheit}', '{Briefanrede},
+
+anbei erhalten Sie Ihre Nebenkostenabrechnung für {Jahr}.
+
+Bei Fragen melden Sie sich gern.
+
+Mit freundlichen Grüßen
+{Sachbearbeiter}
+KMS Immobilienverwaltung'),
+ ('Hausgeldabrechnung', 'Hausgeldabrechnung {Jahr}: {Objekt}', '{Briefanrede},
+
+anbei erhalten Sie die Hausgeldabrechnung {Jahr} für {Objekt}.
+
+Mit freundlichen Grüßen
+{Sachbearbeiter}
+KMS Immobilienverwaltung'),
+ ('Einladung Eigentümerversammlung', 'Einladung zur Eigentümerversammlung: {Objekt}', '{Briefanrede},
+
+anbei erhalten Sie die Einladung zur Eigentümerversammlung mit Tagesordnung und Vollmacht.
+
+Mit freundlichen Grüßen
+{Sachbearbeiter}
+KMS Immobilienverwaltung'),
+ ('Niederschrift', 'Niederschrift der Eigentümerversammlung: {Objekt}', '{Briefanrede},
+
+anbei erhalten Sie die Niederschrift der Eigentümerversammlung.
+
+Mit freundlichen Grüßen
+{Sachbearbeiter}
+KMS Immobilienverwaltung'),
+ ('Allgemeiner Brief', '{Dokument}', '{Briefanrede},
+
+anbei erhalten Sie {Dokument}.
+
+Mit freundlichen Grüßen
+{Sachbearbeiter}
+KMS Immobilienverwaltung');
+CREATE TABLE outlook_termine (
+  quelle TEXT NOT NULL,            -- termin, versammlung, frist
+  quelle_id INTEGER NOT NULL,
+  event_id TEXT NOT NULL,
+  stand TEXT,
+  PRIMARY KEY (quelle, quelle_id)
+);
+INSERT OR IGNORE INTO einstellungen (schluessel, wert) VALUES
+ ('ms_postfaecher', '["Info@kms.koeln","Kontakt@kms.koeln","Service@kms.koeln","Payment@kms.koeln","Ablesung@kms.koeln"]'),
+ ('ms_kalender', '1'), ('ms_akte_auto', '1');
+`,
 ];
