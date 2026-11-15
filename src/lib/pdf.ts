@@ -5,10 +5,12 @@ import { db } from '../db';
 import { briefpapierLaden, type Briefpapier } from './briefpapier';
 import { unterschriftLaden, type Unterschrift } from './unterschrift';
 import { logoPng } from '../components/logoPfade';
+import { SCHRIFT, pdfSchriftLaden, schriftEinbinden } from './pdfSchrift';
 
 export interface Absender { name: string; strasse?: string; plz?: string; ort?: string; telefon?: string; email?: string; briefpapier?: Briefpapier | null; unterschrift?: Unterschrift | null; logo?: string | null }
 
 export async function absender(): Promise<Absender> {
+  await pdfSchriftLaden();
   const e = Object.fromEntries((await db.select('SELECT * FROM einstellungen')).map((r) => [r.schluessel, r.wert ?? '']));
   return { name: e.firma_name || 'KMS Immobilien', strasse: e.firma_strasse, plz: e.firma_plz, ort: e.firma_ort, telefon: e.firma_telefon, email: e.firma_email,
     briefpapier: await briefpapierLaden().catch(() => null), unterschrift: await unterschriftLaden().catch(() => null), logo: await logoPng(1200).catch(() => null) };
@@ -38,6 +40,7 @@ export class Brief {
   private naechsteErste = false;
   constructor(abs: Absender) {
     this.abs = abs;
+    schriftEinbinden(this.doc);
     const bp = abs.briefpapier;
     if (bp) {
       // Briefpapier liegt unter dem Text: beim Anlegen jeder Seite zuerst das Bild zeichnen
@@ -68,10 +71,10 @@ export class Brief {
   entwurf(text = 'ENTWURF') {
     const d = this.doc, n = d.getNumberOfPages();
     for (let i = 1; i <= n; i++) {
-      d.setPage(i); d.setFont('helvetica', 'bold'); d.setFontSize(80); d.setTextColor(225, 215, 200);
+      d.setPage(i); d.setFont(SCHRIFT(), 'bold'); d.setFontSize(80); d.setTextColor(225, 215, 200);
       d.text(text, 105, 170, { align: 'center', angle: 35 });
     }
-    d.setTextColor(0); d.setFont('helvetica', 'normal'); d.setFontSize(10.5);
+    d.setTextColor(0); d.setFont(SCHRIFT(), 'normal'); d.setFontSize(10.5);
     return this;
   }
 
@@ -80,11 +83,11 @@ export class Brief {
     const bp = this.abs.briefpapier;
     if (!bp || bp.kopfDrucken) {
       this.firmenkopf();
-      d.setFont('helvetica', 'normal'); d.setFontSize(8.5); d.setTextColor(90);
+      d.setFont(SCHRIFT(), 'normal'); d.setFontSize(8.5); d.setTextColor(90);
       const zeile = [this.abs.strasse, [this.abs.plz, this.abs.ort].filter(Boolean).join(' '), this.abs.telefon, this.abs.email].filter(Boolean).join(' · ');
       if (zeile) d.text(zeile, 20, 25);
     }
-    d.setFont('helvetica', 'normal'); d.setTextColor(90);
+    d.setFont(SCHRIFT(), 'normal'); d.setTextColor(90);
     // Rücksendeangabe und Anschriftfeld (Fensterumschlag DIN lang); beim Briefpapier steht die Rücksendeangabe meist schon drauf
     d.setFontSize(7); if (!bp || bp.kopfDrucken) d.text([this.abs.name, this.abs.strasse, [this.abs.plz, this.abs.ort].filter(Boolean).join(' ')].filter(Boolean).join(', '), 20, 47);
     d.setTextColor(0); d.setFontSize(10.5);
@@ -94,9 +97,9 @@ export class Brief {
   }
 
   betreff(text: string) {
-    this.doc.setFont('helvetica', 'bold'); this.doc.setFontSize(11.5);
+    this.doc.setFont(SCHRIFT(), 'bold'); this.doc.setFontSize(11.5);
     this.doc.text(text, 20, this.y); this.y += 10;
-    this.doc.setFont('helvetica', 'normal'); this.doc.setFontSize(10.5);
+    this.doc.setFont(SCHRIFT(), 'normal'); this.doc.setFontSize(10.5);
   }
 
   absatz(text: string, abstand = 5) {
@@ -111,7 +114,7 @@ export class Brief {
     for (let i = rechtsAb; i < head.length; i++) align[i] = { halign: 'right', cellWidth: 'wrap' };
     autoTable(this.doc, {
       startY: this.y, head: [head], body, foot, showFoot: 'lastPage', margin: { left: 20, right: 20, top: this.abs.briefpapier ? this.obenFolge : 15, bottom: this.abs.briefpapier ? 297 - this.grenzeUnten : 15 },
-      styles: { font: 'helvetica', fontSize: 9.5, cellPadding: 1.8 },
+      styles: { font: SCHRIFT(), fontSize: 9.5, cellPadding: 1.8 },
       headStyles: { fillColor: [176, 138, 74], textColor: 255 },
       footStyles: { fillColor: [248, 240, 227], textColor: 0, fontStyle: 'bold' },
       columnStyles: align,
@@ -194,28 +197,28 @@ export class Brief {
   private firmenkopf() {
     const d = this.doc;
     if (this.abs.logo) { d.addImage(this.abs.logo, 'PNG', 148, 10, 42, 42 * 616 / 1182, 'kms-logo', 'FAST'); return; }
-    d.setFont('helvetica', 'bold'); d.setFontSize(16); d.setTextColor(80); d.text(this.abs.name, 20, 20);
+    d.setFont(SCHRIFT(), 'bold'); d.setFontSize(16); d.setTextColor(80); d.text(this.abs.name, 20, 20);
     d.setDrawColor(176, 138, 74); d.setLineWidth(0.6); d.line(20, 22, 20 + d.getTextWidth(this.abs.name), 22);
   }
 
   /** Kopf für Berichte und Stammblätter: Titel statt Anschriftfeld */
   berichtKopf(titel: string, zeilen: string[], datum: string) {
     const d = this.doc, bp = this.abs.briefpapier;
-    let y = bp ? 47 : 50;
+    let y = 50;
     if (!bp || bp.kopfDrucken) {
       this.firmenkopf();
-      d.setFont('helvetica', 'normal'); d.setFontSize(8.5); d.setTextColor(90);
+      d.setFont(SCHRIFT(), 'normal'); d.setFontSize(8.5); d.setTextColor(90);
       const zeile = [this.abs.strasse, [this.abs.plz, this.abs.ort].filter(Boolean).join(' '), this.abs.telefon, this.abs.email].filter(Boolean).join(' · ');
       if (zeile) d.text(zeile, 20, 25);
       if (!bp) y = 32;
     }
     // Titel links im Anschriftbereich, Ort und Datum darunter: rechts bleibt Platz für den Informationsblock des Briefpapiers
     const z = [...zeilen.filter(Boolean), `${this.abs.ort ? this.abs.ort + ', ' : ''}${dDatum(datum)}`];
-    d.setFont('helvetica', 'bold'); d.setFontSize(16); d.setTextColor(30);
+    d.setFont(SCHRIFT(), 'bold'); d.setFontSize(16); d.setTextColor(30);
     const t = d.splitTextToSize(titel, bp ? 100 : 170) as string[];
     d.text(t, 20, y + 6);
     y += (t.length - 1) * 6.5;
-    d.setFont('helvetica', 'normal'); d.setFontSize(10); d.setTextColor(85);
+    d.setFont(SCHRIFT(), 'normal'); d.setFontSize(10); d.setTextColor(85);
     const zl = z.flatMap((x) => d.splitTextToSize(x, bp ? 100 : 170) as string[]);
     d.text(zl, 20, y + 13);
     this.y = Math.max(y + 13 + zl.length * 5 + 2, bp ? 86 : 0);
@@ -228,9 +231,9 @@ export class Brief {
   abschnitt(titel: string) {
     this.platz(34);   // Überschrift nie allein am Seitenende
     const d = this.doc;
-    d.setFont('helvetica', 'bold'); d.setFontSize(11.5); d.setTextColor(150, 112, 52);
+    d.setFont(SCHRIFT(), 'bold'); d.setFontSize(11.5); d.setTextColor(150, 112, 52);
     d.text(titel.toUpperCase(), 20, this.y);
-    d.setTextColor(0); d.setFont('helvetica', 'normal'); d.setFontSize(10.5);
+    d.setTextColor(0); d.setFont(SCHRIFT(), 'normal'); d.setFontSize(10.5);
     this.y += 4;
   }
 
@@ -244,7 +247,7 @@ export class Brief {
     for (let i = 0; i < paare.length; i += 2) zeilen.push([paare[i][0], paare[i][1], paare[i + 1]?.[0] ?? '', paare[i + 1]?.[1] ?? '']);
     autoTable(this.doc, {
       startY: this.y, body: zeilen, theme: 'plain', margin: this.raender,
-      styles: { font: 'helvetica', fontSize: 9.5, cellPadding: { top: 1.25, bottom: 1.25, left: 0, right: 3 }, textColor: 20, overflow: 'linebreak' },
+      styles: { font: SCHRIFT(), fontSize: 9.5, cellPadding: { top: 1.25, bottom: 1.25, left: 0, right: 3 }, textColor: 20, overflow: 'linebreak' },
       columnStyles: { 0: { cellWidth: 34, textColor: 110, fontSize: 8.5 }, 1: { cellWidth: 51, fontStyle: 'bold' }, 2: { cellWidth: 34, textColor: 110, fontSize: 8.5 }, 3: { cellWidth: 51, fontStyle: 'bold' } },
     });
     this.y = (this.doc as any).lastAutoTable.finalY + 5.5;
@@ -266,7 +269,7 @@ export class Brief {
     autoTable(this.doc, {
       startY: this.y, head: [head], body, foot: [[{ content: 'Gesamt', colSpan: letzte, styles: { halign: 'right' } }, { content: gesamt, styles: { halign: 'right' } }]], showFoot: 'lastPage', showHead: 'everyPage',
       margin: this.raender, theme: 'grid',
-      styles: { font: 'helvetica', fontSize: 9, cellPadding: { top: 2.2, bottom: 2.2, left: 2, right: 2 }, lineColor: [228, 222, 211], lineWidth: 0.15, textColor: 25 },
+      styles: { font: SCHRIFT(), fontSize: 9, cellPadding: { top: 2.2, bottom: 2.2, left: 2, right: 2 }, lineColor: [228, 222, 211], lineWidth: 0.15, textColor: 25 },
       headStyles: { fillColor: farbe, textColor: 255, fontStyle: 'bold' },
       footStyles: { fillColor: [248, 240, 227], textColor: 0, fontStyle: 'bold' },
       columnStyles: cs,
@@ -283,8 +286,8 @@ export class Brief {
       const x = 20 + i * w;
       this.doc.setFillColor(248, 244, 237); this.doc.roundedRect(x, this.y, w - 3, 15, 1.5, 1.5, 'F');
       this.doc.setFontSize(8); this.doc.setTextColor(110); this.doc.text(t.toUpperCase(), x + 3.5, this.y + 5.2);
-      this.doc.setFont('helvetica', 'bold'); this.doc.setFontSize(12); this.doc.setTextColor(25); this.doc.text(v, x + 3.5, this.y + 11.6);
-      this.doc.setFont('helvetica', 'normal');
+      this.doc.setFont(SCHRIFT(), 'bold'); this.doc.setFontSize(12); this.doc.setTextColor(25); this.doc.text(v, x + 3.5, this.y + 11.6);
+      this.doc.setFont(SCHRIFT(), 'normal');
     });
     this.doc.setTextColor(0); this.doc.setFontSize(10.5);
     this.y += 23;
@@ -316,21 +319,21 @@ export async function listePdf(titel: string, untertitel: string, head: string[]
   const mindest = (pt: number) => head.map((h, i) => {
     b.doc.setFontSize(pt);
     const woerter = (t: string, ganz: boolean) => (ganz ? [t] : t.split(/\s+/));
-    b.doc.setFont('helvetica', 'bold');
+    b.doc.setFont(SCHRIFT(), 'bold');
     let w = Math.max(...woerter(h, false).map((x) => b.doc.getTextWidth(x)));
-    for (const z of zeilen) { b.doc.setFont('helvetica', 'bold'); w = Math.max(w, ...woerter(text(z[i]), rechts.includes(i) || /^\d{2}\.\d{2}\.\d{4}$/.test(text(z[i]))).map((x) => b.doc.getTextWidth(x))); }
+    for (const z of zeilen) { b.doc.setFont(SCHRIFT(), 'bold'); w = Math.max(w, ...woerter(text(z[i]), rechts.includes(i) || /^\d{2}\.\d{2}\.\d{4}$/.test(text(z[i]))).map((x) => b.doc.getTextWidth(x))); }
     return w + 3.4;
   });
   let schrift = head.length <= 5 ? 9.5 : head.length <= 7 ? 8.5 : 8;
   while (schrift > 6 && mindest(schrift).reduce((a, x) => a + x, 0) > 170) schrift -= 0.3;
-  b.doc.setFont('helvetica', 'normal');
+  b.doc.setFont(SCHRIFT(), 'normal');
   const cs: Record<number, { halign?: 'right'; minCellWidth: number }> = {};
   mindest(schrift).forEach((w, i) => { cs[i] = { minCellWidth: w, ...(rechts.includes(i) ? { halign: 'right' as const } : {}) }; });
   autoTable(b.doc, {
     startY: b.y, head: [head], body, foot, showFoot: 'lastPage', showHead: 'everyPage',
     margin: { left: 20, right: 20, top: b.abs.briefpapier ? b.obenFolge : 18, bottom: b.abs.briefpapier ? 297 - b.grenzeUnten : 18 },
     theme: 'grid',
-    styles: { font: 'helvetica', fontSize: schrift, cellPadding: { top: 1.8, bottom: 1.8, left: 1.6, right: 1.6 }, lineColor: [228, 222, 211], lineWidth: 0.15, textColor: 25, overflow: 'linebreak' },
+    styles: { font: SCHRIFT(), fontSize: schrift, cellPadding: { top: 1.8, bottom: 1.8, left: 1.6, right: 1.6 }, lineColor: [228, 222, 211], lineWidth: 0.15, textColor: 25, overflow: 'linebreak' },
     headStyles: { fillColor: [176, 138, 74], textColor: 255, fontStyle: 'bold' },
     footStyles: { fillColor: [248, 240, 227], textColor: 0, fontStyle: 'bold' },
     alternateRowStyles: { fillColor: [252, 250, 246] },

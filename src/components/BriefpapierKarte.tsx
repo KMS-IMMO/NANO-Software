@@ -1,7 +1,7 @@
 // Einstellungen: Briefpapier-Vorlage hochladen. Wird in allen Briefen, Mahnungen und Abrechnungen als Hintergrund genutzt.
 import { useEffect, useRef, useState } from 'react';
-import { FileUp, Eye, Trash2, X } from 'lucide-react';
-import { briefpapierAusDatei, briefpapierLaden, briefpapierSpeichern, pdfSeitenAlsBilder } from '../lib/briefpapier';
+import { FileUp, Eye, Trash2, X, Sparkles, Undo2 } from 'lucide-react';
+import { APP_NAME, appBriefpapierSetzen, briefpapierAusDatei, briefpapierLaden, briefpapierSpeichern, pdfSeitenAlsBilder, vorherigesBriefpapier, vorherigesWiederherstellen } from '../lib/briefpapier';
 import { Brief, absender } from '../lib/pdf';
 
 export function BriefpapierKarte() {
@@ -15,6 +15,7 @@ export function BriefpapierKarte() {
   const [fehler, setFehler] = useState('');
   const [ok, setOk] = useState('');
   const [muster, setMuster] = useState<string[] | null>(null);
+  const [vorher, setVorher] = useState<{ name: string; datum: string } | null>(null);
   const dateiRef = useRef<HTMLInputElement>(null);
   const folgeRef = useRef<HTMLInputElement>(null);
 
@@ -22,6 +23,7 @@ export function BriefpapierKarte() {
     const bp = await briefpapierLaden();
     setErste(bp?.erste ?? ''); setFolge(bp?.folge ?? ''); setName(bp?.name ?? '');
     setKopf(!!bp?.kopfDrucken); setUnten(String(bp?.unten ?? 27)); setOben(String(bp?.obenFolge ?? 25));
+    setVorher(await vorherigesBriefpapier());
   }
   useEffect(() => { laden(); }, []);
   const melden = (t: string) => { setOk(t); setTimeout(() => setOk(''), 2500); };
@@ -48,6 +50,18 @@ export function BriefpapierKarte() {
   async function entfernen() {
     await briefpapierSpeichern({ briefpapier_erste: '', briefpapier_folge: '', briefpapier_name: '' });
     await laden(); melden('Briefpapier entfernt');
+  }
+
+  async function appDesign() {
+    setFehler(''); setBusy('app');
+    try { await appBriefpapierSetzen(); await laden(); melden('Briefpapier im App-Design gesetzt'); } catch (e: any) { setFehler(e?.message ?? String(e)); }
+    setBusy('');
+  }
+
+  async function wiederherstellen() {
+    setFehler(''); setBusy('vorher');
+    try { await vorherigesWiederherstellen(); await laden(); melden('Früheres Briefpapier wiederhergestellt'); } catch (e: any) { setFehler(e?.message ?? String(e)); }
+    setBusy('');
   }
 
   async function musterZeigen() {
@@ -94,6 +108,10 @@ export function BriefpapierKarte() {
             <button onClick={() => dateiRef.current?.click()}><FileUp size={16} />{erste ? 'Andere Vorlage' : 'Vorlage hochladen'}</button>
             {erste && <button onClick={() => folgeRef.current?.click()}><FileUp size={16} />Folgeseite ändern</button>}
             {erste && <button className="danger-link" onClick={entfernen}><Trash2 size={16} />Entfernen</button>}
+          </div>
+          <div className="row" style={{ flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
+            {name !== APP_NAME && <button onClick={appDesign} disabled={!!busy}><Sparkles size={16} />{busy === 'app' ? 'Wird gesetzt …' : 'Briefpapier im App-Design verwenden'}</button>}
+            {name === APP_NAME && vorher && <button onClick={wiederherstellen} disabled={!!busy} title={vorher.datum ? `gesichert am ${vorher.datum.split('-').reverse().join('.')}` : undefined}><Undo2 size={16} />Früheres Briefpapier wiederherstellen ({vorher.name})</button>}
           </div>
           <div className="row end" style={{ marginTop: 10 }}>
             <span className="grow" />{ok && <span className="pos">{ok}</span>}

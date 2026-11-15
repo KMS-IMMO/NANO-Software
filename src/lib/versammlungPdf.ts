@@ -3,6 +3,7 @@
 import autoTable from 'jspdf-autotable';
 import type { Row } from '../db';
 import { Brief, absender, dDatum, type Absender } from './pdf';
+import { SCHRIFT } from './pdfSchrift';
 import { ergebnis, einladenBis, type Versammlung } from '../logic/versammlung';
 
 const anschrift = (p: Row, o: Row) => {
@@ -18,28 +19,28 @@ const anredeZeile = (p: Row) => p.anrede === 'Herr' ? `Sehr geehrter Herr ${p.na
 function kasten(b: Brief, zeilen: { text: string; fett?: boolean; farbe?: [number, number, number]; klein?: boolean }[], fill: [number, number, number], rand: [number, number, number], fein = false) {
   const d = b.doc;
   const gr = (k?: boolean) => fein ? 7.6 : k ? 8.5 : 9.8, zh = (k?: boolean) => fein ? 3.4 : k ? 4 : 4.6;
-  const teile = zeilen.map((z) => { d.setFont('helvetica', z.fett ? 'bold' : 'normal'); d.setFontSize(gr(z.klein)); return { ...z, l: d.splitTextToSize(z.text, fein ? 162 : 160) as string[] }; });
+  const teile = zeilen.map((z) => { d.setFont(SCHRIFT(), z.fett ? 'bold' : 'normal'); d.setFontSize(gr(z.klein)); return { ...z, l: d.splitTextToSize(z.text, fein ? 162 : 160) as string[] }; });
   const h = teile.reduce((a, t) => a + t.l.length * zh(t.klein), 0) + 5;
   b.platz(fein ? h - 3 : h + 3);
   d.setFillColor(...fill); d.roundedRect(20, b.y - 4, 170, h, 1.5, 1.5, 'F');
   d.setFillColor(...rand); d.rect(20, b.y - 4, 1.2, h, 'F');
   let y = b.y + 0.4;
   for (const t of teile) {
-    d.setFont('helvetica', t.fett ? 'bold' : 'normal'); d.setFontSize(gr(t.klein));
+    d.setFont(SCHRIFT(), t.fett ? 'bold' : 'normal'); d.setFontSize(gr(t.klein));
     d.setTextColor(...(t.farbe ?? [25, 25, 25]));
     d.text(t.l, 25, y); y += t.l.length * zh(t.klein);
   }
-  d.setFont('helvetica', 'normal'); d.setFontSize(10.5); d.setTextColor(0);
+  d.setFont(SCHRIFT(), 'normal'); d.setFontSize(10.5); d.setTextColor(0);
   b.y += h + 2;
 }
 
 function topKopf(b: Brief, text: string) {
   const d = b.doc;
-  d.setFont('helvetica', 'bold'); d.setFontSize(10.5);
+  d.setFont(SCHRIFT(), 'bold'); d.setFontSize(10.5);
   const l = d.splitTextToSize(text, 170) as string[];
   b.platz(l.length * 5 + 28);
   d.setTextColor(150, 112, 52); d.text(l, 20, b.y);
-  d.setTextColor(0); d.setFont('helvetica', 'normal');
+  d.setTextColor(0); d.setFont(SCHRIFT(), 'normal');
   b.y += l.length * 5 + 1;
 }
 
@@ -143,16 +144,16 @@ export async function niederschriftPdf(vs: Versammlung, nurPersonen?: number[]):
     spalten.forEach(([titel, name], i) => {
       const x = 20 + i * 58;
       d.setDrawColor(60); d.setLineWidth(0.25); d.line(x, b.y, x + 52, b.y);
-      d.setFont('helvetica', 'bold'); d.setFontSize(8.5); d.text(titel, x, b.y + 4);
-      d.setFont('helvetica', 'normal'); d.setTextColor(95); if (name) d.text(name, x, b.y + 8); d.setTextColor(0);
+      d.setFont(SCHRIFT(), 'bold'); d.setFontSize(8.5); d.text(titel, x, b.y + 4);
+      d.setFont(SCHRIFT(), 'normal'); d.setTextColor(95); if (name) d.text(name, x, b.y + 8); d.setTextColor(0);
     });
     b.y += 16;
     // Kenntnisnahme durch den Eigentümer
     const hK = 38;
     b.platz(hK + 4);
     d.setDrawColor(176, 138, 74); d.setLineWidth(0.4); d.roundedRect(20, b.y, 170, hK, 2, 2, 'S');
-    d.setFont('helvetica', 'bold'); d.setFontSize(10.5); d.text('Zur Kenntnis genommen', 25, b.y + 7);
-    d.setFont('helvetica', 'normal'); d.setFontSize(9);
+    d.setFont(SCHRIFT(), 'bold'); d.setFontSize(10.5); d.text('Zur Kenntnis genommen', 25, b.y + 7);
+    d.setFont(SCHRIFT(), 'normal'); d.setFontSize(9);
     d.text(d.splitTextToSize(`Ich habe das Protokoll und die Beschluss-Niederschrift der Versammlung vom ${dDatum(v.datum)} erhalten und zur Kenntnis genommen.`, 160), 25, b.y + 12.5);
     const lin = b.y + hK - 9;
     if (t.unterschrift) {
@@ -207,7 +208,7 @@ function vollmachtSeite(b: Brief, vs: Versammlung, t: Row, abs: Absender) {
       startY: b.y, head: [['TOP', 'Ja', 'Nein', 'Enth.', 'frei']],
       body: beschl.map((x) => [`TOP ${x.nr} · ${x.titel}`, '', '', '', '']),
       margin: { left: 20, right: 20, top: b.abs.briefpapier ? b.obenFolge : 18, bottom: b.abs.briefpapier ? 297 - b.grenzeUnten : 18 },
-      theme: 'grid', styles: { font: 'helvetica', fontSize: 8.6, cellPadding: 1.3, lineColor: [228, 222, 211], lineWidth: 0.15, textColor: 25 },
+      theme: 'grid', styles: { font: SCHRIFT(), fontSize: 8.6, cellPadding: 1.3, lineColor: [228, 222, 211], lineWidth: 0.15, textColor: 25 },
       headStyles: { fillColor: [176, 138, 74], textColor: 255, fontStyle: 'bold', halign: 'center' },
       columnStyles: { 0: { cellWidth: 118 }, 1: { cellWidth: 13 }, 2: { cellWidth: 13 }, 3: { cellWidth: 13 }, 4: { cellWidth: 13 } },
       didParseCell: (h) => { if (h.section === 'head' && h.column.index === 0) h.cell.styles.halign = 'left'; },

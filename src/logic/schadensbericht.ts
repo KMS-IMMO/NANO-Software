@@ -4,6 +4,7 @@ import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { db, type Row } from '../db';
 import { absender, dDatum, geld } from '../lib/pdf';
+import { SCHRIFT, schriftEinbinden } from '../lib/pdfSchrift';
 
 export type Umfang = 'schaeden' | 'alle';
 
@@ -32,11 +33,12 @@ export async function berichtPdf(jahr: number, gruppen: { objekt: Row; posten: R
   const abs = await absender();
   const titel = `${umfang === 'schaeden' ? 'Schadensbericht' : 'Vorgänge und Tickets'} ${jahr}`;
   const doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'landscape' });
+  schriftEinbinden(doc);
   const kopf = (o: Row) => {
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(15); doc.setTextColor(80); doc.text(abs.name, 15, 16);
+    doc.setFont(SCHRIFT(), 'bold'); doc.setFontSize(15); doc.setTextColor(80); doc.text(abs.name, 15, 16);
     doc.setDrawColor(176, 138, 74); doc.setLineWidth(0.6); doc.line(15, 18, 15 + doc.getTextWidth(abs.name), 18);
     doc.setTextColor(0); doc.setFontSize(13); doc.text(`${titel} · ${o.name}`, 15, 28);
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(100);
+    doc.setFont(SCHRIFT(), 'normal'); doc.setFontSize(9); doc.setTextColor(100);
     doc.text([[o.strasse, [o.plz, o.ort].filter(Boolean).join(' ')].filter(Boolean).join(', '), o.verwaltungsart].filter(Boolean).join(' · ') || ' ', 15, 34);
     doc.setTextColor(0);
   };
@@ -55,7 +57,7 @@ export async function berichtPdf(jahr: number, gruppen: { objekt: Row; posten: R
         x.prioritaet ?? '', x.status, x.erledigt_am ? dDatum(x.erledigt_am) : '', x.firma ?? '', x.kosten != null ? geld(Number(x.kosten)) : '', x.notiz ?? ''])
         : [[{ content: 'Keine Einträge in diesem Jahr.', colSpan: 10 }]],
       foot: kosten ? [[{ content: 'Summe Kosten', colSpan: 8 }, geld(kosten), '']] : undefined, showFoot: 'lastPage',
-      styles: { font: 'helvetica', fontSize: 8.5, cellPadding: 1.6, valign: 'top' },
+      styles: { font: SCHRIFT(), fontSize: 8.5, cellPadding: 1.6, valign: 'top' },
       headStyles: { fillColor: [176, 138, 74], textColor: 255 },
       footStyles: { fillColor: [248, 240, 227], textColor: 0, fontStyle: 'bold' },
       columnStyles: { 0: { cellWidth: 20 }, 1: { cellWidth: 52 }, 6: { cellWidth: 20 }, 8: { halign: 'right', cellWidth: 22 }, 9: { cellWidth: 55 } },

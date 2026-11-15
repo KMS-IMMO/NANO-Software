@@ -3,6 +3,8 @@ import { pdfjsLaden } from './pdfjs';
 // Die Vorlage wird beim Hochladen in ein A4-Bild umgewandelt (Seite 1 = erste Seite, Seite 2 = Folgeseiten)
 // und in den Einstellungen gespeichert. Die PDFs legen das Bild auf jeder Seite unter den Text.
 import { db } from '../db';
+import appErste from '../assets/briefpapier/kms-app-erste.jpg?url';
+import appFolge from '../assets/briefpapier/kms-app-folge.jpg?url';
 
 export interface Briefpapier {
   erste: string;            // JPEG als data-URL
@@ -64,7 +66,63 @@ export async function briefpapierAusDatei(datei: File): Promise<{ erste: string;
 
 const SCHLUESSEL = ['briefpapier_erste', 'briefpapier_folge', 'briefpapier_name', 'briefpapier_kopf', 'briefpapier_oben_folge', 'briefpapier_unten'];
 
+// Briefpapier im App-Design (Variante A, freigegeben am 15.11.2026). Wird einmalig für alle Schreiben übernommen;
+// ein vorher hinterlegtes Briefpapier wird dabei unter briefpapier_vorher_* gesichert und lässt sich wiederherstellen.
+export const APP_STAND = 'kms-app-a';
+export const APP_NAME = 'KMS-Briefpapier (App-Design)';
+const APP_OPTIONEN = { briefpapier_kopf: '0', briefpapier_oben_folge: '27', briefpapier_unten: '35' };
+
+async function alsDataUrl(url: string) {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`Briefpapier ${url}: ${r.status}`);
+  const b = await r.blob();
+  return new Promise<string>((ok, fehler) => { const f = new FileReader(); f.onload = () => ok(String(f.result)); f.onerror = () => fehler(f.error); f.readAsDataURL(b); });
+}
+
+async function einstellung(k: string) {
+  return (await db.select(`SELECT wert FROM einstellungen WHERE schluessel = $1`, [k]))[0]?.wert as string | undefined;
+}
+
+/** Briefpapier im App-Design setzen; das bisherige wird gesichert (nur wenn es nicht schon das App-Design ist) */
+export async function appBriefpapierSetzen() {
+  const [erste, folge] = await Promise.all([alsDataUrl(appErste), alsDataUrl(appFolge)]);
+  const alt = Object.fromEntries((await db.select(`SELECT schluessel, wert FROM einstellungen WHERE schluessel IN (${SCHLUESSEL.map((_, i) => '$' + (i + 1)).join(',')})`, SCHLUESSEL))
+    .map((r) => [r.schluessel, r.wert ?? '']));
+  if (alt.briefpapier_erste && alt.briefpapier_name !== APP_NAME) {
+    const sicherung: Record<string, string> = { briefpapier_vorher_datum: new Date().toISOString().slice(0, 10) };
+    for (const k of SCHLUESSEL) sicherung[k.replace('briefpapier_', 'briefpapier_vorher_')] = alt[k] ?? '';
+    await briefpapierSpeichern(sicherung);
+  }
+  await briefpapierSpeichern({ briefpapier_erste: erste, briefpapier_folge: folge, briefpapier_name: APP_NAME, ...APP_OPTIONEN, briefpapier_stand: APP_STAND });
+}
+
+/** Gesichertes früheres Briefpapier (falls vorhanden) */
+export async function vorherigesBriefpapier(): Promise<{ name: string; datum: string } | null> {
+  const erste = await einstellung('briefpapier_vorher_erste');
+  if (!erste) return null;
+  return { name: (await einstellung('briefpapier_vorher_name')) || 'eigenes Briefpapier', datum: (await einstellung('briefpapier_vorher_datum')) || '' };
+}
+
+/** Früheres Briefpapier wiederherstellen (das App-Design bleibt jederzeit wieder wählbar) */
+export async function vorherigesWiederherstellen() {
+  const w: Record<string, string> = {};
+  for (const k of SCHLUESSEL) w[k] = (await einstellung(k.replace('briefpapier_', 'briefpapier_vorher_'))) ?? '';
+  if (!w.briefpapier_erste) throw new Error('Es ist kein früheres Briefpapier gesichert.');
+  await briefpapierSpeichern(w);
+}
+
+let umstellung: Promise<void> | null = null;
+/** Einmalige Umstellung auf das App-Design (beim ersten Laden nach dem Update) */
+function einmalUmstellen() {
+  if (!umstellung) umstellung = (async () => {
+    if ((await einstellung('briefpapier_stand')) === APP_STAND) return;
+    await appBriefpapierSetzen();
+  })().catch((e) => { umstellung = null; console.warn('Briefpapier im App-Design nicht übernommen', e); });
+  return umstellung;
+}
+
 export async function briefpapierLaden(): Promise<Briefpapier | null> {
+  await einmalUmstellen();
   const e = Object.fromEntries((await db.select(`SELECT schluessel, wert FROM einstellungen WHERE schluessel IN (${SCHLUESSEL.map((_, i) => '$' + (i + 1)).join(',')})`, SCHLUESSEL))
     .map((r) => [r.schluessel, r.wert ?? '']));
   if (!e.briefpapier_erste) return null;
@@ -75,7 +133,7 @@ export async function briefpapierLaden(): Promise<Briefpapier | null> {
   };
 }
 
-export async function briefpapierSpeichern(werte: Partial<Record<(typeof SCHLUESSEL)[number], string>>) {
+export async function briefpapierSpeichern(werte: Record<string, string>) {
   for (const [k, v] of Object.entries(werte)) await db.execute(`INSERT INTO einstellungen (schluessel, wert) VALUES ($1, $2)
     ON CONFLICT (schluessel) DO UPDATE SET wert = excluded.wert`, [k, v ?? '']);
 }

@@ -54,7 +54,7 @@ try {
     melde(name, r.code === 0 && errs && auff, `${n ?? '?'} Seiten${errs ? '' : ', Fehler in der Konsole'}${auff ? '' : ', auffällige Texte'} (ausgabe/${datei.replace('.cjs', '.txt')})`);
   }
   // 3) Prüflisten: jede Zeile OK, keine FAIL
-  for (const [datei, name] of [['neu.cjs', 'Mietverwaltung über ein Jahr'], ['erfassen.cjs', 'Schneller erfassen'], ['papierkorb.cjs', 'Papierkorb'], ['import.cjs', 'Excel-Import und Zählerstände'], ['anschrift.cjs', 'Anschrift Eigentümer (WEG)'], ['hausgeld-aufteilung.cjs', 'Hausgeld mit NK des Mieters (WEG)'], ['eigentuemer-klick.cjs', 'Klick auf Eigentümer und Mieter (WEG)'], ['rechnung-erfassen.cjs', 'Rechnung erfassen mit Konto-Rad'], ['einheit-ordner.cjs', 'Ordner je Einheit in der Ablage']]) {
+  for (const [datei, name] of [['neu.cjs', 'Mietverwaltung über ein Jahr'], ['erfassen.cjs', 'Schneller erfassen'], ['papierkorb.cjs', 'Papierkorb'], ['import.cjs', 'Excel-Import und Zählerstände'], ['anschrift.cjs', 'Anschrift Eigentümer (WEG)'], ['hausgeld-aufteilung.cjs', 'Hausgeld mit NK des Mieters (WEG)'], ['eigentuemer-klick.cjs', 'Klick auf Eigentümer und Mieter (WEG)'], ['rechnung-erfassen.cjs', 'Rechnung erfassen mit Konto-Rad'], ['einheit-ordner.cjs', 'Ordner je Einheit in der Ablage'], ['briefpapier.cjs', 'Briefpapier im App-Design und Schrift']]) {
     const r = await lauf(datei); writeFileSync(join(AUS, datei.replace('.cjs', '.txt')), r.aus);
     const okN = (r.aus.match(/^OK /gm) ?? []).length, fail = r.aus.split('\n').filter((z) => /^(FAIL|FEHL)/.test(z));
     melde(name, r.code === 0 && okN > 0 && !fail.length, `${okN} Prüfungen grün${fail.length ? `, ${fail.length} rot: ${fail.join(' | ').slice(0, 300)}` : ''}${r.code ? `, Abbruch (Code ${r.code})` : ''}`);
