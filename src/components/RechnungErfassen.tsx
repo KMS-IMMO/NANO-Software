@@ -44,6 +44,15 @@ export function RechnungErfassen({ objektFest, onSaved, vorlage }: { objektFest?
   const [fehler, setFehler] = useState('');
   const [busy, setBusy] = useState(false);
   const [konten, setKonten] = useState<Row[]>([]);
+  // MwSt aus dem Beleg hat Vorrang; sonst gilt der MwSt-Satz, der im Kontenrahmen beim Konto hinterlegt ist
+  const mwstAusBeleg = useRef(false);
+  function kontoWaehlen(id: number) {
+    setKonto(id);
+    const k = konten.find((x) => Number(x.id) === id);
+    if (!k || mwstAusBeleg.current) return;
+    const m = Number(k.mwst) || 0;
+    setMitMwst(m > 0); if (m > 0) setSatz(String(m));
+  }
   const [objekte, setObjekte] = useState<Row[]>([]);
   const [einheiten, setEinheiten] = useState<Row[]>([]);
   const [firmen, setFirmen] = useState<Row[]>([]);
@@ -52,7 +61,7 @@ export function RechnungErfassen({ objektFest, onSaved, vorlage }: { objektFest?
 
   /** Beleg übernehmen und, wenn es eine PDF mit Text ist, die Angaben auslesen. Bereits ausgefüllte Felder bleiben, wie sie sind. */
   async function belegWaehlen(f: File) {
-    setDatei(f); setLesen('');
+    setDatei(f); setLesen(''); mwstAusBeleg.current = false;
     const pdf = f.type === 'application/pdf' || /\.pdf$/i.test(f.name);
     if (!pdf) { setLesen('Bilder und Scans enthalten keinen lesbaren Text. Bitte die Angaben selbst eintragen.'); return; }
     setLesen('Rechnung wird ausgelesen …');
@@ -65,14 +74,14 @@ export function RechnungErfassen({ objektFest, onSaved, vorlage }: { objektFest?
       if (e.rechnungsnr && !nr) { setNr(e.rechnungsnr); ok.push('Rechnungsnummer'); }
       if (e.datum && datum === heute()) { setDatum(e.datum); ok.push('Datum'); }
       if (e.betrag && !betrag) { setBetrag(String(Math.abs(e.betrag)).replace('.', ',')); if (e.betrag < 0) setArt('Gutschrift'); ok.push('Betrag'); }
-      if (e.mwst !== undefined) { setMitMwst(e.mwst > 0); if (e.mwst > 0) setSatz(String(e.mwst)); ok.push('MwSt'); }
+      if (e.mwst !== undefined) { mwstAusBeleg.current = true; setMitMwst(e.mwst > 0); if (e.mwst > 0) setSatz(String(e.mwst)); ok.push('MwSt'); }
       if (e.faellig && !faellig) { setFaellig(e.faellig); ok.push('Fälligkeit'); }
       if (e.lohn && !lohn) { setLohn(String(e.lohn).replace('.', ',')); ok.push('§ 35a-Anteil'); }
       if (e.lieferant && !lieferant) { setLieferant(e.lieferant); setFirmaId(e.firmaId ?? null); ok.push(e.firmaId ? 'Lieferant (Kontakt gefunden)' : 'Lieferant'); }
       // Buchungskonto: wie bei der letzten Rechnung dieses Lieferanten
       if (e.firmaId && !kontoVomNutzer.current) {
         const k = (await db.select('SELECT buchungskonto_id FROM rechnungen WHERE firma_id = $1 ORDER BY datum DESC, id DESC LIMIT 1', [e.firmaId]))[0]?.buchungskonto_id;
-        if (k) { setKonto(Number(k)); ok.push('Buchungskonto (wie zuletzt)'); }
+        if (k) { kontoWaehlen(Number(k)); ok.push('Buchungskonto (wie zuletzt)'); }
       }
       // Immobilie: Straße der Liegenschaft steht auf der Rechnung
       if (objekt === '' && !objektFest) {
@@ -88,7 +97,7 @@ export function RechnungErfassen({ objektFest, onSaved, vorlage }: { objektFest?
   }
 
   useEffect(() => {
-    db.select(`SELECT id, nummer, name, gruppe, hdl, hwl, rechnung_pflicht FROM buchungskonten WHERE art IN ('Aufwand') ORDER BY nummer`).then(setKonten);
+    db.select(`SELECT id, nummer, name, gruppe, hdl, hwl, mwst, rechnung_pflicht FROM buchungskonten WHERE art IN ('Aufwand') ORDER BY nummer`).then(setKonten);
     db.select('SELECT id, objekt_nr, name, strasse, plz, ort FROM objekte ORDER BY name').then(setObjekte);
     db.select('SELECT id, name, gewerk FROM firmen ORDER BY name').then((f) => { setFirmen(f); setFirmenDa(true); });
   }, []);
@@ -133,13 +142,14 @@ export function RechnungErfassen({ objektFest, onSaved, vorlage }: { objektFest?
     const q = t.trim().toLowerCase();
     if (!q) return;
     const treffer = konten.find((x) => String(x.nummer).startsWith(q)) ?? konten.find((x) => String(x.name).toLowerCase().includes(q));
-    if (treffer) setKonto(Number(treffer.id));
+    if (treffer) kontoWaehlen(Number(treffer.id));
   };
 
   function zuruecksetzen() {
     kontoVomNutzer.current = false; setSuche('');
     setNr(''); setBetrag(''); setWahl([]); setAnteile({}); setLieferant(''); setFirmaId(null);
     setFaellig(''); setBezahlt(''); setLohn(''); setNotiz(''); setDatei(null); setLesen(''); setArt('Ausgabe'); setDatum(heute());
+    mwstAusBeleg.current = false; setMitMwst(true); setSatz('19');
   }
 
   async function sichern() {
@@ -206,7 +216,7 @@ export function RechnungErfassen({ objektFest, onSaved, vorlage }: { objektFest?
             <div className="bf-titel"><span className="bf-nr">1</span>Konto
               <label className="bf-suche"><Search size={14} /><input placeholder="Nummer oder Name …" value={suche} onChange={(e) => suchen(e.target.value)} /></label></div>
             {konten.length > 0 && <div onPointerDown={() => { kontoVomNutzer.current = true; }} onWheel={() => { kontoVomNutzer.current = true; }} onKeyDown={() => { kontoVomNutzer.current = true; }}>
-              <KontoRad konten={konten} wert={konto} onWahl={setKonto} /></div>}
+              <KontoRad konten={konten} wert={konto} onWahl={kontoWaehlen} /></div>}
             {k && <p className="bf-gewaehlt"><Check size={14} /> {k.nummer} {k.name}<span className="muted"> · {k.gruppe}</span></p>}
           </div>
 

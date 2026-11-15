@@ -17,9 +17,20 @@ import { DATEV_EINST } from '../logic/datev';
 import { KI_MODELLE, KI_STANDARD, kiEinstellungen, kiSchluesselSpeichern } from '../logic/kiAgent';
 
 const haken = (v: any) => (v ? '✓' : '');
+/** Konten, deren Nummer das Programm fest verwendet (Rücklage, Sollstellungen, Heizkosten, Bankgebühren) */
+const SYSTEMKONTEN = ['1000', '1001', '1002', '1003', '1010', '1011', '1200', '1260', '1261', '1262', '1405'];
 
 export function KontenPage() {
   return (
+    <>
+    <section className="card">
+      <p className="muted small" style={{ margin: 0 }}>
+        So wirken die Haken: <b>EÜR</b> = zählt im Ergebnis der GuV/EÜR, in der Jahresübersicht und in der Eigentümerabrechnung (ohne Haken: getrennt unter „Nicht in der EÜR“).
+        {' '}<b>Umlagefähig</b> = kommt in die Nebenkostenabrechnung der Mieter. <b>HDL/HWL</b> = § 35a-Ausweis in den Abrechnungen.
+        {' '}<b>MwSt</b> = Vorschlag beim Erfassen einer Rechnung. <b>Schlüssel</b> = Vorschlag für die Nebenkostenabrechnung (WEG verteilt ohne eigene Auswahl nach MEA).
+        {' '}Die Kontonummern {SYSTEMKONTEN.join(', ')} nutzt das Programm fest (Rücklage, Mieten, Hausgeld, Heizkosten, Kontoführung). Diese Nummern bitte nicht ändern.
+      </p>
+    </section>
     <EntityTable
       title="Buchungskonten (Kontenrahmen 2027)"
       table="buchungskonten"
@@ -40,6 +51,7 @@ export function KontenPage() {
       listSql="SELECT * FROM buchungskonten ORDER BY nummer"
       groupBy="gruppe"
     />
+    </>
   );
 }
 

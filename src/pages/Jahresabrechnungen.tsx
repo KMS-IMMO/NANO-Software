@@ -382,8 +382,9 @@ export function EigentuemerAbrechnungPage() {
     if (objekt === '') return;
     (async () => {
       setEin(await db.select(`SELECT k.nummer, k.name, SUM(b.betrag) AS betrag FROM buchungen b JOIN buchungskonten k ON k.id = b.buchungskonto_id
-        WHERE b.objekt_id = $1 AND k.art = 'Einnahme' AND ${BJ('b')} = CAST($2 AS INTEGER) GROUP BY k.id ORDER BY k.nummer`, [objekt, String(jahr)]));
-      setAus(await kostenErmitteln(Number(objekt), jahr, false));
+        WHERE b.objekt_id = $1 AND k.art = 'Einnahme' AND COALESCE(k.euer, 1) = 1 AND ${BJ('b')} = CAST($2 AS INTEGER) GROUP BY k.id ORDER BY k.nummer`, [objekt, String(jahr)]));
+      // Nur Konten mit Haken „EÜR“ gehören in die Einnahmen-Überschuss-Rechnung des Eigentümers
+      setAus((await kostenErmitteln(Number(objekt), jahr, false)).filter((p) => p.euer));
       setOffen(Number((await db.select(`SELECT COALESCE(SUM(s.betrag - COALESCE((SELECT SUM(b.betrag) FROM buchungen b WHERE b.sollstellung_id = s.id), 0)), 0) AS x
         FROM sollstellungen s JOIN einheiten e ON e.id = s.einheit_id WHERE e.objekt_id = $1 AND s.faellig <= $2`, [objekt, `${jahr}-12-31`]))[0].x));
       // Auszahlungen an / Einzahlungen vom Eigentümer: keine Einnahmen oder Kosten, nur Kontobewegung

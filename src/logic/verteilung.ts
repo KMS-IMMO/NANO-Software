@@ -33,6 +33,7 @@ export interface Nutzer {
 export interface Position {
   konto_id: number; nummer: string; name: string; gruppe: string;
   umlagefaehig: boolean; hdl: boolean; hwl: boolean; hbg?: boolean;   // § 35a Abs. 2 / Abs. 3 / Abs. 1 (Minijob)
+  euer?: boolean;         // Konto zählt in der Einnahmen-Überschuss-Rechnung (Schalter EÜR im Kontenrahmen)
   betrag: number;         // Kosten gesamt im Jahr (positiv = Kosten)
   betrag35a?: number;     // davon begünstigt nach § 35a (nur bei Konten mit HDL/HWL); ohne Angabe gilt der ganze Betrag
   schluessel: Schluessel;
@@ -201,7 +202,7 @@ export async function kostenErmitteln(objektId: number, jahr: number, nurUmlagef
     for (const z of zeilen) if (z.einheit_id) direkt[z.einheit_id] = (direkt[z.einheit_id] ?? 0) + Number(z.kosten) * f;
     const k35 = zeilen.reduce((s, x) => s + Number(x.k35a ?? x.kosten), 0) * f;
     const betrag35a = Math.round((a && Math.abs(gebucht) < 0.005 ? betrag : k35) * 100) / 100;
-    out.push({ konto_id: k.id, nummer: k.nummer, name: k.name, gruppe: k.gruppe ?? '', umlagefaehig: !!k.umlagefaehig, hdl: !!k.hdl, hwl: !!k.hwl, hbg: !!k.hbg,
+    out.push({ konto_id: k.id, nummer: k.nummer, name: k.name, gruppe: k.gruppe ?? '', umlagefaehig: !!k.umlagefaehig, hdl: !!k.hdl, hwl: !!k.hwl, hbg: !!k.hbg, euer: Number(k.euer ?? 1) === 1,
       betrag, betrag35a, schluessel: (k.objekt_schluessel ?? k.schluessel ?? 'Fläche') as Schluessel, direkt, ...(a ? { gebucht, grund: a.grund } : {}) });
   }
   return out;
