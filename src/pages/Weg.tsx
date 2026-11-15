@@ -191,6 +191,7 @@ export function RuecklagenTab({ objektId }: { objektId: number }) {
             <tr><td>Anfangsbestand (01.01.{jahr})</td><td className="num">{eur(j.anfangsbestand ?? 0)}</td></tr>
             {j.uebernahme ? <tr><td>+ Übernahmebestand</td><td className="num">{eur(j.uebernahme)}</td></tr> : null}
             <tr><td>+ Zuführungen (Hausgeld-Soll)</td><td className="num">{eur(j.zufuehrung ?? 0)}</td></tr>
+            {j.sonder ? <tr><td>+ Sonderzuführungen (Konto 1260)</td><td className="num">{eur(j.sonder)}</td></tr> : null}
             <tr><td>− Entnahmen (Konto 1261)</td><td className="num">{eur(j.entnahme ?? 0)}</td></tr>
             <tr><td>+ Zinsen (Konto 1262)</td><td className="num">{eur(j.zinsen ?? 0)}</td></tr>
             <tr className="sum"><td>= Bestand 31.12.{jahr}</td><td className="num">{eur(j.bestand ?? 0)}</td></tr>

@@ -1,8 +1,8 @@
 // Erhaltungsrücklage einer WEG: Bestand bei Übernahme + Zuführungen (Rücklagenanteil im Hausgeld-Soll; daneben der tatsächlich gezahlte Teil)
-// − Entnahmen (Konto 1261) + Zinsen (Konto 1262). Bewegungen zählen erst nach dem Stichtag des Übernahmebestands.
+// + Sonderzuführungen (Buchungen auf Konto 1260, z. B. Antennenmiete laut Beschluss) − Entnahmen (Konto 1261) + Zinsen (Konto 1262). Bewegungen zählen erst nach dem Stichtag des Übernahmebestands.
 import { db } from '../db';
 
-export interface Bewegung { zufuehrung: number; zufuehrungIst: number; entnahme: number; zinsen: number }
+export interface Bewegung { zufuehrung: number; zufuehrungIst: number; sonder: number; entnahme: number; zinsen: number }
 
 /** Bewegungen im Zeitraum (von exklusiv, bis inklusiv, jeweils JJJJ-MM-TT) */
 async function bewegungen(objektId: number, nach: string, bis: string): Promise<Bewegung> {
@@ -19,7 +19,7 @@ async function bewegungen(objektId: number, nach: string, bis: string): Promise<
       JOIN hausgeld h ON h.id = (SELECT h2.id FROM hausgeld h2 WHERE h2.einheit_id = s.einheit_id AND h2.gueltig_ab <= s.monat || '-01' ORDER BY h2.gueltig_ab DESC LIMIT 1)
       JOIN einheiten e ON e.id = s.einheit_id
       WHERE s.art = 'Hausgeld' AND s.betrag > 0 AND e.objekt_id = $1 AND s.monat || '-01' > $2 AND s.monat || '-01' <= $3`, [objektId, nach, bis]))[0].x);
-  return { zufuehrung: zuf, zufuehrungIst: Math.round(zufIst * 100) / 100, entnahme: await konto('1261'), zinsen: await konto('1262') };
+  return { zufuehrung: zuf, zufuehrungIst: Math.round(zufIst * 100) / 100, sonder: await konto('1260'), entnahme: await konto('1261'), zinsen: await konto('1262') };
 }
 
 async function basis(objektId: number) {
@@ -32,7 +32,7 @@ export async function ruecklageStand(objektId: number, bis: string): Promise<num
   const { anfang, stichtag } = await basis(objektId);
   if (bis < stichtag) return 0;
   const b = await bewegungen(objektId, stichtag, bis);
-  return anfang + b.zufuehrung - b.entnahme + b.zinsen;
+  return anfang + b.zufuehrung + b.sonder - b.entnahme + b.zinsen;
 }
 
 /** Entwicklung der Rücklage in einem Kalenderjahr */
@@ -44,8 +44,8 @@ export async function ruecklageJahr(objektId: number, jahr: number) {
   const b = await bewegungen(objektId, stichtag > start ? stichtag : start, ende);
   // Ist-Bestand am 31.12.: alle seit der Übernahme tatsächlich gezahlten Zuführungen (auch Nachzahlungen für Vorjahre)
   const gesamt = ende < stichtag ? null : await bewegungen(objektId, stichtag, ende);
-  const bestand = anfangsbestand + uebernahme + b.zufuehrung - b.entnahme + b.zinsen;
-  const bestandIst = gesamt ? anfang + gesamt.zufuehrungIst - gesamt.entnahme + gesamt.zinsen : 0;
+  const bestand = anfangsbestand + uebernahme + b.zufuehrung + b.sonder - b.entnahme + b.zinsen;
+  const bestandIst = gesamt ? anfang + gesamt.zufuehrungIst + gesamt.sonder - gesamt.entnahme + gesamt.zinsen : 0;
   return { anfangsbestand, uebernahme, ...b, bestand, bestandIst: Math.round(bestandIst * 100) / 100, offen: Math.round((bestand - bestandIst) * 100) / 100 };
 }
 

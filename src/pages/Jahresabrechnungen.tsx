@@ -160,7 +160,7 @@ export function WegAbrechnungPage() {
     for (const z of konten) { z.soll = r2(z.soll); z.ist = r2(z.ist); z.saldo = r2(z.soll - z.ist); }
     const offen = konten.filter((z) => Math.abs(z.saldo) > 0.005);
     const hgImJahr = posten.filter((x) => (x.art === 'Hausgeld' || x.art === 'Rücklage') && String(x.monat).startsWith(String(jahr))).length;
-    setVerm({ ruecklage: rl.bestand, ruecklageIst: rl.bestandIst, ruecklageOffen: rl.offen, zufIstJahr: rl.zufuehrungIst, zufJahr, entnahmeJahr: rl.entnahme, zinsJahr: rl.zinsen, banken,
+    setVerm({ ruecklage: rl.bestand, ruecklageIst: rl.bestandIst, ruecklageOffen: rl.offen, zufIstJahr: rl.zufuehrungIst, zufJahr, sonderJahr: rl.sonder, entnahmeJahr: rl.entnahme, zinsJahr: rl.zinsen, banken,
       forderungen: r2(offen.filter((z) => z.saldo > 0).reduce((a, z) => a + z.saldo, 0)),
       guthaben: r2(offen.filter((z) => z.saldo < 0).reduce((a, z) => a - z.saldo, 0)),
       opKonten: offen, hgImJahr });
@@ -195,6 +195,7 @@ export function WegAbrechnungPage() {
       ['   davon von Eigentümern noch nicht gezahlt', geld(verm.ruecklageOffen ?? 0)],
       [`Zuführung ${jahr} laut Wirtschaftsplan (Soll)`, geld(verm.zufJahr ?? 0)],
       [`   davon bis 31.12.${jahr} gezahlt (Ist)`, geld(verm.zufIstJahr ?? 0)],
+      ...(verm.sonderJahr ? [[`Sonderzuführungen ${jahr} (Konto 1260, z. B. laut Beschluss)`, geld(verm.sonderJahr)]] : []),
       [`Entnahmen ${jahr}`, geld(-(verm.entnahmeJahr ?? 0))],
       [`Zinserträge ${jahr}`, geld(verm.zinsJahr ?? 0)],
       ...(verm.banken ?? []).map((b: Row) => [`Kontostand ${b.name} (${b.iban ?? ''})`, geld(Number(b.saldo))]),
@@ -308,6 +309,7 @@ export function WegAbrechnungPage() {
           <tr><td className="einzug">davon tatsächlich eingezahlt (Ist)</td><td className="num">{eur(verm.ruecklageIst ?? 0)}</td></tr>
           <tr><td className="einzug">davon von Eigentümern noch nicht gezahlt</td><td className={'num' + ((verm.ruecklageOffen ?? 0) > 0.005 ? ' neg' : '')}>{eur(verm.ruecklageOffen ?? 0)}</td></tr>
           <tr><td className="muted">Zuführung {jahr}: Soll / davon gezahlt</td><td className="num muted">{eur(verm.zufJahr ?? 0)} / {eur(verm.zufIstJahr ?? 0)}</td></tr>
+          {verm.sonderJahr ? <tr><td className="muted">Sonderzuführungen {jahr} (Konto 1260)</td><td className="num muted">{eur(verm.sonderJahr)}</td></tr> : null}
           <tr><td className="muted">Entnahmen / Zinsen {jahr}</td><td className="num muted">{eur(verm.entnahmeJahr ?? 0)} / {eur(verm.zinsJahr ?? 0)}</td></tr>
           {(verm.banken ?? []).map((b: Row) => <tr key={b.id}><td>Kontostand {b.name}</td><td className="num">{eur(Number(b.saldo))}</td></tr>)}
           <tr><td>Offene Forderungen gegen Eigentümer</td><td className="num">{eur(verm.forderungen ?? 0)}</td></tr>
