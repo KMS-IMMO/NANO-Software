@@ -552,7 +552,7 @@ export function AuswertungPage() {
   useEffect(() => { if (objekte.length && objekt === '') setObjekt(objekte[0].id); }, [objekte]);
   useEffect(() => {
     if (objekt === '') return;
-    db.select(`SELECT k.nummer, k.name, k.gruppe, k.art, SUM(b.betrag) AS summe FROM buchungen b LEFT JOIN buchungskonten k ON k.id = b.buchungskonto_id
+    db.select(`SELECT k.nummer, k.name, k.gruppe, k.art, k.euer, SUM(b.betrag) AS summe FROM buchungen b LEFT JOIN buchungskonten k ON k.id = b.buchungskonto_id
       WHERE b.objekt_id = $1 AND b.datum BETWEEN $2 AND $3 GROUP BY b.buchungskonto_id ORDER BY k.nummer`, [objekt, von, bis]).then(setRows);
     db.select(`SELECT b.*, b.anfangssaldo + COALESCE((SELECT SUM(u.betrag) FROM bankumsaetze u WHERE u.bankkonto_id = b.id
       AND u.datum <= $2 AND (b.saldo_datum IS NULL OR u.datum > b.saldo_datum)), 0) AS saldo FROM bankkonten b WHERE b.objekt_id = $1`, [objekt, bis]).then(setBanken);
@@ -569,7 +569,8 @@ export function AuswertungPage() {
   const rlZahlung = weg && rl ? Math.min(Math.max(0, hgSumme), rl.zufuehrung) : 0;
   const eigRows = rows.filter((r) => r.art === 'Eigentümer' && Math.abs(r.summe) > 0.004);
   const sEig = eigRows.reduce((a, r) => a + Number(r.summe), 0);
-  const guvRows = !weg ? rows.filter((r) => r.art !== 'Eigentümer') : rows.filter((r) => !RL_KONTEN.includes(r.nummer)).map((r) => r.nummer === '1010'
+  // Konten ohne EÜR-Häkchen (z. B. Kaution, Geldtransit) zählen nicht als Ertrag oder Aufwand
+  const guvRows = (!weg ? rows.filter((r) => r.art !== 'Eigentümer') : rows.filter((r) => !RL_KONTEN.includes(r.nummer))).filter((r) => r.nummer == null || Number(r.euer ?? 1) === 1).map((r) => r.nummer === '1010'
     ? { ...r, name: 'Hausgeld ohne Rücklagenanteil', summe: r.summe - rlZahlung } : r).filter((r) => Math.abs(r.summe) > 0.004);
   const ertraege = guvRows.filter((r) => r.summe > 0), aufwand = guvRows.filter((r) => r.summe < 0);
   const sE = ertraege.reduce((a, r) => a + r.summe, 0), sA = aufwand.reduce((a, r) => a - r.summe, 0);

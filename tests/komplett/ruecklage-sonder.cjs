@@ -20,6 +20,20 @@ const { chromium } = require('playwright');
   ok('Bestand 31.12.2025 steigt von 10.000 auf 17.529,10', Math.abs(r.vor - 10000) < 0.001 && Math.abs(r.nach - 17529.10) < 0.001, `${r.vor} → ${r.nach}`);
   ok('Auch im Ist-Bestand enthalten', Math.abs(r.ist - 17529.10) < 0.001, r.ist);
   ok('Bestand im Folgejahr übernommen', Math.abs(r.stand26 - 17529.10) < 0.001, r.stand26);
+  // EÜR-Häkchen: Konto ohne Häkchen zählt nicht in der Hausgeldabrechnung, mit Häkchen wieder
+  const e = await p.evaluate(async (o) => {
+    const { db, insert } = await import('/src/db/index.ts'); const v = await import('/src/logic/verteilung.ts');
+    const k = (await db.select(`SELECT id FROM buchungskonten WHERE nummer = '1214'`))[0].id;
+    await insert('buchungen', { datum: '2025-05-02', objekt_id: o, buchungskonto_id: k, betrag: -250, text: 'Allgemeinstrom EÜR-Test' });
+    const drin = async () => (await v.kostenErmitteln(o, 2025, false)).some((x) => x.konto_id === k);
+    const an = await drin();
+    await db.execute('UPDATE buchungskonten SET euer = 0 WHERE id = $1', [k]); const aus = await drin(); const nk = (await v.kostenErmitteln(o, 2025, true)).some((x) => x.konto_id === k);
+    await db.execute('UPDATE buchungskonten SET euer = 1 WHERE id = $1', [k]); const wieder = await drin();
+    return { an, aus, wieder, nk };
+  }, r.o);
+  ok('EÜR an: Konto zählt in der Hausgeldabrechnung', e.an && e.wieder);
+  ok('EÜR aus: Konto zählt nicht mehr', e.aus === false);
+  ok('Nebenkostenabrechnung der Mieter bleibt unabhängig vom EÜR-Häkchen', e.nk === true);
   await p.goto('http://localhost:5179/#/weg-abrechnung'); await p.waitForTimeout(1500);
   const sel = p.locator('select').filter({ has: p.locator('option', { hasText: 'Rücklage Testhaus' }) }).first();
   await sel.selectOption({ label: 'Rücklage Testhaus' }); await p.waitForTimeout(500);

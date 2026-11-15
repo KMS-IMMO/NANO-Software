@@ -168,12 +168,13 @@ export async function eigeneSchluessel(objektId: number, jahr: number): Promise<
  * gebuchte Bankausgänge plus erfasste Rechnungen, die (noch) keiner Bankbuchung zugeordnet sind.
  * Direkt einer Einheit zugeordnete Kosten werden zusätzlich je Einheit gemerkt.
  */
+/** Kosten und Erträge je Konto im Jahr. Für Hausgeld- und Eigentümerabrechnung (nurUmlagefaehig = false) zählen nur Konten mit EÜR-Häkchen. */
 export async function kostenErmitteln(objektId: number, jahr: number, nurUmlagefaehig: boolean): Promise<Position[]> {
   const von = `${jahr}-01-01`, bis = `${jahr}-12-31`;
   const konten = await db.select(`SELECT k.*, COALESCE(sj.schluessel, s.schluessel) AS objekt_schluessel FROM buchungskonten k
     LEFT JOIN objekt_schluessel s ON s.buchungskonto_id = k.id AND s.objekt_id = $1
     LEFT JOIN objekt_schluessel_jahr sj ON sj.buchungskonto_id = k.id AND sj.objekt_id = $1 AND sj.jahr = $2
-    WHERE k.art IN ('Aufwand', 'Ertrag') ${nurUmlagefaehig ? 'AND k.umlagefaehig = 1' : ''} ORDER BY k.nummer`, [objektId, jahr]);
+    WHERE k.art IN ('Aufwand', 'Ertrag') ${nurUmlagefaehig ? 'AND k.umlagefaehig = 1' : 'AND COALESCE(k.euer, 1) = 1'} ORDER BY k.nummer`, [objektId, jahr]);
   // § 35a: eingetragener Anteil an der Buchung, sonst Arbeitskosten der zugehörigen Rechnung, sonst der ganze Betrag
   const buch = await db.select(`SELECT b.buchungskonto_id, b.einheit_id, -SUM(b.betrag) AS kosten,
       SUM(COALESCE(b.anteil_35a, CASE WHEN r.anteil_lohn IS NOT NULL AND r.betrag <> 0 THEN r.anteil_lohn * (-b.betrag) / r.betrag END, -b.betrag)) AS k35a
