@@ -376,6 +376,7 @@ export function EigentuemerAbrechnungPage() {
   const [info, setInfo] = useState('');
   const [eig, setEig] = useState<Row[]>([]);
   const [bank, setBank] = useState<{ n: number; anfang: number; ende: number }>({ n: 0, anfang: 0, ende: 0 });
+  const [stand, setStand] = useState(0);
 
   useEffect(() => {
     if (objekt === '') return;
@@ -393,7 +394,7 @@ export function EigentuemerAbrechnungPage() {
       const n = Number((await db.select('SELECT COUNT(*) AS n FROM bankkonten WHERE objekt_id = $1', [objekt]))[0]?.n ?? 0);
       setBank({ n, anfang: n ? await saldo(`${jahr - 1}-12-31`) : 0, ende: n ? await saldo(`${jahr}-12-31`) : 0 });
     })();
-  }, [objekt, jahr]);
+  }, [objekt, jahr, stand]);
 
   const summeEin = ein.reduce((a, x) => a + Number(x.betrag), 0);
   const uml = aus.filter((p) => p.umlagefaehig), nicht = aus.filter((p) => !p.umlagefaehig);
@@ -452,6 +453,8 @@ export function EigentuemerAbrechnungPage() {
         {eig.length > 0 && <div className="kpi"><span>An Eigentümer ausgezahlt</span><b>{eur(-sEig)}</b><small>{eig.filter((x) => Number(x.betrag) < 0).length} Auszahlungen</small></div>}
       </div>
       {bank.n > 0 && endeRechnerisch < 0 && <p className="warn">Achtung: Nach den Auszahlungen an den Eigentümer ist das Objektkonto zum 31.12.{jahr} rechnerisch im Minus ({eur(endeRechnerisch)}). Es fehlt Geld für laufende Kosten.</p>}
+      {objekt !== '' && <AbrechnungsUebersicht objekt={Number(objekt)} jahr={jahr} pos={aus} stand={stand} mitEinnahmen={false} titel={`Kosten ${jahr}: Übersicht der Buchungskonten`}
+        onChanged={(t) => { setInfo(t); setStand((x) => x + 1); }} schluessel={() => <span className="muted">–</span>} />}
       <div className="grid2">
         {[['Einnahmen', ein.map((x) => ({ k: x.nummer, n: x.name, b: Number(x.betrag) }))], ['Umlagefähige Kosten', uml.map((x) => ({ k: x.nummer, n: x.name, b: x.betrag }))],
           ['Nicht umlagefähige Kosten', nicht.map((x) => ({ k: x.nummer, n: x.name, b: x.betrag }))]].map(([t, rows]: any) => (

@@ -76,6 +76,22 @@ const { chromium } = require('playwright');
     return r.map((x) => Math.round(x.zeilen.filter((z) => z.pos.nummer === '1215').reduce((a, z) => a + z.betrag, 0) * 100) / 100);
   }, [d.o]);
   ok('Wasser 400,00 verteilt 300,00 / 100,00', verteilt.join('/') === '300/100', verteilt.join('/'));
+  // Auch in Nebenkosten- und Eigentümerabrechnung (Mietverwaltung): Stift und Papierkorb an den Kosten
+  const mv = await p.evaluate(async () => {
+    const { db, insert } = await import('/src/db/index.ts');
+    const o = await insert('objekte', { verwaltungsart: 'Mietverwaltung', name: 'Anpassung Miethaus', strasse: 'Weg 9', plz: '50667', ort: 'Köln' });
+    await insert('einheiten', { objekt_id: o, nummer: 'M1', flaeche: 80 });
+    const k = (await db.select(`SELECT id FROM buchungskonten WHERE nummer = '1215'`))[0].id;
+    await insert('buchungen', { datum: '2025-08-01', objekt_id: o, buchungskonto_id: k, betrag: -300, text: 'Wasser Miethaus' });
+    return o;
+  });
+  for (const [pfad, name] of [['nebenkosten', 'Nebenkostenabrechnung'], ['eigentuemer-abrechnung', 'Eigentümerabrechnung']]) {
+    await p.goto('http://localhost:5179/#/' + pfad); await p.waitForTimeout(1500);
+    { const s = p.locator('select').filter({ has: p.locator('option', { hasText: 'Anpassung Miethaus' }) }).first(); const v = await s.locator('option', { hasText: 'Anpassung Miethaus' }).first().getAttribute('value'); await s.selectOption(v); } await p.waitForTimeout(500);
+    await p.locator('label:has-text("Jahr") input').first().fill('2025'); await p.waitForTimeout(1500);
+    const z = p.locator('.abr-uebersicht tr:has(td:text-is("1215"))').first();
+    ok(`${name}: Stift und Papierkorb an den Kosten`, await z.locator('button[title="Gesamtkosten für die Abrechnung anpassen"]').count() === 1 && await z.locator('button[title="Kostenposition aus der Abrechnung nehmen"]').count() === 1);
+  }
   ok('Keine Fehler in der Konsole', errs.length === 0, errs.slice(0, 2).join(' | '));
   await b.close();
 })().catch((e) => { console.log('FEHL ' + e.message.split('\n').slice(0, 2).join(' ')); process.exit(1); });
