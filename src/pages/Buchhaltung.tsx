@@ -405,14 +405,16 @@ function Jahresuebersicht({ objektId }: { objektId: number }) {
   useEffect(() => {
     (async () => {
       const monate = async (j: number) => {
-        const r = await db.select(`SELECT CAST(substr(datum, 6, 2) AS INTEGER) AS m, SUM(CASE WHEN betrag > 0 THEN betrag ELSE 0 END) AS e, SUM(CASE WHEN betrag < 0 THEN -betrag ELSE 0 END) AS a
-          FROM buchungen WHERE objekt_id = $1 AND substr(datum, 1, 4) = $2 GROUP BY m`, [objektId, String(j)]);
+        // Nur Konten mit Haken „EÜR“ (Buchungen ohne Konto, z. B. Überzahlungen, zählen wie bisher mit)
+        const r = await db.select(`SELECT CAST(substr(b.datum, 6, 2) AS INTEGER) AS m, SUM(CASE WHEN b.betrag > 0 THEN b.betrag ELSE 0 END) AS e, SUM(CASE WHEN b.betrag < 0 THEN -b.betrag ELSE 0 END) AS a
+          FROM buchungen b LEFT JOIN buchungskonten k ON k.id = b.buchungskonto_id
+          WHERE b.objekt_id = $1 AND substr(b.datum, 1, 4) = $2 AND COALESCE(k.euer, 1) = 1 GROUP BY m`, [objektId, String(j)]);
         return Array.from({ length: 12 }, (_, i) => { const x = r.find((y) => Number(y.m) === i + 1); return { e: Number(x?.e) || 0, a: Number(x?.a) || 0 }; });
       };
       const soll = await db.select(`SELECT CAST(substr(s.monat, 6, 2) AS INTEGER) AS m, SUM(s.betrag) AS b FROM sollstellungen s JOIN einheiten e ON e.id = s.einheit_id
         WHERE e.objekt_id = $1 AND substr(s.monat, 1, 4) = $2 GROUP BY m`, [objektId, String(jahr)]);
       const top = await db.select(`SELECT k.nummer, k.name, -SUM(b.betrag) AS summe FROM buchungen b JOIN buchungskonten k ON k.id = b.buchungskonto_id
-        WHERE b.objekt_id = $1 AND substr(b.datum, 1, 4) = $2 AND b.betrag < 0 GROUP BY k.id ORDER BY summe DESC LIMIT 5`, [objektId, String(jahr)]);
+        WHERE b.objekt_id = $1 AND substr(b.datum, 1, 4) = $2 AND b.betrag < 0 AND k.euer = 1 GROUP BY k.id ORDER BY summe DESC LIMIT 5`, [objektId, String(jahr)]);
       setD({ ist: await monate(jahr), vj: await monate(jahr - 1), sollRest: Array.from({ length: 12 }, (_, i) => Number(soll.find((y) => Number(y.m) === i + 1)?.b) || 0), top });
     })();
   }, [objektId, jahr]);
@@ -484,12 +486,14 @@ export function AuswertungPage() {
   useEffect(() => { if (objekte.length && objekt === '') setObjekt(objekte[0].id); }, [objekte]);
   useEffect(() => {
     if (objekt === '') return;
-    db.select(`SELECT k.nummer, k.name, k.gruppe, SUM(b.betrag) AS summe FROM buchungen b LEFT JOIN buchungskonten k ON k.id = b.buchungskonto_id
+    db.select(`SELECT k.nummer, k.name, k.gruppe, COALESCE(k.euer, 1) AS euer, SUM(b.betrag) AS summe FROM buchungen b LEFT JOIN buchungskonten k ON k.id = b.buchungskonto_id
       WHERE b.objekt_id = $1 AND b.datum BETWEEN $2 AND $3 GROUP BY b.buchungskonto_id ORDER BY k.nummer`, [objekt, von, bis]).then(setRows);
     db.select(`SELECT b.*, b.anfangssaldo + COALESCE((SELECT SUM(u.betrag) FROM bankumsaetze u WHERE u.bankkonto_id = b.id
       AND u.datum <= $2 AND (b.saldo_datum IS NULL OR u.datum > b.saldo_datum)), 0) AS saldo FROM bankkonten b WHERE b.objekt_id = $1`, [objekt, bis]).then(setBanken);
   }, [objekt, von, bis]);
-  const ertraege = rows.filter((r) => r.summe > 0), aufwand = rows.filter((r) => r.summe < 0);
+  // Ergebnis nur aus Konten mit Haken „EÜR“; die übrigen (z. B. Rücklagenzuführung, Kautionen) stehen getrennt darunter
+  const euer = rows.filter((r) => Number(r.euer) === 1), ohneEuer = rows.filter((r) => Number(r.euer) !== 1 && Math.abs(r.summe) > 0.004);
+  const ertraege = euer.filter((r) => r.summe > 0), aufwand = euer.filter((r) => r.summe < 0);
   const sE = ertraege.reduce((a, r) => a + r.summe, 0), sA = aufwand.reduce((a, r) => a - r.summe, 0);
   const zeile = (r: Row, wert: number) => <tr key={(r.nummer ?? 'x') + wert}><td>{r.nummer ?? '–'}</td><td>{r.name ?? 'ohne Konto (Überzahlung / Guthaben)'}</td><td className="num">{eur(wert)}</td></tr>;
   return (
@@ -508,7 +512,7 @@ export function AuswertungPage() {
         <div className="kpi"><span>Kontostände {datum(bis)}</span><b>{eur(banken.reduce((a, b) => a + Number(b.saldo), 0))}</b><small>{banken.length} Bankkonten</small></div>
       </div>
       <section className="card">
-        <div className="card-head"><h2 className="title-ico"><BarChart3 size={22} />GuV {datum(von)} – {datum(bis)}</h2></div>
+        <div className="card-head"><h2 className="title-ico"><BarChart3 size={22} />GuV / EÜR {datum(von)} – {datum(bis)}</h2></div>
         <table className="list">
           <thead><tr><th>Konto</th><th>Bezeichnung</th><th className="num">Betrag</th></tr></thead>
           <tbody>
@@ -521,6 +525,11 @@ export function AuswertungPage() {
           </tbody>
           <tfoot><tr><td colSpan={2}>Ergebnis</td><td className={'num ' + (sE - sA < 0 ? 'neg' : '')}>{eur(sE - sA)}</td></tr></tfoot>
         </table>
+        {ohneEuer.length > 0 && <>
+          <div className="card-head" style={{ marginTop: 18 }}><h2>Nicht in der EÜR</h2></div>
+          <p className="muted small">Konten ohne Haken „EÜR“ im Kontenrahmen. Sie zählen nicht zum Ergebnis oben (Plus = Eingang, Minus = Ausgang).</p>
+          <table className="list"><tbody>{ohneEuer.map((r) => zeile(r, r.summe))}</tbody></table>
+        </>}
         {banken.length > 0 && <>
           <div className="card-head" style={{ marginTop: 18 }}><h2>Bankkonten</h2></div>
           <table className="list"><tbody>{banken.map((b) => <tr key={b.id}><td>{b.name}<div className="muted small">{b.bank} · {b.iban}</div></td><td className="num">{eur(Number(b.saldo))}</td></tr>)}</tbody></table>

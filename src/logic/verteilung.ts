@@ -32,6 +32,7 @@ export interface Nutzer {
 export interface Position {
   konto_id: number; nummer: string; name: string; gruppe: string;
   umlagefaehig: boolean; hdl: boolean; hwl: boolean;
+  euer?: boolean;         // Konto zählt in der Einnahmen-Überschuss-Rechnung (Schalter EÜR im Kontenrahmen)
   betrag: number;         // Kosten gesamt im Jahr (positiv = Kosten)
   betrag35a?: number;     // davon begünstigt nach § 35a (nur bei Konten mit HDL/HWL); ohne Angabe gilt der ganze Betrag
   schluessel: Schluessel;
@@ -179,7 +180,7 @@ export async function kostenErmitteln(objektId: number, jahr: number, nurUmlagef
     const direkt: Record<number, number> = {};
     for (const z of zeilen) if (z.einheit_id) direkt[z.einheit_id] = (direkt[z.einheit_id] ?? 0) + Number(z.kosten);
     const betrag35a = Math.round(zeilen.reduce((a, x) => a + Number(x.k35a ?? x.kosten), 0) * 100) / 100;
-    out.push({ konto_id: k.id, nummer: k.nummer, name: k.name, gruppe: k.gruppe ?? '', umlagefaehig: !!k.umlagefaehig, hdl: !!k.hdl, hwl: !!k.hwl,
+    out.push({ konto_id: k.id, nummer: k.nummer, name: k.name, gruppe: k.gruppe ?? '', umlagefaehig: !!k.umlagefaehig, hdl: !!k.hdl, hwl: !!k.hwl, euer: !!k.euer,
       betrag, betrag35a, schluessel: (k.objekt_schluessel ?? k.schluessel ?? 'Fläche') as Schluessel, direkt });
   }
   return out;

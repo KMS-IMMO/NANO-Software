@@ -38,6 +38,15 @@ export function RechnungErfassen({ objektFest, onSaved, vorlage }: { objektFest?
   const [fehler, setFehler] = useState('');
   const [busy, setBusy] = useState(false);
   const [konten, setKonten] = useState<Row[]>([]);
+  // MwSt aus dem Beleg hat Vorrang; sonst gilt der MwSt-Satz, der im Kontenrahmen beim Konto hinterlegt ist
+  const mwstAusBeleg = useRef(false);
+  function kontoWaehlen(id: string) {
+    setKonto(id);
+    const k = konten.find((x) => String(x.value) === id);
+    if (!k || mwstAusBeleg.current) return;
+    const m = Number(k.mwst) || 0;
+    setMitMwst(m > 0); if (m > 0) setSatz(String(m));
+  }
   const [objekte, setObjekte] = useState<Row[]>([]);
   const [einheiten, setEinheiten] = useState<Row[]>([]);
   const [firmen, setFirmen] = useState<Row[]>([]);
@@ -46,7 +55,7 @@ export function RechnungErfassen({ objektFest, onSaved, vorlage }: { objektFest?
 
   /** Beleg übernehmen und, wenn es eine PDF mit Text ist, die Angaben auslesen. Bereits ausgefüllte Felder bleiben, wie sie sind. */
   async function belegWaehlen(f: File) {
-    setDatei(f); setLesen('');
+    setDatei(f); setLesen(''); mwstAusBeleg.current = false;
     const pdf = f.type === 'application/pdf' || /\.pdf$/i.test(f.name);
     if (!pdf) { setLesen('Bilder und Scans enthalten keinen lesbaren Text. Bitte die Angaben selbst eintragen.'); return; }
     setLesen('Rechnung wird ausgelesen …');
@@ -59,14 +68,14 @@ export function RechnungErfassen({ objektFest, onSaved, vorlage }: { objektFest?
       if (e.rechnungsnr && !nr) { setNr(e.rechnungsnr); ok.push('Rechnungsnummer'); }
       if (e.datum && datum === heute()) { setDatum(e.datum); ok.push('Datum'); }
       if (e.betrag && !betrag) { setBetrag(String(Math.abs(e.betrag)).replace('.', ',')); if (e.betrag < 0) setArt('Gutschrift'); ok.push('Betrag'); }
-      if (e.mwst !== undefined) { setMitMwst(e.mwst > 0); if (e.mwst > 0) setSatz(String(e.mwst)); ok.push('MwSt'); }
+      if (e.mwst !== undefined) { mwstAusBeleg.current = true; setMitMwst(e.mwst > 0); if (e.mwst > 0) setSatz(String(e.mwst)); ok.push('MwSt'); }
       if (e.faellig && !faellig) { setFaellig(e.faellig); ok.push('Fälligkeit'); }
       if (e.lohn && !lohn) { setLohn(String(e.lohn).replace('.', ',')); ok.push('§ 35a-Anteil'); }
       if (e.lieferant && !lieferant) { setLieferant(e.lieferant); setFirmaId(e.firmaId ?? null); ok.push(e.firmaId ? 'Lieferant (Kontakt gefunden)' : 'Lieferant'); }
       // Buchungskonto: wie bei der letzten Rechnung dieses Lieferanten
       if (e.firmaId && !konto) {
         const k = (await db.select('SELECT buchungskonto_id FROM rechnungen WHERE firma_id = $1 ORDER BY datum DESC, id DESC LIMIT 1', [e.firmaId]))[0]?.buchungskonto_id;
-        if (k) { setKonto(String(k)); ok.push('Buchungskonto (wie zuletzt)'); }
+        if (k) { kontoWaehlen(String(k)); ok.push('Buchungskonto (wie zuletzt)'); }
       }
       // Immobilie: Straße der Liegenschaft steht auf der Rechnung
       if (objekt === '' && !objektFest) {
@@ -82,7 +91,7 @@ export function RechnungErfassen({ objektFest, onSaved, vorlage }: { objektFest?
   }
 
   useEffect(() => {
-    db.select(`SELECT id AS value, nummer || ' ' || name AS label, hdl, hwl FROM buchungskonten WHERE art IN ('Aufwand') ORDER BY nummer`).then(setKonten);
+    db.select(`SELECT id AS value, nummer || ' ' || name AS label, hdl, hwl, mwst FROM buchungskonten WHERE art IN ('Aufwand') ORDER BY nummer`).then(setKonten);
     db.select('SELECT id, objekt_nr, name, strasse, plz, ort FROM objekte ORDER BY name').then(setObjekte);
     db.select('SELECT id, name, gewerk FROM firmen ORDER BY name').then((f) => { setFirmen(f); setFirmenDa(true); });
   }, []);
@@ -125,6 +134,7 @@ export function RechnungErfassen({ objektFest, onSaved, vorlage }: { objektFest?
   function zuruecksetzen() {
     setKonto(''); setNr(''); setBetrag(''); setModus('alle'); setAnteile({}); setLieferant(''); setFirmaId(null);
     setFaellig(''); setBezahlt(''); setLohn(''); setNotiz(''); setDatei(null); setLesen(''); setArt('Ausgabe'); setDatum(heute());
+    mwstAusBeleg.current = false; setMitMwst(true); setSatz('19');
   }
 
   async function sichern() {
@@ -178,7 +188,7 @@ export function RechnungErfassen({ objektFest, onSaved, vorlage }: { objektFest?
             {(['Ausgabe', 'Gutschrift'] as const).map((a) => (
               <label key={a} className="radio"><input type="radio" checked={art === a} onChange={() => setArt(a)} />{a}</label>))}
           </div>
-          <label><span>Buchungskonto *</span><select value={konto} onChange={(e) => setKonto(e.target.value)}>
+          <label><span>Buchungskonto *</span><select value={konto} onChange={(e) => kontoWaehlen(e.target.value)}>
             <option value="">– bitte wählen –</option>{konten.map((k) => <option key={k.value} value={k.value}>{k.label}</option>)}</select></label>
           <div className="form f2">
             <label><span>Datum *</span><input type="date" value={datum} onChange={(e) => setDatum(e.target.value)} /></label>
