@@ -10,6 +10,7 @@ import { db, type Row } from '../db';
 import { eur } from './EntityTable';
 import type { Position } from '../logic/verteilung';
 import { BJ, buchungLoeschen, loeschHinweis } from '../logic/buchung';
+import { gesperrt, sperrText } from '../logic/abschluss';
 
 const datum = (d: string) => (d ? new Date(d + 'T00:00:00').toLocaleDateString('de-DE') : '');
 
@@ -115,6 +116,7 @@ export function AbrechnungsUebersicht({ objekt, jahr, pos, schluessel, stand = 0
 }) {
   const [neu, setNeu] = useState<{ konto: string; datum: string; text: string; betrag: string } | null>(null);
   const [neuFehler, setNeuFehler] = useState('');
+  const [anp, setAnp] = useState<{ konto: number; betrag: string; grund: string; fehler?: string } | null>(null);
   const [intern, setIntern] = useState(0);
   const geaendert = onChanged && ((t: string) => { setIntern((x) => x + 1); onChanged(t); });
   const [belege, setBelege] = useState<{ aus: Row[]; ein: Row[] }>({ aus: [], ein: [] });
@@ -156,6 +158,28 @@ export function AbrechnungsUebersicht({ objekt, jahr, pos, schluessel, stand = 0
     geaendert?.(`Kostenposition ${k?.nummer ?? ''} ${k?.name ?? ''} mit ${eur(betrag)} hinzugefügt.`);
   }
 
+  // Gesamtkosten nur für die Abrechnung anpassen; die Buchungen bleiben, wie sie sind
+  async function anpassenSpeichern(p: Position, zuruecksetzen = false) {
+    if (!anp) return;
+    const sp = await gesperrt(objekt, `${jahr}-01-01`);
+    if (sp) { setAnp({ ...anp, fehler: sperrText(sp) }); return; }
+    if (zuruecksetzen) {
+      await db.execute('DELETE FROM abrechnung_betraege WHERE objekt_id = $1 AND jahr = $2 AND buchungskonto_id = $3', [objekt, jahr, p.konto_id]);
+      setAnp(null); geaendert?.(`${p.nummer} ${p.name}: wieder der gebuchte Betrag ${eur(p.gebucht ?? p.betrag)}.`); return;
+    }
+    const b = zahl(anp.betrag);
+    if (!anp.betrag.trim() || !Number.isFinite(b)) { setAnp({ ...anp, fehler: 'Bitte einen Betrag eintragen, z. B. 11.850,00.' }); return; }
+    const gebucht = p.gebucht ?? p.betrag;
+    if (Math.abs(b - gebucht) < 0.005) {   // gleich dem gebuchten Betrag: Anpassung entfernen
+      await db.execute('DELETE FROM abrechnung_betraege WHERE objekt_id = $1 AND jahr = $2 AND buchungskonto_id = $3', [objekt, jahr, p.konto_id]);
+    } else {
+      await db.execute(`INSERT INTO abrechnung_betraege (objekt_id, jahr, buchungskonto_id, betrag, grund) VALUES ($1, $2, $3, $4, $5)
+        ON CONFLICT (objekt_id, jahr, buchungskonto_id) DO UPDATE SET betrag = excluded.betrag, grund = excluded.grund`, [objekt, jahr, p.konto_id, Math.round(b * 100) / 100, anp.grund.trim() || null]);
+    }
+    setAnp(null);
+    geaendert?.(`${p.nummer} ${p.name}: Gesamtkosten für die Abrechnung ${jahr} ${eur(b)} (gebucht ${eur(gebucht)}).`);
+  }
+
   return (
     <section className="card abr-uebersicht">
       <div className="card-head"><h2>{titel ?? `Abrechnungsübersicht ${jahr}`}</h2>
@@ -191,10 +215,25 @@ export function AbrechnungsUebersicht({ objekt, jahr, pos, schluessel, stand = 0
                 <tr className={offen.has(k) ? 'auf' : ''}>
                   <td><Pfeil k={k} n={liste.length} /></td><td>{p.nummer}</td><td>{p.name}{(p.hdl || p.hwl) && <div className="muted small">§ 35a {p.hdl ? 'HDL' : 'HWL'}: {eur(p.betrag35a ?? p.betrag)}</div>}</td>
                   <td>{schluessel(p)}{eigeneJahr.has(p.konto_id) && <span className="pill st-aktiv klein" title={`Eigener Schlüssel nur für ${jahr}`}>nur {jahr}</span>}</td>
-                  <td className="num">{liste.length}</td><td className="num"><b>{eur(p.betrag)}</b></td>
+                  <td className="num">{liste.length}</td>
+                  <td className="num abr-betrag"><span className="abr-betrag-zeile">
+                    {p.gebucht !== undefined && <span className="pill klein abr-angepasst" title={p.grund ?? 'Für die Abrechnung angepasst'}>angepasst</span>}
+                    <b>{eur(p.betrag)}</b>
+                    {geaendert && <button className="icon-btn" title="Gesamtkosten für die Abrechnung anpassen" onClick={() => setAnp({ konto: p.konto_id, betrag: String(p.betrag.toFixed(2)).replace('.', ','), grund: p.grund ?? '' })}><Pencil size={14} /></button>}</span>
+                    {p.gebucht !== undefined && <div className="muted small">gebucht {eur(p.gebucht)}{p.grund ? ` · ${p.grund}` : ''}</div>}</td>
                 </tr>
+                {anp?.konto === p.konto_id && <tr className="abr-anpassen"><td /><td colSpan={5}>
+                  <div className="abr-neu">
+                    <label><span>Gesamtkosten für die Abrechnung {jahr}</span><BetragFeld autoFocus value={anp.betrag} onChange={(x) => setAnp({ ...anp, betrag: x.target.value, fehler: undefined })} onKeyDown={(x) => x.key === 'Enter' && anpassenSpeichern(p)} /></label>
+                    <label className="grow"><span>Grund</span><input placeholder="z. B. Heizkostenabrechnung Messdienst statt Abschläge" value={anp.grund} onChange={(x) => setAnp({ ...anp, grund: x.target.value })} /></label>
+                    <div className="row">
+                      {p.gebucht !== undefined && <button onClick={() => anpassenSpeichern(p, true)}>Gebuchten Betrag nehmen</button>}
+                      <button onClick={() => setAnp(null)}>Abbrechen</button><button className="primary" onClick={() => anpassenSpeichern(p)}>Übernehmen</button></div>
+                    <p className="muted small" style={{ flexBasis: '100%', margin: 0 }}>Gebucht sind {eur(p.gebucht ?? p.betrag)}. Der neue Betrag gilt nur für die Abrechnung {jahr} dieser Liegenschaft. Die Buchhaltung bleibt unverändert.</p>
+                    {anp.fehler && <p className="error small">{anp.fehler}</p>}
+                  </div></td></tr>}
                 {offen.has(k) && <tr className="belege-zeile"><td /><td colSpan={5}><Belege liste={liste} ausgabe kontoId={p.konto_id} objekt={objekt} jahr={jahr} onChanged={geaendert} />
-                  {Math.abs(liste.reduce((a, b) => a + b.betrag, 0) - p.betrag) > 0.005 && <p className="warn small">Die Belege ergeben {eur(liste.reduce((a, b) => a + b.betrag, 0))}, gebucht sind {eur(p.betrag)}.</p>}</td></tr>}
+                  {Math.abs(liste.reduce((a, b) => a + b.betrag, 0) - (p.gebucht ?? p.betrag)) > 0.005 && <p className="warn small">Die Belege ergeben {eur(liste.reduce((a, b) => a + b.betrag, 0))}, gebucht sind {eur(p.gebucht ?? p.betrag)}.</p>}</td></tr>}
               </Fragment>);
           })}
             <tr className="abr-zwischensumme"><td /><td colSpan={4}>Summe {gTitel.toLowerCase().replace('kosten', 'Kosten')}</td><td className="num">{eur(gPos.reduce((a, p) => a + p.betrag, 0))}</td></tr>
@@ -220,7 +259,7 @@ export function AbrechnungsUebersicht({ objekt, jahr, pos, schluessel, stand = 0
       </>}
       <p className="muted small">Den Verteilerschlüssel wählst du je Buchungskonto. Er gilt nur für diese Liegenschaft und nur für {jahr}. Andere Jahre behalten ihren eigenen Schlüssel.
         Ohne eigene Wahl gilt der Standard unter „Umlageschlüssel“. Bei „Manuell“ trägst du den Betrag je Einheit selbst ein.
-        {geaendert && ' Beträge änderst oder löschst du in der aufgeklappten Zeile mit Stift und Papierkorb. Jede Änderung wird als Buchung gespeichert und gilt auch in der Buchhaltung.'}</p>
+        {geaendert && ' Beträge änderst oder löschst du in der aufgeklappten Zeile mit Stift und Papierkorb. Jede Änderung wird als Buchung gespeichert und gilt auch in der Buchhaltung. Mit dem Stift neben den Gesamtkosten passt du dagegen nur den Betrag für diese Abrechnung an, zum Beispiel Heizkosten laut Messdienst statt der Abschläge. Die Buchhaltung bleibt dann unverändert.'}</p>
     </section>
   );
 }

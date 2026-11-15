@@ -853,4 +853,16 @@ CREATE TABLE aufteilung_vorlagen (
   teile TEXT NOT NULL               -- JSON: [{ konto_id, anteil, text }]
 );
 `,
+  // 32: Gesamtkosten eines Kontos nur für die Abrechnung anpassen (z. B. Heizkosten laut Messdienst statt Abschläge).
+  //     Die Buchhaltung bleibt unverändert; die Abrechnung zeigt gebucht und angepasst.
+  `
+CREATE TABLE abrechnung_betraege (
+  objekt_id INTEGER NOT NULL REFERENCES objekte(id) ON DELETE CASCADE,
+  jahr INTEGER NOT NULL,
+  buchungskonto_id INTEGER NOT NULL REFERENCES buchungskonten(id) ON DELETE CASCADE,
+  betrag REAL NOT NULL,
+  grund TEXT,
+  PRIMARY KEY (objekt_id, jahr, buchungskonto_id)
+);
+`,
 ];

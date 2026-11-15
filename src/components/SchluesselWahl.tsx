@@ -18,7 +18,7 @@ const r2 = (n: number) => Math.round(n * 100) / 100;
 
 type Fenster = { art: 'Verbrauch' | 'Summe'; einheiten: Row[]; werte: Record<number, string>; gesamt: string; masseinheit: string };
 
-export const MASSEINHEITEN = ['m²', 'm³', 'kWh', 'Liter', 'Stück'];
+export const MASSEINHEITEN = ['m²', 'm³', 'kWh', 'Liter', 'Stück', '€'];
 
 async function speichernSchluessel(objekt: number, jahr: number, kontoId: number, neu: string, masseinheit: string | null = null) {
   // Gilt nur für dieses Abrechnungsjahr; andere Jahre behalten ihren eigenen Schlüssel
@@ -62,8 +62,10 @@ export function SchluesselWahl({ objekt, jahr, p, anteile, onChanged }: {
     onChanged(`${p.name}: Verteilung für ${jahr} jetzt nach ${schluesselText(neu)}.`);
   }
 
-  const gesamt = f ? zahl(f.gesamt) : 0;
+  // Verbrauch in €: die Beträge je Einheit (z. B. aus Einzelabrechnungen) sind der Maßstab; die Gesamtkosten werden im Verhältnis verteilt
+  const inEuro = f?.art === 'Verbrauch' && f.masseinheit === '€';
   const verteilt = f ? r2(f.einheiten.reduce((s, e) => s + zahl(f.werte[e.id] ?? ''), 0) * 1000) / 1000 : 0;
+  const gesamt = !f ? 0 : inEuro ? verteilt : zahl(f.gesamt);
   const passt = f ? gesamt > 0 && Math.abs(verteilt - gesamt) < (f.art === 'Summe' ? 0.005 : 0.0005) : false;
   const kosten = (e: Row) => (!f ? 0 : f.art === 'Summe' ? zahl(f.werte[e.id] ?? '') : gesamt ? p.betrag * zahl(f.werte[e.id] ?? '') / gesamt : 0);
 
@@ -98,7 +100,8 @@ export function SchluesselWahl({ objekt, jahr, p, anteile, onChanged }: {
             <p className="muted">{p.nummer} {p.name} · Abrechnungsjahr {jahr} · Gesamtkosten <b>{eur(p.betrag)}</b></p>
             <div className="form">
               {f.art === 'Verbrauch' ? <>
-                <label><span>Gesamtverbrauch{f.masseinheit ? ` (${f.masseinheit})` : ''} *</span><input inputMode="decimal" autoFocus placeholder="z. B. 1.250" value={f.gesamt} onChange={(e) => setF({ ...f, gesamt: e.target.value })} /></label>
+                {inEuro ? <label><span>Summe der Beträge (€)</span><input value={fmt(verteilt)} disabled /></label>
+                  : <label><span>Gesamtverbrauch{f.masseinheit ? ` (${f.masseinheit})` : ''} *</span><input inputMode="decimal" autoFocus placeholder="z. B. 1.250" value={f.gesamt} onChange={(e) => setF({ ...f, gesamt: e.target.value })} /></label>}
                 <label><span>Maßeinheit</span><select value={f.masseinheit} onChange={(e) => setF({ ...f, masseinheit: e.target.value })}>{MASSEINHEITEN.map((m) => <option key={m}>{m}</option>)}</select></label>
               </> : <label><span>Gesamtsumme</span><input value={f.gesamt} disabled /></label>}
             </div>
@@ -106,14 +109,16 @@ export function SchluesselWahl({ objekt, jahr, p, anteile, onChanged }: {
               <thead><tr><th>Einheit</th><th className="num">{f.art === 'Summe' ? 'Betrag €' : `Verbrauch${f.masseinheit ? ` (${f.masseinheit})` : ''}`}</th>{f.art === 'Verbrauch' && <th className="num">Anteil</th>}<th className="num">Kosten</th></tr></thead>
               <tbody>{f.einheiten.map((e) => (
                 <tr key={e.id}><td>{e.nummer} <span className="muted small">{e.typ}</span></td>
-                  <td className="num"><input className="cell" inputMode="decimal" value={f.werte[e.id] ?? ''} onChange={(x) => setF({ ...f, werte: { ...f.werte, [e.id]: x.target.value } })} /></td>
+                  <td className="num"><input className="cell" inputMode="decimal" placeholder={inEuro ? '0,00' : ''} value={f.werte[e.id] ?? ''} onChange={(x) => setF({ ...f, werte: { ...f.werte, [e.id]: x.target.value } })} /></td>
                   {f.art === 'Verbrauch' && <td className="num">{gesamt ? fmt(zahl(f.werte[e.id] ?? '') / gesamt * 100, 1) + ' %' : '–'}</td>}
                   <td className="num">{eur(kosten(e))}</td></tr>))}
               </tbody>
-              <tfoot><tr><td>Verteilt</td><td className="num">{f.art === 'Summe' ? eur(verteilt) : fmt(verteilt, 3).replace(/,?0+$/, '')}</td>{f.art === 'Verbrauch' && <td />}
+              <tfoot><tr><td>Verteilt</td><td className="num">{f.art === 'Summe' || inEuro ? eur(verteilt) : fmt(verteilt, 3).replace(/,?0+$/, '')}</td>{f.art === 'Verbrauch' && <td />}
                 <td className="num">{eur(f.einheiten.reduce((s, e) => s + kosten(e), 0))}</td></tr></tfoot>
             </table>
-            <p className={passt ? 'info' : 'warn'}>{passt ? 'Gesamtwert und Verteilung stimmen überein.'
+            <p className={passt ? 'info' : 'warn'}>{inEuro ? (verteilt > 0 ? (Math.abs(verteilt - p.betrag) < 0.005 ? 'Die Beträge ergeben genau die Gesamtkosten.'
+                : `Die Beträge ergeben ${eur(verteilt)}, die Gesamtkosten sind ${eur(p.betrag)}. Verteilt wird im Verhältnis der Beträge.`) : 'Bitte die Beträge je Einheit in € eintragen.')
+              : passt ? 'Gesamtwert und Verteilung stimmen überein.'
               : f.art === 'Summe' ? `Verteilt ${eur(verteilt)} von ${eur(gesamt)}. ${verteilt < gesamt ? 'Es fehlen' : 'Zu viel verteilt:'} ${eur(Math.abs(r2(gesamt - verteilt)))}.`
               : gesamt ? `Verteilt ${fmt(verteilt, 3).replace(/,?0+$/, '')} von ${fmt(gesamt, 3).replace(/,?0+$/, '')}${f.masseinheit ? ' ' + f.masseinheit : ''}. ${verteilt < gesamt ? 'Es fehlen' : 'Zu viel verteilt:'} ${fmt(Math.abs(r2((gesamt - verteilt) * 1000) / 1000), 3).replace(/,?0+$/, '')}${f.masseinheit ? ' ' + f.masseinheit : ''}.`
               : 'Bitte zuerst den Gesamtverbrauch eintragen.'}</p>

@@ -37,6 +37,8 @@ export interface Position {
   betrag35a?: number;     // davon begünstigt nach § 35a (nur bei Konten mit HDL/HWL); ohne Angabe gilt der ganze Betrag
   schluessel: Schluessel;
   direkt?: Record<number, number>; // Kosten, die direkt einer Einheit zugeordnet sind
+  gebucht?: number;       // nur bei angepasstem Betrag: Summe laut Buchhaltung
+  grund?: string | null;  // nur bei angepasstem Betrag: Begründung
 }
 
 export interface Ergebnis {
@@ -183,16 +185,23 @@ export async function kostenErmitteln(objektId: number, jahr: number, nurUmlagef
   const rech = await db.select(`SELECT buchungskonto_id, einheit_id, SUM(betrag) AS kosten, SUM(COALESCE(anteil_lohn, betrag)) AS k35a FROM rechnungen r
     WHERE objekt_id = $1 AND COALESCE(bezahlt_am, datum) BETWEEN $2 AND $3
       AND NOT EXISTS (SELECT 1 FROM buchungen b WHERE b.rechnung_id = r.id) GROUP BY buchungskonto_id, einheit_id`, [objektId, von, bis]);
+  // Für die Abrechnung angepasste Gesamtkosten (Buchhaltung bleibt unverändert)
+  const anp = await db.select('SELECT buchungskonto_id, betrag, grund FROM abrechnung_betraege WHERE objekt_id = $1 AND jahr = $2', [objektId, jahr]);
   const out: Position[] = [];
   for (const k of konten) {
     const zeilen = [...buch, ...rech].filter((x) => x.buchungskonto_id === k.id);
-    const betrag = Math.round(zeilen.reduce((a, x) => a + Number(x.kosten), 0) * 100) / 100;
-    if (Math.abs(betrag) < 0.005) continue;
+    const gebucht = Math.round(zeilen.reduce((a, x) => a + Number(x.kosten), 0) * 100) / 100;
+    const a = anp.find((x) => x.buchungskonto_id === k.id);
+    if (Math.abs(gebucht) < 0.005 && !a) continue;
+    const betrag = a ? Math.round(Number(a.betrag) * 100) / 100 : gebucht;
+    // Angepasster Betrag: direkt zugeordnete Kosten und § 35a-Anteil im gleichen Verhältnis
+    const f = a ? (Math.abs(gebucht) >= 0.005 ? betrag / gebucht : 0) : 1;
     const direkt: Record<number, number> = {};
-    for (const z of zeilen) if (z.einheit_id) direkt[z.einheit_id] = (direkt[z.einheit_id] ?? 0) + Number(z.kosten);
-    const betrag35a = Math.round(zeilen.reduce((a, x) => a + Number(x.k35a ?? x.kosten), 0) * 100) / 100;
+    for (const z of zeilen) if (z.einheit_id) direkt[z.einheit_id] = (direkt[z.einheit_id] ?? 0) + Number(z.kosten) * f;
+    const k35 = zeilen.reduce((s, x) => s + Number(x.k35a ?? x.kosten), 0) * f;
+    const betrag35a = Math.round((a && Math.abs(gebucht) < 0.005 ? betrag : k35) * 100) / 100;
     out.push({ konto_id: k.id, nummer: k.nummer, name: k.name, gruppe: k.gruppe ?? '', umlagefaehig: !!k.umlagefaehig, hdl: !!k.hdl, hwl: !!k.hwl, hbg: !!k.hbg,
-      betrag, betrag35a, schluessel: (k.objekt_schluessel ?? k.schluessel ?? 'Fläche') as Schluessel, direkt });
+      betrag, betrag35a, schluessel: (k.objekt_schluessel ?? k.schluessel ?? 'Fläche') as Schluessel, direkt, ...(a ? { gebucht, grund: a.grund } : {}) });
   }
   return out;
 }
