@@ -19,7 +19,7 @@ import { DatevDialog } from '../components/DatevDialog';
 import { BuchenDialog } from '../components/BuchenDialog';
 import { Wiederkehrend } from '../components/Wiederkehrend';
 import { BJ, buchungLoeschen, loeschHinweis } from '../logic/buchung';
-import { gesperrt, sperrText } from '../logic/abschluss';
+import { buchungGesperrt, gesperrt, sperrText } from '../logic/abschluss';
 import { ruecklageMonate, ruecklageZeitraum } from '../logic/ruecklage';
 
 // Konten der Erhaltungsrücklage: bei einer WEG nicht in der GuV, sondern im eigenen Rücklagen-Ausweis
@@ -77,7 +77,7 @@ export function JournalPage() {
   const nachBank = (t?: string) => { if (t) setInfo(t); load(); jahrPruefen(); };
   async function auswahlLoeschen() {
     const liste = rows.filter((r) => wahl.has(r.id));
-    for (const r of liste) { const sp = await gesperrt(Number(r.objekt_id), r.datum); if (sp) { setInfo(sperrText(sp)); return; } }
+    for (const r of liste) { const sp = await buchungGesperrt(Number(r.objekt_id), r.datum, r.jahr); if (sp) { setInfo(sperrText(sp)); return; } }
     const bank = liste.filter((r) => r.bankumsatz_id).length;
     if (!window.confirm(`${liste.length} Buchung(en) über zusammen ${eur(liste.reduce((a, r) => a + Math.abs(Number(r.betrag)), 0))} löschen?${bank ? `\n\n${bank} davon stammen aus dem Kontoauszug. Die Bankumsätze stehen danach wieder oben unter „Aus dem Kontoauszug“ zum Buchen bereit.` : ''}`)) return;
     for (const r of liste) await buchungLoeschen(Number(r.id));
@@ -110,7 +110,7 @@ export function JournalPage() {
     setFehler('');
     if (!edit.datum || !edit.objekt_id || !edit.buchungskonto_id || !edit.betrag) { setFehler('Bitte Datum, Liegenschaft, Konto und Betrag ausfüllen.'); return; }
     // Abgeschlossenes Jahr: weder das neue noch (beim Bearbeiten) das bisherige Datum darf darin liegen
-    const sp = (await gesperrt(Number(edit.objekt_id), edit.datum)) ?? (edit.id ? await gesperrt(Number(edit.alt_objekt ?? edit.objekt_id), edit.alt_datum) : null);
+    const sp = (await buchungGesperrt(Number(edit.objekt_id), edit.datum, edit.jahr)) ?? (edit.id ? await buchungGesperrt(Number(edit.alt_objekt ?? edit.objekt_id), edit.alt_datum, edit.jahr) : null);
     if (sp) { setFehler(sperrText(sp)); return; }
     const vz = edit.richtung === 'Einnahme' ? 1 : -1;
     const gesamt = Math.abs(zahl(String(edit.betrag)));
@@ -148,7 +148,7 @@ export function JournalPage() {
   }
   async function loeschen(r: Row | null = edit) {
     if (!r?.id) return;
-    const sp = await gesperrt(Number(r.alt_objekt ?? r.objekt_id), r.alt_datum ?? r.datum);
+    const sp = await buchungGesperrt(Number(r.alt_objekt ?? r.objekt_id), r.alt_datum ?? r.datum, r.jahr);
     if (sp) { setEdit(null); setInfo(sperrText(sp)); return; }
     const h = loeschHinweis(r);
     if (!window.confirm(`Buchung ${r.id} über ${eur(Math.abs(Number(r.alt_betrag ?? r.betrag)))} löschen?${h ? '\n\n' + h : ''}`)) return;

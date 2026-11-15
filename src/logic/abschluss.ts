@@ -31,6 +31,12 @@ export async function gesperrt(objekt: number | null | undefined, datum: string 
   return r ? `${ABSCHLUSS_TEXT[r.art as AbschlussArt] ?? r.art} ${String(datum).slice(0, 4)}` : null;
 }
 
+/** Wie gesperrt(), prüft aber zusätzlich das Buchungsjahr (z. B. Grundsteuer Q4 2025, gebucht am 05.01.2026 für 2025). */
+export async function buchungGesperrt(objekt: number | null | undefined, datum: string | null | undefined, jahr?: number | string | null): Promise<string | null> {
+  const j = Number(jahr);
+  return (await gesperrt(objekt, datum)) ?? (j && String(j) !== String(datum ?? '').slice(0, 4) ? await gesperrt(objekt, `${j}-01-01`) : null);
+}
+
 export const sperrText = (name: string) => `Die ${name} ist abgeschlossen. Buchungen dieses Jahres kannst du erst wieder ändern, wenn du den Abschluss in der Abrechnung aufhebst.`;
 
 /** Prüfungen vor dem Abschluss. `sperrt` = muss erfüllt sein, sonst nur Hinweis. */
