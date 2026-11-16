@@ -245,6 +245,7 @@ export function WegAbrechnungPage() {
       b.kopf([p.firma, [p.anrede === 'Firma' ? '' : p.anrede, p.titel, p.vorname, p.nachname].filter(Boolean).join(' '), p.strasse, [p.plz, p.ort].filter(Boolean).join(' ')], new Date().toISOString().slice(0, 10));
       b.betreff(`Einzelabrechnung ${jahr}: ${/^weg\b/i.test(o.name) ? '' : 'WEG '}${o.name}, Einheit ${r.einheit.nummer}${wid(o.objekt_nr, r.einheit.lfd_nr) ? ` (W-ID ${wid(o.objekt_nr, r.einheit.lfd_nr)})` : ''}`);
       b.absatz(`Miteigentumsanteil: ${num(r.einheit.mea, 0)} / ${num(o.gesamt_mea, 0)} · Fläche ${num(r.einheit.flaeche)} m² · Eigentum im Jahr: ${dDatum(r.nutzer.von)} bis ${dDatum(r.nutzer.bis)}`);
+      b.kennzahlen([['Ihr Kostenanteil', geld(r.summe)], ['Vorschüsse Bewirtschaftung', geld(r.vorschuss)], [r.spitze > 0 ? 'Nachschuss' : 'Erstattung', geld(Math.abs(r.spitze))]], 2);
       for (const [titel, filter] of [['Umlagefähige Kosten (für Ihre Betriebskostenabrechnung an Mieter)', true], ['Nicht umlagefähige Kosten', false]] as const) {
         const z = r.zeilen.filter((x) => x.pos.umlagefaehig === filter && Math.abs(x.betrag) > 0.004);
         if (!z.length) continue;
@@ -461,6 +462,7 @@ export function EigentuemerAbrechnungPage() {
     b.kopf([p.firma, [p.anrede === 'Firma' ? '' : p.anrede, p.titel, p.vorname, p.nachname].filter(Boolean).join(' '), p.strasse, [p.plz, p.ort].filter(Boolean).join(' ')], new Date().toISOString().slice(0, 10));
     b.betreff(`Eigentümerabrechnung ${jahr}: ${o.name}`);
     b.absatz(`Abrechnungszeitraum 01.01.${jahr} bis 31.12.${jahr}. Nachfolgend erhalten Sie die Übersicht über Einnahmen und Ausgaben Ihres Objekts.`);
+    b.kennzahlen([['Einnahmen', geld(summeEin)], ['Ausgaben', geld(sU + sN)], [summeEin - sU - sN < 0 ? 'Fehlbetrag' : 'Überschuss', geld(summeEin - sU - sN)]], 2);
     b.tabelle(['Einnahmen', 'Betrag'], ein.map((x) => [`${x.nummer} ${x.name}`, geld(Number(x.betrag))]), [['Summe Einnahmen', geld(summeEin)]]);
     b.tabelle(['Umlagefähige Kosten', 'Betrag'], uml.map((x) => [`${x.nummer} ${x.name}`, geld(x.betrag)]), [['Summe umlagefähig', geld(sU)]]);
     b.tabelle(['Nicht umlagefähige Kosten', 'Betrag'], nicht.map((x) => [`${x.nummer} ${x.name}`, geld(x.betrag)]), [['Summe nicht umlagefähig', geld(sN)]]);
