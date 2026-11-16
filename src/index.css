@@ -1402,3 +1402,25 @@ html[data-theme="dunkel"] .mail-fehler { background: rgba(255,46,69,.12); }
 .ms-kopie { display: inline-flex; align-items: center; gap: 6px; background: var(--accent-soft); border-radius: 6px; padding: 0 6px; margin: 0 2px; }
 .ms-kopie code { font-size: 12.5px; }
 .ms-rechte { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
+
+/* KI-Agent: Mikrofon, Zuhören, Vorlesen, Gesprächsmodus */
+.ki-mic { padding: 0 12px; display: grid; place-items: center; }
+.ki-mic.an { background: var(--neg); border-color: var(--neg); color: #fff; animation: ki-puls 1.2s ease-in-out infinite; }
+@keyframes ki-puls { 0%, 100% { box-shadow: 0 0 0 0 rgba(192,57,43,.45); } 50% { box-shadow: 0 0 0 7px rgba(192,57,43,0); } }
+.ki-welle { display: inline-flex; gap: 3px; align-items: center; height: 14px; }
+.ki-welle i { width: 3px; height: 100%; border-radius: 2px; background: var(--accent); animation: ki-welle 0.9s ease-in-out infinite; }
+.ki-welle i:nth-child(2) { animation-delay: .15s; } .ki-welle i:nth-child(3) { animation-delay: .3s; } .ki-welle i:nth-child(4) { animation-delay: .45s; }
+@keyframes ki-welle { 0%, 100% { transform: scaleY(.3); } 50% { transform: scaleY(1); } }
+.ki-spricht { align-self: flex-start; display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--muted); }
+.ki-tipp { border-color: var(--accent) !important; }
+.ki-fuss { display: flex; flex-direction: column; gap: 4px; }
+.ki-gespraech { display: flex; align-items: center; gap: 6px; color: var(--text); cursor: pointer; }
+.kontoabgleich-titel { font-size: 15px; margin: 18px 0 6px; }
+.kontoabgleich .pruefliste li.unter { padding-left: 30px; display: flex; justify-content: space-between; gap: 12px; font-size: 13px; }
+.kontoabgleich td svg, .kontoabgleich .small svg { vertical-align: -2px; }
+@media (prefers-reduced-motion: reduce) { .ki-mic.an, .ki-welle i { animation: none !important; } }
+.kontoabgleich .pruefliste { list-style: none; padding: 0; margin: 6px 0 14px; display: grid; gap: 6px; }
+.kontoabgleich .pruefliste li { display: flex; gap: 8px; align-items: flex-start; }
+.kontoabgleich .pruefliste li.ok svg, .kontoabgleich .pos svg { color: #3a8a4f; }
+.kontoabgleich .pruefliste li.fehlt svg, .kontoabgleich .neg svg { color: #c0392b; }
+.kontoabgleich .pruefliste li.hinweis svg { color: #c98a1a; }

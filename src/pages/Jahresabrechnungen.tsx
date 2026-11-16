@@ -8,6 +8,8 @@ import { wid } from '../db/labels';
 import { AbrechnungsUebersicht } from '../components/AbrechnungsUebersicht';
 import { SchluesselWahl, schluesselText } from '../components/SchluesselWahl';
 import { AbschlussKarte } from '../components/AbschlussKarte';
+import { KontoabgleichKarte } from '../components/KontoabgleichKarte';
+import { kontoabgleich } from '../logic/kontoabgleich';
 import { useObjektKontext } from '../logic/objektKontext';
 import { eur, farbe, num, datum } from '../components/EntityTable';
 import { eigeneSchluessel, kostenErmitteln, nichtVerteilteKosten, nutzerErmitteln, verteilen, type Ergebnis, type Position } from '../logic/verteilung';
@@ -212,6 +214,14 @@ export function WegAbrechnungPage() {
     const ent: Row[] = verm.entwicklung ?? [];
     if (ent.length) g.tabelle(['Bankkonto', 'Stand 01.01.', 'Eingänge', 'Ausgänge', 'Stand 31.12.'],
       ent.map((b) => [`${b.name}${b.iban ? ` (${b.iban})` : ''}`, geld(Number(b.start)), geld(Number(b.ein)), geld(Number(b.aus)), geld(Number(b.start) + Number(b.ein) + Number(b.aus))]), undefined, 1);
+    // Kontoabgleich: Endbestand gegen den Kontoauszug zum 31.12. und ob alle Umsätze gebucht sind
+    for (const k of await kontoabgleich(o.id, jahr)) {
+      const teile = [k.auszug === null ? `Kontostand laut Kontoauszug zum 31.12.${jahr}: noch nicht abgeglichen.`
+        : Math.abs(k.differenz ?? 0) < 0.005 ? `Der Endbestand stimmt mit dem Kontoauszug zum 31.12.${jahr} überein (${geld(k.auszug)}).`
+        : `Laut Kontoauszug zum 31.12.${jahr}: ${geld(k.auszug)}, Differenz ${geld(k.differenz ?? 0)}.`,
+        k.offen.length ? `${k.offen.length} Umsätze (${geld(k.offenSumme)}) sind noch nicht gebucht.` : `Alle ${k.anzahl} Umsätze des Jahres sind gebucht${k.ignoriert ? ` bzw. bewusst nicht gebucht (${k.ignoriert})` : ''}.`];
+      g.absatz(`${k.name}: ${teile.join(' ')}`, 3);
+    }
     const anteil = (r: typeof erg[number], u: boolean) => r.zeilen.filter((z) => z.pos.umlagefaehig === u).reduce((a, z) => a + z.betrag, 0);
     g.tabelle(['Einheit', 'Eigentümer', 'umlagefähig', 'nicht umlagef.', 'Kostenanteil', 'Vorschüsse', 'Spitze'],
       erg.map((r) => [r.einheit.nummer, r.nutzer.name, geld(anteil(r, true)), geld(anteil(r, false)), geld(r.summe), geld(r.vorschuss), saldoZelle(r.spitze, geld(r.spitze))]), undefined, 2);
@@ -336,19 +346,14 @@ export function WegAbrechnungPage() {
         </table>
       </section>
       <section className="card abr-uebersicht">
-        <div className="card-head"><h2>Einnahmen {jahr} und Entwicklung der Bankkonten</h2></div>
+        <div className="card-head"><h2>Einnahmen {jahr}</h2></div>
         <table className="list"><tbody>
           {(verm.einnahmen ?? []).map((x: Row) => <tr key={x.nummer}><td>{x.nummer} {x.name}</td><td className="num">{eur(Number(x.betrag))}</td></tr>)}
           {verm.einOffen ? <tr><td className="muted">Zahlungseingänge noch ohne Zuordnung (unter „Bank &amp; Zuordnung“)</td><td className="num muted">{eur(verm.einOffen)}</td></tr> : null}
           <tr><td><b>Summe Einnahmen {jahr}</b></td><td className="num"><b>{eur((verm.einSumme ?? 0) + (verm.einOffen ?? 0))}</b></td></tr>
         </tbody></table>
-        <table className="list" style={{ marginTop: 14 }}>
-          <thead><tr><th>Bankkonto</th><th className="num">Stand 01.01.</th><th className="num">Eingänge</th><th className="num">Ausgänge</th><th className="num">Stand 31.12.</th></tr></thead>
-          <tbody>{(verm.entwicklung ?? []).map((b: Row) => <tr key={b.id}><td>{b.name}{b.saldo_datum > `${jahr}-01-01` ? <span className="muted small"> (erfasst ab {datum(b.saldo_datum)})</span> : null}</td>
-            <td className="num">{eur(Number(b.start))}</td><td className="num">{eur(Number(b.ein))}</td><td className="num">{eur(Number(b.aus))}</td><td className="num"><b>{eur(Number(b.start) + Number(b.ein) + Number(b.aus))}</b></td></tr>)}
-          </tbody></table>
-        {!(verm.entwicklung ?? []).length && <p className="muted small">Für dieses Objekt ist kein Bankkonto angelegt.</p>}
       </section>
+      {objekt !== '' && <KontoabgleichKarte objekt={Number(objekt)} jahr={jahr} stand={stand} gesperrt={!!zu} />}
       <section className="card abr-uebersicht">
         <div className="card-head"><h2>Vermögensbericht zum 31.12.{jahr}</h2></div>
         <table className="list"><tbody>
@@ -533,6 +538,7 @@ export function EigentuemerAbrechnungPage() {
           </tbody></table>
           {bank.n > 0 && Math.abs(differenz) >= 0.01 && <p className="muted small">Differenz {eur(differenz)}, z. B. durch Kautionen, offene Rechnungen oder Buchungen ohne Bankumsatz.</p>}
         </section>}
+        {objekt !== '' && <KontoabgleichKarte objekt={Number(objekt)} jahr={jahr} stand={stand} />}
         <section className="card">
           <div className="card-head"><h2>Weitere Angaben</h2></div>
           <table className="list"><tbody>

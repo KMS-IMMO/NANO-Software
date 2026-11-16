@@ -896,4 +896,15 @@ CREATE TRIGGER protokoll_abrechnungen_update AFTER UPDATE ON abrechnungen BEGIN 
 CREATE TRIGGER protokoll_bankumsaetze_delete AFTER DELETE ON bankumsaetze BEGIN INSERT INTO protokoll (tabelle, datensatz, aktion, inhalt) VALUES ('bankumsaetze', OLD.id, 'gelöscht', json_object('datum', OLD.datum, 'betrag', OLD.betrag, 'gegenpartei', OLD.gegenpartei, 'verwendungszweck', OLD.verwendungszweck, 'status', OLD.status, 'bankkonto_id', OLD.bankkonto_id)); END;
 ALTER TABLE versammlung_tops ADD COLUMN mehrheit TEXT DEFAULT 'einfach';
 `,
+  // 34: Kontoabgleich zur Jahresabrechnung – Kontostand laut echtem Kontoauszug zum 31.12. je Bankkonto und Jahr
+  `
+CREATE TABLE kontoabgleich (
+  bankkonto_id INTEGER NOT NULL REFERENCES bankkonten(id) ON DELETE CASCADE,
+  jahr INTEGER NOT NULL,
+  saldo_auszug REAL NOT NULL,
+  notiz TEXT,
+  erfasst_am TEXT,
+  PRIMARY KEY (bankkonto_id, jahr)
+);
+`,
 ];
