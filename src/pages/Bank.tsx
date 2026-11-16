@@ -71,14 +71,18 @@ export function BankPage() {
     const z = rows.filter((r) => wahl.has(r.id) && r.status !== 'offen');
     if (!z.length) { setInfo('Unter den ausgewählten Umsätzen ist keiner zugeordnet.'); return; }
     if (!window.confirm(`Zuordnung von ${z.length} Umsatz/Umsätzen lösen? Die Buchungen dazu werden gelöscht, die Umsätze stehen danach wieder unter „Zum Prüfen“.`)) return;
-    for (const u of z) { if (u.status === 'ignoriert') await db.execute(`UPDATE bankumsaetze SET status='offen' WHERE id=$1`, [u.id]); else await zuordnungLoesen(u); }
-    setInfo(`${z.length} Zuordnung(en) gelöst.`); setWahl(new Set()); load();
+    let n = 0, gesperrt = '';
+    for (const u of z) {
+      try { if (u.status === 'ignoriert') await db.execute(`UPDATE bankumsaetze SET status='offen' WHERE id=$1`, [u.id]); else await zuordnungLoesen(u); n++; }
+      catch (e) { gesperrt = String((e as Error)?.message ?? e); }   // Jahr abgeschlossen: Zuordnung bleibt
+    }
+    setInfo(`${n} Zuordnung(en) gelöst.${gesperrt ? ` ${z.length - n} nicht gelöst: ${gesperrt}` : ''}`); setWahl(new Set()); load();
   }
   async function loeschen(ids: number[]) {
     if (!ids.length) return;
     const summe = rows.filter((r) => ids.includes(r.id)).reduce((a, r) => a + Number(r.betrag), 0);
     if (!window.confirm(`${ids.length} Bankumsatz/Bankumsätze (zusammen ${eur(summe)}) ganz löschen?\n\nZugehörige Buchungen werden ebenfalls gelöscht. Wenn du den Kontoauszug erneut importierst, kommen die Umsätze wieder.`)) return;
-    await umsaetzeLoeschen(ids);
+    try { await umsaetzeLoeschen(ids); } catch (e) { setInfo(String((e as Error)?.message ?? e)); return; }
     setInfo(`${ids.length} Umsatz/Umsätze gelöscht.`); setWahl(new Set()); load();
   }
 
@@ -156,7 +160,7 @@ export function BankPage() {
                       : <div className="small">
                           {u.status === 'zugeordnet' && <button className="icon-btn beleg-btn" title="Belege zur Buchung" onClick={() => belegeZuordnung(u)}><Paperclip size={14} /></button>}
                           <span className="muted">{u.status === 'ignoriert' ? 'Ignoriert' : u.gebucht}</span>{' '}
-                          <button className="link" onClick={async () => { if (u.status === 'ignoriert') await db.execute(`UPDATE bankumsaetze SET status='offen' WHERE id=$1`, [u.id]); else await zuordnungLoesen(u); load(); }}>Zuordnung lösen</button>{' '}
+                          <button className="link" onClick={async () => { try { if (u.status === 'ignoriert') await db.execute(`UPDATE bankumsaetze SET status='offen' WHERE id=$1`, [u.id]); else await zuordnungLoesen(u); } catch (e) { setInfo(String((e as Error)?.message ?? e)); } load(); }}>Zuordnung lösen</button>{' '}
                           <button className="link neg" onClick={() => loeschen([u.id])} title="Umsatz löschen"><Trash2 size={13} /></button>
                         </div>}
                   </td>

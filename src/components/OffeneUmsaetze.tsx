@@ -38,15 +38,18 @@ export function OffeneUmsaetze({ objektId, version, onChange }: { objektId: numb
   const umschalten = (id: number) => setWahl((w) => { const n = new Set(w); if (n.has(id)) n.delete(id); else n.add(id); return n; });
 
   async function vorschlaegeUebernehmen() {
-    setBusy('Übernehme Vorschläge …'); let n = 0;
+    setBusy('Übernehme Vorschläge …'); let n = 0, gesperrt = 0;
     for (const u of rows.filter((x) => wahl.has(x.id))) {
       const v = vorschlaege[u.id] ?? await vorschlag(u);
       if (!v) continue;
-      if (v.art === 'person') await zuordnenPerson(u, v.id); else if (v.art === 'konto') await zuordnenKonto(u, v.id); else await zuordnenRechnung(u, v.id);
-      n++;
+      try {
+        if (v.art === 'person') await zuordnenPerson(u, v.id); else if (v.art === 'konto') await zuordnenKonto(u, v.id); else await zuordnenRechnung(u, v.id);
+        n++;
+      } catch { gesperrt++; }   // Jahr abgeschlossen: Umsatz bleibt offen
     }
     setBusy(''); setWahl(new Set());
-    fertig(`${n} Umsätze nach Vorschlag gebucht${wahl.size - n ? `, ${wahl.size - n} ohne Vorschlag bleiben offen` : ''}.`);
+    const ohne = wahl.size - n - gesperrt;
+    fertig(`${n} Umsätze nach Vorschlag gebucht${ohne ? `, ${ohne} ohne Vorschlag bleiben offen` : ''}${gesperrt ? `, ${gesperrt} nicht gebucht, weil ihr Jahr abgeschlossen ist` : ''}.`);
   }
   async function ignorieren() {
     for (const id of wahl) await db.execute(`UPDATE bankumsaetze SET status = 'ignoriert' WHERE id = $1`, [id]);
@@ -55,7 +58,8 @@ export function OffeneUmsaetze({ objektId, version, onChange }: { objektId: numb
   async function loeschen(ids: number[]) {
     const summe = rows.filter((r) => ids.includes(r.id)).reduce((a, r) => a + Number(r.betrag), 0);
     if (!window.confirm(`${ids.length} Bankumsatz/Bankumsätze (zusammen ${eur(summe)}) ganz löschen?\n\nWenn du den Kontoauszug erneut importierst, kommen sie wieder.`)) return;
-    await umsaetzeLoeschen(ids); setWahl(new Set()); fertig(`${ids.length} Umsatz/Umsätze gelöscht.`);
+    try { await umsaetzeLoeschen(ids); } catch (e) { fertig(String((e as Error)?.message ?? e)); return; }
+    setWahl(new Set()); fertig(`${ids.length} Umsatz/Umsätze gelöscht.`);
   }
 
   return (
@@ -97,17 +101,22 @@ export function OffeneUmsaetze({ objektId, version, onChange }: { objektId: numb
 
 export function Zuordnen({ u, v, personen, done, buchen }: { u: Row; v?: Vorschlag | null; personen: Opt[]; done: () => void; buchen: () => void }) {
   const [wahl, setWahl] = useState('');
+  const [fehler, setFehler] = useState('');
+  /** Zuordnen; ist das Jahr abgeschlossen, erscheint der Hinweis statt einer Buchung */
+  async function ausfuehren(f: () => Promise<void>) {
+    setFehler('');
+    try { await f(); done(); } catch (e) { setFehler(String((e as Error)?.message ?? e)); }
+  }
   async function ok() {
     if (!wahl) return;
-    await zuordnenPerson(u, Number(wahl.split(':')[1]));
-    done();
+    await ausfuehren(() => zuordnenPerson(u, Number(wahl.split(':')[1])));
   }
   return (
     <div className="zuordnen">
       {v && (
         <div className="row">
           <span className="vorschlag">Vorschlag: <b>{v.label}</b> <span className="muted small">({v.grund})</span></span>
-          <button className="primary small-btn" onClick={async () => { if (v.art === 'person') await zuordnenPerson(u, v.id); else if (v.art === 'konto') await zuordnenKonto(u, v.id); else await zuordnenRechnung(u, v.id); done(); }}>Übernehmen</button>
+          <button className="primary small-btn" onClick={() => ausfuehren(async () => { if (v.art === 'person') await zuordnenPerson(u, v.id); else if (v.art === 'konto') await zuordnenKonto(u, v.id); else await zuordnenRechnung(u, v.id); })}>Übernehmen</button>
         </div>
       )}
       <div className="row">
@@ -121,6 +130,7 @@ export function Zuordnen({ u, v, personen, done, buchen }: { u: Row; v?: Vorschl
         <span className="grow" />
         <button className="link small" onClick={async () => { await db.execute(`UPDATE bankumsaetze SET status='ignoriert' WHERE id=$1`, [u.id]); done(); }}>Ignorieren</button>
       </div>
+      {fehler && <p className="error small">{fehler}</p>}
     </div>
   );
 }

@@ -3,6 +3,33 @@
 import { db, insert, type Row } from '../db';
 import { ablegen, erfassen } from '../db/papierkorb';
 import { KONTO_FUER_ART, OP_SQL } from './soll';
+import { buchungGesperrt, gesperrt, sperrText } from './abschluss';
+
+/* ---------------- Jahressperre ----------------
+   Ist die Abrechnung eines Jahres für eine Liegenschaft abgeschlossen, dürfen über „Bank & Zuordnung“ in diesem Jahr
+   weder neue Buchungen entstehen (zuordnen) noch bestehende verschwinden (Zuordnung lösen, Umsatz löschen). */
+
+/** Fehlertext, wenn eine neue Buchung zum Datum des Umsatzes in einer der Liegenschaften gesperrt wäre, sonst null */
+export async function sperreNeu(u: Row, objekte: (number | null | undefined)[]): Promise<string | null> {
+  for (const o of new Set(objekte.filter((x): x is number => !!x).map(Number))) {
+    const sp = await gesperrt(o, u.datum);
+    if (sp) return sperrText(sp);
+  }
+  return null;
+}
+
+/** Fehlertext, wenn eine der Buchungen zu diesen Bankumsätzen in einem abgeschlossenen Jahr liegt, sonst null */
+export async function sperreVorhanden(umsatzIds: number[]): Promise<string | null> {
+  const L = umsatzIds.map((x) => Math.trunc(Number(x))).join(',') || 'NULL';
+  for (const b of await db.select(`SELECT objekt_id, datum, jahr FROM buchungen WHERE bankumsatz_id IN (${L})`)) {
+    const sp = await buchungGesperrt(Number(b.objekt_id), b.datum, b.jahr);
+    if (sp) return sperrText(sp);
+  }
+  return null;
+}
+
+const bankObjekt = async (u: Row): Promise<number | null> =>
+  (await db.select('SELECT objekt_id FROM bankkonten WHERE id = $1', [u.bankkonto_id]))[0]?.objekt_id ?? null;
 
 export interface Umsatz {
   datum: string;          // YYYY-MM-DD
@@ -243,6 +270,8 @@ export async function zuordnenPerson(u: Row, personId: number) {
   // dieser Monat zuerst, sonst wie bisher der älteste offene Posten (§ 366 Abs. 2 BGB)
   const genannt = monatImText(u.verwendungszweck ?? '', ops);
   if (genannt) ops = [...ops.filter((o) => o.monat === genannt), ...ops.filter((o) => o.monat !== genannt)];
+  const sp = await sperreNeu(u, objekt ? [objekt] : ops.map((o) => o.objekt_id));
+  if (sp) throw new Error(sp);
   const getrennt = ops.length ? await zahlweiseGetrennt(ops[0].objekt_id, personId, ops[0].einheit_id, ops[0].vertrag_id) : false;
   if (getrennt) ops = getrenntOrdnen(ops, betragU, text, offen);
   else {
@@ -277,6 +306,8 @@ export async function zuordnenPerson(u: Row, personId: number) {
 
 export async function zuordnenRechnung(u: Row, rechnungId: number) {
   const r = (await db.select('SELECT * FROM rechnungen WHERE id = $1', [rechnungId]))[0];
+  const sp = await sperreNeu(u, [r.objekt_id, await bankObjekt(u)]);
+  if (sp) throw new Error(sp);
   await insert('buchungen', { datum: u.datum, betrag: u.betrag, buchungskonto_id: r.buchungskonto_id, objekt_id: r.objekt_id, einheit_id: r.einheit_id,
     rechnung_id: r.id, bankumsatz_id: u.id, text: `Rechnung ${r.rechnungsnr ?? r.id}: ${u.gegenpartei}` });
   await db.execute('UPDATE rechnungen SET bezahlt_am = $1 WHERE id = $2', [u.datum, r.id]);
@@ -285,7 +316,9 @@ export async function zuordnenRechnung(u: Row, rechnungId: number) {
 
 /** Direkt auf ein Buchungskonto buchen (z. B. Kontoführungsgebühren, Zinsen). */
 export async function zuordnenKonto(u: Row, kontoId: number) {
-  const objekt = (await db.select('SELECT objekt_id FROM bankkonten WHERE id = $1', [u.bankkonto_id]))[0]?.objekt_id ?? null;
+  const objekt = await bankObjekt(u);
+  const sp = await sperreNeu(u, [objekt]);
+  if (sp) throw new Error(sp);
   await insert('buchungen', { datum: u.datum, betrag: u.betrag, buchungskonto_id: kontoId, objekt_id: objekt, bankumsatz_id: u.id,
     text: `${u.gegenpartei} ${u.verwendungszweck}`.trim().slice(0, 200) });
   await db.execute(`UPDATE bankumsaetze SET status = 'zugeordnet' WHERE id = $1`, [u.id]);
@@ -293,6 +326,8 @@ export async function zuordnenKonto(u: Row, kontoId: number) {
 
 /** Zuordnung rückgängig machen */
 export async function zuordnungLoesen(u: Row) {
+  const sp = await sperreVorhanden([u.id]);
+  if (sp) throw new Error(sp);
   const r = await db.select('SELECT rechnung_id FROM buchungen WHERE bankumsatz_id = $1 AND rechnung_id IS NOT NULL', [u.id]);
   for (const x of r) await db.execute('UPDATE rechnungen SET bezahlt_am = NULL WHERE id = $1', [x.rechnung_id]);
   await db.execute('DELETE FROM buchungen WHERE bankumsatz_id = $1', [u.id]);
@@ -361,6 +396,8 @@ export async function umsaetzeLoeschen(ids: number[]) {
     const { invoke } = await import('@tauri-apps/api/core');
     await invoke('db_sicherung_erstellen', { ordnerPfad: null }).catch(() => {});
   }
+  const gesperrtText = await sperreVorhanden(ids);
+  if (gesperrtText) throw new Error(gesperrtText);
   const konten = new Set<number>();
   const L = ids.map((x) => Math.trunc(Number(x))).join(',') || 'NULL';
   const inhalt = await erfassen([{ t: 'bankumsaetze', where: `id IN (${L})` }, { t: 'buchungen', where: `bankumsatz_id IN (${L})` }]);
@@ -399,9 +436,14 @@ export async function automatischZuordnen(): Promise<{ zugeordnet: number; pruef
   for (const u of offen) {
     const v = await vorschlag(u);
     if (!v?.sicher) continue;
-    if (v.art === 'person') await zuordnenPerson(u, v.id);
-    else if (v.art === 'konto') await zuordnenKonto(u, v.id);
-    else await zuordnenRechnung(u, v.id);
+    // Umsätze aus abgeschlossenen Jahren bleiben zum Prüfen stehen
+    const sp = await sperreNeu(u, [await bankObjekt(u), ...(v.art === 'rechnung' ? [(await db.select('SELECT objekt_id FROM rechnungen WHERE id = $1', [v.id]))[0]?.objekt_id] : [])]);
+    if (sp) continue;
+    try {
+      if (v.art === 'person') await zuordnenPerson(u, v.id);
+      else if (v.art === 'konto') await zuordnenKonto(u, v.id);
+      else await zuordnenRechnung(u, v.id);
+    } catch (e) { if (String((e as Error)?.message ?? e).includes('abgeschlossen')) continue; throw e; }
     zugeordnet++;
   }
   return { zugeordnet, pruefen: offen.length - zugeordnet };

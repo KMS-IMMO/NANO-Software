@@ -15,7 +15,7 @@ import { gesperrt, sperrText } from '../logic/abschluss';
 const datum = (d: string) => (d ? new Date(d + 'T00:00:00').toLocaleDateString('de-DE') : '');
 
 /** Einzelbelege je Buchungskonto, nach derselben Regel wie die Kostenermittlung (Buchungen plus noch nicht gebuchte Rechnungen) */
-async function belegeLaden(objekt: number, jahr: number): Promise<{ aus: Row[]; ein: Row[] }> {
+async function belegeLaden(objekt: number, jahr: number, nurBezahlt = false): Promise<{ aus: Row[]; ein: Row[] }> {
   const von = `${jahr}-01-01`, bis = `${jahr}-12-31`;
   const buch = await db.select(`SELECT b.id, b.datum, b.betrag, b.text, b.buchungskonto_id, k.art,
       COALESCE(f.name, rf.name) AS firma, COALESCE(b.rechnungsnr, r.rechnungsnr) AS rechnungsnr, e.nummer AS einheit, b.bankumsatz_id, b.sollstellung_id, b.rechnung_id
@@ -25,7 +25,7 @@ async function belegeLaden(objekt: number, jahr: number): Promise<{ aus: Row[]; 
     WHERE b.objekt_id = $1 AND ${BJ('b')} = CAST(substr($2, 1, 4) AS INTEGER) ORDER BY b.datum, b.id`, [objekt, von]);
   const rech = await db.select(`SELECT r.id, r.bezahlt_am, COALESCE(r.bezahlt_am, r.datum) AS datum, r.betrag, r.buchungskonto_id, r.rechnungsnr, f.name AS firma, e.nummer AS einheit, r.notiz
     FROM rechnungen r LEFT JOIN firmen f ON f.id = r.firma_id LEFT JOIN einheiten e ON e.id = r.einheit_id
-    WHERE r.objekt_id = $1 AND COALESCE(r.bezahlt_am, r.datum) BETWEEN $2 AND $3
+    WHERE r.objekt_id = $1 AND ${nurBezahlt ? 'r.bezahlt_am' : 'COALESCE(r.bezahlt_am, r.datum)'} BETWEEN $2 AND $3
       AND NOT EXISTS (SELECT 1 FROM buchungen b WHERE b.rechnung_id = r.id) ORDER BY 2`, [objekt, von, bis]);
   const aus: Row[] = [
     ...buch.filter((b) => b.art === 'Aufwand' || b.art === 'Ertrag').map((b) => ({ ...b, betrag: -Number(b.betrag),
@@ -107,10 +107,10 @@ function Belege({ liste, ausgabe, kontoId, objekt, jahr, onChanged }: { liste: R
   );
 }
 
-export function AbrechnungsUebersicht({ objekt, jahr, pos, schluessel, stand = 0, mitEinnahmen = true, titel, onChanged, nurUmlagefaehig = false, einnahmeKonten, einnahmenTitel }: {
+export function AbrechnungsUebersicht({ objekt, jahr, pos, schluessel, stand = 0, mitEinnahmen = true, titel, onChanged, nurUmlagefaehig = false, nurBezahlt = false, einnahmeKonten, einnahmenTitel }: {
   objekt: number; jahr: number; pos: Position[]; schluessel: (p: Position) => ReactNode; stand?: number; mitEinnahmen?: boolean; titel?: string;
   /** Wird nach Ändern, Löschen oder Hinzufügen eines Betrags aufgerufen; ohne diese Funktion ist die Übersicht nur lesbar */
-  onChanged?: (text: string) => void; nurUmlagefaehig?: boolean;
+  onChanged?: (text: string) => void; nurUmlagefaehig?: boolean; nurBezahlt?: boolean;
   /** Nur diese Einnahmekonten zeigen (Nebenkostenabrechnung: nur Vorauszahlungen der Mieter, nie Hausgeld oder Rücklage der Eigentümer) */
   einnahmeKonten?: string[]; einnahmenTitel?: string;
 }) {
@@ -126,7 +126,7 @@ export function AbrechnungsUebersicht({ objekt, jahr, pos, schluessel, stand = 0
   const [offen, setOffen] = useState<Set<string>>(new Set());
   useEffect(() => {
     if (!objekt || jahr < 1900) return;
-    belegeLaden(objekt, jahr).then(setBelege);
+    belegeLaden(objekt, jahr, nurBezahlt).then(setBelege);
     db.select(`SELECT id, nummer, name, art, umlagefaehig FROM buchungskonten ORDER BY nummer`).then(setKonten);
     db.select(`SELECT a.*, k.nummer, k.name FROM abrechnung_betraege a JOIN buchungskonten k ON k.id = a.buchungskonto_id
       WHERE a.objekt_id = $1 AND a.jahr = $2 AND a.ausgeschlossen = 1 ${nurUmlagefaehig ? 'AND k.umlagefaehig = 1' : ''} ORDER BY k.nummer`, [objekt, jahr]).then(setRaus);

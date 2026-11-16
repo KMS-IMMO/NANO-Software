@@ -65,6 +65,7 @@ export async function ruecklageZeitraum(objektId: number, von: string, bis: stri
   const vorTag = d.toISOString().slice(0, 10);
   const anfangsbestand = await ruecklageStand(objektId, vorTag);
   const uebernahme = stichtag > vorTag && stichtag <= bis ? anfang : 0;
-  const b = bis < stichtag ? { zufuehrung: 0, zufuehrungIst: 0, entnahme: 0, zinsen: 0 } : await bewegungen(objektId, stichtag > vorTag ? stichtag : vorTag, bis);
-  return { vorTag, anfangsbestand, uebernahme, ...b, bestand: anfangsbestand + uebernahme + b.zufuehrung - b.entnahme + b.zinsen };
+  const b = bis < stichtag ? { zufuehrung: 0, zufuehrungIst: 0, sonder: 0, entnahme: 0, zinsen: 0 } : await bewegungen(objektId, stichtag > vorTag ? stichtag : vorTag, bis);
+  // Sonderzuführungen (Konto 1260) gehören wie im Vermögensbericht zum Bestand
+  return { vorTag, anfangsbestand, uebernahme, ...b, bestand: anfangsbestand + uebernahme + b.zufuehrung + b.sonder - b.entnahme + b.zinsen };
 }

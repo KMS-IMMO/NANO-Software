@@ -171,8 +171,9 @@ export async function eigeneSchluessel(objektId: number, jahr: number): Promise<
  * gebuchte Bankausgänge plus erfasste Rechnungen, die (noch) keiner Bankbuchung zugeordnet sind.
  * Direkt einer Einheit zugeordnete Kosten werden zusätzlich je Einheit gemerkt.
  */
-/** Kosten und Erträge je Konto im Jahr. Für Hausgeld- und Eigentümerabrechnung (nurUmlagefaehig = false) zählen nur Konten mit EÜR-Häkchen. */
-export async function kostenErmitteln(objektId: number, jahr: number, nurUmlagefaehig: boolean): Promise<Position[]> {
+/** Kosten und Erträge je Konto im Jahr. Für Hausgeld- und Eigentümerabrechnung (nurUmlagefaehig = false) zählen nur Konten mit EÜR-Häkchen.
+ *  `nurBezahlt` (WEG-Hausgeldabrechnung, Abflussprinzip): Rechnungen zählen erst, wenn sie im Jahr bezahlt sind; offene Rechnungen bleiben draußen. */
+export async function kostenErmitteln(objektId: number, jahr: number, nurUmlagefaehig: boolean, opt: { nurBezahlt?: boolean } = {}): Promise<Position[]> {
   const von = `${jahr}-01-01`, bis = `${jahr}-12-31`;
   const konten = await db.select(`SELECT k.*, COALESCE(sj.schluessel, s.schluessel) AS objekt_schluessel FROM buchungskonten k
     LEFT JOIN objekt_schluessel s ON s.buchungskonto_id = k.id AND s.objekt_id = $1
@@ -184,7 +185,7 @@ export async function kostenErmitteln(objektId: number, jahr: number, nurUmlagef
     FROM buchungen b LEFT JOIN rechnungen r ON r.id = b.rechnung_id
     WHERE b.objekt_id = $1 AND ${BJ('b')} = CAST(substr($2, 1, 4) AS INTEGER) AND b.buchungskonto_id IS NOT NULL GROUP BY b.buchungskonto_id, b.einheit_id`, [objektId, von]);
   const rech = await db.select(`SELECT buchungskonto_id, einheit_id, SUM(betrag) AS kosten, SUM(COALESCE(anteil_lohn, betrag)) AS k35a FROM rechnungen r
-    WHERE objekt_id = $1 AND COALESCE(bezahlt_am, datum) BETWEEN $2 AND $3
+    WHERE objekt_id = $1 AND ${opt.nurBezahlt ? 'bezahlt_am' : 'COALESCE(bezahlt_am, datum)'} BETWEEN $2 AND $3
       AND NOT EXISTS (SELECT 1 FROM buchungen b WHERE b.rechnung_id = r.id) GROUP BY buchungskonto_id, einheit_id`, [objektId, von, bis]);
   // Für die Abrechnung angepasste Gesamtkosten (Buchhaltung bleibt unverändert)
   const anp = await db.select('SELECT buchungskonto_id, betrag, grund, ausgeschlossen FROM abrechnung_betraege WHERE objekt_id = $1 AND jahr = $2', [objektId, jahr]);

@@ -84,7 +84,8 @@ export function WegAbrechnungPage() {
     const v = await db.select(`SELECT v.* FROM verbrauch v JOIN einheiten e ON e.id = v.einheit_id WHERE e.objekt_id = $1 AND v.jahr = $2`, [objekt, jahr]);
     const verbrauch = Object.fromEntries(v.map((x) => [`${x.einheit_id}-${x.buchungskonto_id}`, Number(x.menge)]));
     // In der WEG gilt MEA, solange für das Objekt kein eigener Schlüssel eingestellt ist
-    const p = (await kostenErmitteln(Number(objekt), jahr, false))
+    // Abflussprinzip: nur im Jahr bezahlte Ausgaben; offene Rechnungen stehen im Vermögensbericht
+    const p = (await kostenErmitteln(Number(objekt), jahr, false, { nurBezahlt: true }))
       .filter((x) => !RUECKLAGE.includes(x.nummer) && !VORJAHRESABRECHNUNG.includes(x.nummer))
       .map((x) => ({ ...x, schluessel: x.nummer === HEIZ_KONTO && h.length ? 'Messdienst' as const : eigene.has(x.konto_id) ? x.schluessel : 'MEA' as const }));
     setPos(p);
@@ -159,11 +160,16 @@ export function WegAbrechnungPage() {
     }
     for (const z of konten) { z.soll = r2(z.soll); z.ist = r2(z.ist); z.saldo = r2(z.soll - z.ist); }
     const offen = konten.filter((z) => Math.abs(z.saldo) > 0.005);
+    // Offene Rechnungen zum 31.12. (Verbindlichkeiten): Rechnungsdatum bis Jahresende, bis dahin nicht bezahlt
+    const offeneRechnungen = await db.select(`SELECT r.id, r.datum, r.betrag, r.rechnungsnr, f.name AS firma, k.nummer, k.name AS konto FROM rechnungen r
+        LEFT JOIN firmen f ON f.id = r.firma_id LEFT JOIN buchungskonten k ON k.id = r.buchungskonto_id
+      WHERE r.objekt_id = $1 AND r.datum <= $2 AND (r.bezahlt_am IS NULL OR r.bezahlt_am > $2) ORDER BY r.datum, r.id`, [objekt, ende]);
     const hgImJahr = posten.filter((x) => (x.art === 'Hausgeld' || x.art === 'Rücklage') && String(x.monat).startsWith(String(jahr))).length;
     setVerm({ ruecklage: rl.bestand, ruecklageIst: rl.bestandIst, ruecklageOffen: rl.offen, zufIstJahr: rl.zufuehrungIst, zufJahr, sonderJahr: rl.sonder, entnahmeJahr: rl.entnahme, zinsJahr: rl.zinsen, banken,
       forderungen: r2(offen.filter((z) => z.saldo > 0).reduce((a, z) => a + z.saldo, 0)),
       guthaben: r2(offen.filter((z) => z.saldo < 0).reduce((a, z) => a - z.saldo, 0)),
-      opKonten: offen, hgImJahr });
+      opKonten: offen, hgImJahr, offeneRechnungen,
+      verbindlichkeiten: r2(offeneRechnungen.reduce((a: number, x: Row) => a + Number(x.betrag), 0)) });
   }
   useEffect(() => { if (jahr >= 1900 && jahr <= 2200) rechnen(); }, [objekt, jahr]);
 
@@ -201,7 +207,11 @@ export function WegAbrechnungPage() {
       ...(verm.banken ?? []).map((b: Row) => [`Kontostand ${b.name} (${b.iban ?? ''})`, geld(Number(b.saldo))]),
       ['Offene Forderungen gegen Eigentümer', geld(verm.forderungen ?? 0)],
       ['Guthaben von Eigentümern (Überzahlungen)', geld(verm.guthaben ?? 0)],
+      ...(verm.verbindlichkeiten ? [[`Offene Rechnungen zum 31.12.${jahr} (noch nicht bezahlt, nicht in der Abrechnung)`, geld(verm.verbindlichkeiten)]] : []),
     ]);
+    const orl: Row[] = verm.offeneRechnungen ?? [];
+    if (orl.length) g.tabelle(['Datum', 'Rechnung', 'Konto', 'Betrag'],
+      orl.map((x) => [dDatum(x.datum), [x.firma, x.rechnungsnr].filter(Boolean).join(', ') || `Rechnung ${x.id}`, [x.nummer, x.konto].filter(Boolean).join(' '), geld(Number(x.betrag))]), undefined, 3);
     const opk: Row[] = verm.opKonten ?? [];
     if (opk.length) g.tabelle(['Einheit', 'Eigentümer', 'Soll bis 31.12.', 'gezahlt', 'Forderung / Guthaben'],
       opk.map((z) => [z.einheit, z.name, geld(z.soll), geld(z.ist), saldoZelle(z.saldo, z.saldo > 0 ? geld(z.saldo) : `Guthaben ${geld(-z.saldo)}`)]), undefined, 2);
@@ -281,7 +291,7 @@ export function WegAbrechnungPage() {
         buchen={buchen} buchenText="Abrechnungsspitzen als offene Posten buchen"
         ergebnis={() => ({ ausgaben: r2(pos.reduce((a, p) => a + p.betrag, 0)), spitzen: r2(erg.reduce((a, r) => a + r.spitze, 0)), einheiten: erg.length })}
         onStatus={(a, t) => { setZu(a); if (t) setInfo(t); }} />}
-      {objekt !== '' && <AbrechnungsUebersicht objekt={Number(objekt)} jahr={jahr} pos={pos} stand={stand} titel={`Gesamtabrechnung ${jahr}: Übersicht der Buchungskonten`}
+      {objekt !== '' && <AbrechnungsUebersicht objekt={Number(objekt)} jahr={jahr} pos={pos} stand={stand} nurBezahlt titel={`Gesamtabrechnung ${jahr}: Übersicht der Buchungskonten`}
         onChanged={zu ? undefined : (t) => { setInfo(t); setStand(stand + 1); rechnen(); }}
         schluessel={(p) => zu ? <>{schluesselText(p.schluessel)}</> : <SchluesselWahl objekt={Number(objekt)} jahr={jahr} p={p} anteile={anteile} onChanged={(t) => { setInfo(t); setStand(stand + 1); rechnen(); }} />} />}
       {objekt !== '' && <fieldset className="gesperrt" disabled={!!zu}><WerteJeEinheit key={`${objekt}-${jahr}-${stand}`} objekt={Number(objekt)} jahr={jahr} einheiten={einheiten}
@@ -314,6 +324,7 @@ export function WegAbrechnungPage() {
           {(verm.banken ?? []).map((b: Row) => <tr key={b.id}><td>Kontostand {b.name}</td><td className="num">{eur(Number(b.saldo))}</td></tr>)}
           <tr><td>Offene Forderungen gegen Eigentümer</td><td className="num">{eur(verm.forderungen ?? 0)}</td></tr>
           <tr><td>Guthaben von Eigentümern (Überzahlungen)</td><td className="num">{eur(verm.guthaben ?? 0)}</td></tr>
+          {verm.verbindlichkeiten ? <tr><td>Offene Rechnungen zum 31.12.{jahr} <span className="muted">(noch nicht bezahlt, zählen erst im Jahr der Zahlung)</span></td><td className="num">{eur(verm.verbindlichkeiten)}</td></tr> : null}
         </tbody></table>
         {verm.hgImJahr === 0 && <p className="warn small">Für {jahr} sind keine Hausgeld-Sollstellungen angelegt. Zahlungen der Eigentümer erscheinen dann als Guthaben.
           Unter „Sollstellungen“ kannst du sie aus den Stammdaten erzeugen.</p>}

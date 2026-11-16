@@ -49,7 +49,9 @@ export async function pruefen(objekt: number, jahr: number, art: AbschlussArt, e
   out.push({ ok: !bank, sperrt: true, text: 'Alle Bankumsätze des Jahres sind zugeordnet', hinweis: bank ? `${bank} Umsätze unter „Bank & Zuordnung“ sind noch offen.` : undefined });
   const rech = Number((await db.select(`SELECT COUNT(*) AS n FROM rechnungen r WHERE r.objekt_id = $1 AND r.bezahlt_am IS NULL AND r.datum BETWEEN $2 AND $3
     AND NOT EXISTS (SELECT 1 FROM buchungen b WHERE b.rechnung_id = r.id)`, [objekt, von, bis]))[0]?.n ?? 0);
-  out.push({ ok: !rech, sperrt: false, text: 'Alle Rechnungen des Jahres sind bezahlt gebucht', hinweis: rech ? `${rech} Rechnungen sind noch offen. Sie zählen trotzdem als Kosten.` : undefined });
+  out.push({ ok: !rech, sperrt: false, text: 'Alle Rechnungen des Jahres sind bezahlt gebucht', hinweis: rech ? (art === 'WEG'
+      ? `${rech} Rechnungen sind noch offen. Sie zählen erst im Jahr der Zahlung als Kosten und stehen bis dahin im Vermögensbericht.`
+      : `${rech} Rechnungen sind noch offen. Sie zählen trotzdem als Kosten.`) : undefined });
   const ohneKonto = Number((await db.select(`SELECT COUNT(*) AS n FROM buchungen WHERE objekt_id = $1 AND buchungskonto_id IS NULL AND ${BJ('')} = CAST(substr($2, 1, 4) AS INTEGER)`, [objekt, von]))[0]?.n ?? 0);
   out.push({ ok: !ohneKonto, sperrt: true, text: 'Jede Buchung hat ein Buchungskonto', hinweis: ohneKonto ? `${ohneKonto} Buchungen ohne Konto unter „Einnahmen & Ausgaben“.` : undefined });
   if (art === 'WEG') {
