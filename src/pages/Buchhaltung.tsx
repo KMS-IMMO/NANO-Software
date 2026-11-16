@@ -10,7 +10,7 @@ import { EntityTable, datum, eur, num } from '../components/EntityTable';
 import { db, insert, remove, update, type Row } from '../db';
 import { einheitLabel, personLabel } from '../db/labels';
 import { OP_SQL } from '../logic/soll';
-import { csv, dDatum, einnahmenAusgabenPdf, geld, listePdf } from '../lib/pdf';
+import { csv, dDatum, einnahmenAusgabenPdf, einnahmenOderAusgabenPdf, geld, listePdf } from '../lib/pdf';
 import { oeffnen, speichern } from '../lib/dateien';
 import { useObjektKontext } from '../logic/objektKontext';
 import { RechnungErfassen } from '../components/RechnungErfassen';
@@ -64,6 +64,7 @@ export function JournalPage() {
   const [buchen, setBuchen] = useState(false);
   const [bankVersion, setBankVersion] = useState(0);
   const [wahl, setWahl] = useState<Set<number>>(new Set());
+  const [pdfMenue, setPdfMenue] = useState(false);
 
   useEffect(() => { db.select(kontoOptions).then(setKonten); }, []);
   // Jahr mit Buchungen zeigen: hat das gewählte Jahr keine, das neueste Jahr mit Buchungen wählen
@@ -195,6 +196,17 @@ export function JournalPage() {
     setInfo(`Rechnung ${r.rechnungsnr ?? ''} als bezahlt gebucht.`); load();
   }
 
+  // Nur Einnahmen oder nur Ausgaben: die angezeigte Liste mit allen gesetzten Filtern (Liegenschaft, Jahr, Monat, Konten)
+  const exportRichtung = async (art: 'Einnahmen' | 'Ausgaben') => {
+    const o = objekt !== '' ? (await db.select('SELECT name, strasse, plz, ort FROM objekte WHERE id = $1', [Number(objekt)]))[0] ?? {} : {};
+    const bis = monat ? new Date(jahr, Number(monat), 0).getDate() : 31, mm = monat ? String(monat).padStart(2, '0') : '';
+    const zeitraum = `Zeitraum ${monat ? `01.${mm}.${jahr} bis ${bis}.${mm}.${jahr}` : `01.01.${jahr} bis 31.12.${jahr}`}${kontoText ? ` · nur Konten ${kontoText}` : ''}`;
+    const name = objekt !== '' ? o.name ?? bez : 'Alle Liegenschaften';
+    await ablegen(await einnahmenOderAusgabenPdf({ art, objekt: name, adresse: [o.strasse, [o.plz, o.ort].filter(Boolean).join(' ')].filter(Boolean).join(', '), zeitraum, mitLiegenschaft: objekt === '',
+      buchungen: rows.map((r) => ({ datum: r.datum, konto: r.nummer ? `${r.nummer} ${r.konto}` : 'ohne Konto', firma: r.firma, text: r.text, objekt: r.objekt, einheit: r.einheit, betrag: Number(r.betrag), eigentuemer: r.kontoart === 'Eigentümer' })) }),
+      `${art} ${name} ${monat ? mm + '-' : ''}${jahr}.pdf`.replace(/\s+/g, ' '));
+  };
+
   const exportieren = async (art: 'csv' | 'pdf') => {
     const head = ['Bu.-Nr.', 'Datum', 'Liegenschaft', 'Konto', 'Unternehmen', 'Buchungstext', 'Soll', 'Haben'];
     if (art === 'csv') {
@@ -230,7 +242,14 @@ export function JournalPage() {
         <KontenFilter konten={konten} wahl={kontoWahl} setWahl={setKontoWahl} />
         <span className="grow" />
         <button onClick={() => exportieren('csv')}><FileSpreadsheet size={16} />CSV</button>
-        <button onClick={() => exportieren('pdf')}><Download size={16} />PDF</button>
+        <span className="ol-menue pdf-menue">
+          <button onClick={() => setPdfMenue(!pdfMenue)} aria-expanded={pdfMenue} title="PDF der angezeigten Auswahl"><Download size={16} />PDF ▾</button>
+          {pdfMenue && <span className="ol-pop" onMouseLeave={() => setPdfMenue(false)}>
+            <button onClick={() => { setPdfMenue(false); exportieren('pdf'); }}>Einnahmen und Ausgaben</button>
+            <button onClick={() => { setPdfMenue(false); exportRichtung('Einnahmen'); }}>Nur Einnahmen</button>
+            <button onClick={() => { setPdfMenue(false); exportRichtung('Ausgaben'); }}>Nur Ausgaben</button>
+          </span>}
+        </span>
         <button onClick={() => setDatev(true)} title="Buchungsstapel für den Steuerberater mit Belegen"><Download size={16} />DATEV</button>
         <button onClick={() => { setFehler(''); setModus('rechnung'); setEdit({ datum: heute(), richtung: 'Ausgabe', objekt_id: objekt || '' }); }}><Receipt size={16} />Rechnung erfassen</button>
         <button className="primary" onClick={() => setBuchen(true)}><Plus size={16} />Buchen</button>

@@ -1359,6 +1359,7 @@ table.list.kompakt td, table.list.kompakt th { padding-top: 6px; padding-bottom:
 .ol-pop { position: absolute; top: 100%; left: 0; z-index: 5; margin-top: 4px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow); padding: 4px; min-width: 220px; max-height: 320px; overflow-y: auto; }
 .ol-pop button { display: flex; width: 100%; border: 0; border-radius: 6px; gap: 8px; background: transparent; text-align: left; }
 .ol-pop button:hover { background: var(--accent-soft); }
+.pdf-menue .ol-pop { left: auto; right: 0; min-width: 200px; }
 .ol-frage { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; background: var(--warn-bg); border-radius: 10px; padding: 8px 12px; margin-bottom: 12px; }
 .ol-frage span { flex: 1; min-width: 200px; }
 .ol-betreff { margin: 0 0 12px; font-size: 19px; text-wrap: balance; }

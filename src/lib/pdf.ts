@@ -414,3 +414,29 @@ export async function stammblattPdf(titel: string, zeilen: string[], gruppen: { 
   for (const t of tabellen) { b.abschnitt(t.titel); b.tabelle(t.head, t.body, undefined, t.head.length); }
   return b.seitenzahlen().bytes();
 }
+
+/** Nur Einnahmen oder nur Ausgaben als Liste auf dem Briefpapier: je Buchungskonto die Summe, darunter jede einzelne Buchung.
+ *  Auszahlungen an den / Einzahlungen vom Eigentümer sind weder Einnahmen noch Ausgaben und stehen nicht in der Liste. */
+export async function einnahmenOderAusgabenPdf(p: { art: 'Einnahmen' | 'Ausgaben'; objekt: string; adresse?: string; zeitraum: string; mitLiegenschaft?: boolean;
+  buchungen: { datum: string; konto: string; firma?: string | null; text?: string | null; objekt?: string | null; einheit?: string | null; betrag: number; eigentuemer?: boolean }[] }): Promise<Uint8Array> {
+  const ein = p.art === 'Einnahmen';
+  const b = new Brief(await absender()).neuerBrief();
+  b.berichtKopf(p.art, [[p.objekt, p.adresse].filter(Boolean).join(', '), p.zeitraum], new Date().toISOString().slice(0, 10));
+  const liste = p.buchungen.filter((x) => !x.eigentuemer && (ein ? x.betrag > 0 : x.betrag < 0));
+  const ohne = p.buchungen.filter((x) => x.eigentuemer && (ein ? x.betrag > 0 : x.betrag < 0)).length;
+  const summe = liste.reduce((a, x) => a + Math.abs(x.betrag), 0);
+  const m = new Map<string, typeof liste>();
+  for (const x of [...liste].sort((a, c) => a.konto.localeCompare(c.konto, 'de', { numeric: true }) || a.datum.localeCompare(c.datum))) { if (!m.has(x.konto)) m.set(x.konto, []); m.get(x.konto)!.push(x); }
+  b.kennzahlen([[`Summe ${p.art}`, geld(summe)], ['Buchungen', String(liste.length)], ['Buchungskonten', String(m.size)]]);
+  const wo = (x: (typeof liste)[number]) => (p.mitLiegenschaft ? [x.objekt, x.einheit].filter(Boolean).join(' · ') : x.einheit ?? '') || (ein ? '' : 'alle');
+  const gruppen = [...m].map(([titel, z]) => ({ titel, summe: geld(z.reduce((a, x) => a + Math.abs(x.betrag), 0)),
+    zeilen: z.map((x) => [dDatum(x.datum), [x.firma, x.text].filter(Boolean).join(' · ') || '–', wo(x), geld(Math.abs(x.betrag))]) }));
+  if (liste.length) {
+    b.gruppenTabelle(['Datum', ein ? 'Zahler / Buchungstext' : 'Unternehmen / Buchungstext', p.mitLiegenschaft ? 'Liegenschaft · Einheit' : 'Einheit', 'Betrag'], gruppen, geld(summe),
+      p.mitLiegenschaft ? [22, 80, 42, 26] : [22, 98, 24, 26], ein ? [91, 140, 104] : [176, 138, 74]);
+  } else b.absatz(`Im Zeitraum gibt es keine ${p.art}.`);
+  if (ohne) b.absatz(ein ? `Nicht enthalten: ${ohne} ${ohne === 1 ? 'Einzahlung' : 'Einzahlungen'} vom Eigentümer. Sie sind keine Einnahmen, sondern nur eine Bewegung auf dem Konto.`
+    : `Nicht enthalten: ${ohne} ${ohne === 1 ? 'Auszahlung' : 'Auszahlungen'} an den Eigentümer. ${EIGENTUEMER_HINWEIS}`, 6);
+  if (!ein) b.absatz('Enthalten sind die gebuchten, also bezahlten Ausgaben. Noch offene Rechnungen stehen unter „Offene Rechnungen“.', 4);
+  return b.seitenzahlen().bytes();
+}
