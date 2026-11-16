@@ -1,6 +1,7 @@
 // Abschluss einer Hausgeld- (WEG) oder Nebenkostenabrechnung je Liegenschaft und Jahr.
 // Vor dem Abschluss prüft das Programm, ob das Jahr vorbei ist und alles gebucht wurde.
 // Nach dem Abschluss sind Buchungen und Rechnungen des Jahres für diese Liegenschaft gesperrt, bis der Abschluss aufgehoben wird.
+import { abgleichPruefungen, kontoabgleich } from './kontoabgleich';
 import { db, type Row } from '../db';
 import { BJ } from './buchung';
 
@@ -58,6 +59,8 @@ export async function pruefen(objekt: number, jahr: number, art: AbschlussArt, e
       : `${rech} Rechnungen sind noch offen. Sie zählen trotzdem als Kosten.`) : undefined });
   const ohneKonto = Number((await db.select(`SELECT COUNT(*) AS n FROM buchungen WHERE objekt_id = $1 AND buchungskonto_id IS NULL AND ${BJ('')} = CAST(substr($2, 1, 4) AS INTEGER)`, [objekt, von]))[0]?.n ?? 0);
   out.push({ ok: !ohneKonto, sperrt: true, text: 'Jede Buchung hat ein Buchungskonto', hinweis: ohneKonto ? `${ohneKonto} Buchungen ohne Konto unter „Einnahmen & Ausgaben“.` : undefined });
+  // Kontoabgleich: Buchungen gegen Kontoumsätze, Endbestand gegen echten Kontoauszug, Monate ohne Umsätze
+  out.push(...abgleichPruefungen(await kontoabgleich(objekt, jahr), jahr));
   if (art === 'WEG') {
     const hg = Number((await db.select(`SELECT COUNT(*) AS n FROM sollstellungen s JOIN einheiten e ON e.id = s.einheit_id
       WHERE e.objekt_id = $1 AND s.art IN ('Hausgeld', 'Rücklage') AND substr(s.monat, 1, 4) = $2`, [objekt, String(jahr)]))[0]?.n ?? 0);
