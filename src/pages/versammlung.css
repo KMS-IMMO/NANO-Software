@@ -180,3 +180,4 @@ html[data-theme="dunkel"] .ev-tablet { background: linear-gradient(145deg, #2a2f
 @media (max-width: 1100px) { .ev-vorl, .ev-anw, .ev-abst, .ev-nied { grid-template-columns: 1fr; } .ev-toplist { position: static; } }
 @media (max-width: 640px) { .ev-form { grid-template-columns: 1fr; } .ev-stepper { grid-template-columns: 1fr; } .ev-ergeb { grid-template-columns: 1fr; } .ev-sigs { grid-template-columns: 1fr; } }
 @media (prefers-reduced-motion: reduce) { .ev-anim, .ev-live::before { animation: none; } }
+.ev-top .t select.ev-mehrheit { margin: 4px 0 0 6px; font-size: 12px; padding: 3px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--text); max-width: 100%; }

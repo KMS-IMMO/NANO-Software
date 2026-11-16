@@ -14,6 +14,7 @@ import { einladungPdf, niederschriftPdf, vollmachtPdf } from '../lib/versammlung
 import {
   ARTEN, abschliessen, beschlussFesthalten, einladenBis, ergebnis, nummerieren, plusMonate, stimmeSetzen, tagesordnungVorschlag,
   teilnehmerAbgleichen, versammlungLaden, versammlungSpeichern, type Stimme, type Top, type Versammlung,
+  MEHRHEITEN, type Mehrheit,
 } from '../logic/versammlung';
 
 const heute = () => new Date().toISOString().slice(0, 10);
@@ -121,7 +122,7 @@ function Einberufen({ objektId, id }: { objektId: number; id?: number }) {
         const l = await versammlungLaden(id);
         if (l) {
           setW({ art: l.v.art, datum: l.v.datum, uhrzeit: l.v.uhrzeit ?? '', ort: l.v.ort ?? '', online: !!l.v.online, leitung: l.v.leitung ?? '' });
-          setTops(nummerieren(l.tops.map((t) => ({ id: t.id, nr: t.nr, titel: t.titel, antrag: t.antrag ?? '', beschluss: !!t.beschluss, aktiv: true, herkunft: 'eigen' as const }))));
+          setTops(nummerieren(l.tops.map((t) => ({ id: t.id, nr: t.nr, titel: t.titel, antrag: t.antrag ?? '', beschluss: !!t.beschluss, aktiv: true, herkunft: 'eigen' as const, mehrheit: (t.mehrheit ?? 'einfach') as Mehrheit }))));
           setVorlageArt(l.v.art);
         }
         setGeladen(true);
@@ -212,6 +213,8 @@ function Einberufen({ objektId, id }: { objektId: number; id?: number }) {
               <div className="t">
                 <input value={t.titel} onChange={(e) => setTop(i, { titel: e.target.value })} />
                 {t.beschluss && <textarea rows={2} value={t.antrag} placeholder="Beschlussantrag" onChange={(e) => setTop(i, { antrag: e.target.value })} />}
+                {t.beschluss && <select className="ev-mehrheit" title="Erforderliche Mehrheit" value={t.mehrheit ?? 'einfach'} onChange={(e) => setTop(i, { mehrheit: e.target.value as Mehrheit })}>
+                  {(Object.keys(MEHRHEITEN) as Mehrheit[]).map((m) => <option key={m} value={m}>{MEHRHEITEN[m]}</option>)}</select>}
                 {t.hinweis && <small>{t.hinweis}</small>}
               </div>
               {t.herkunft === 'nano' && <span className="ev-tag a">Aus NANO</span>}
@@ -521,7 +524,7 @@ function Abstimmung({ vs, neu, topId, setTopId, weiter }: { vs: Versammlung; neu
               {fertig ? (bs ? <span className="ev-fest"><Check size={16} />{bs.nummer}</span> : <span />) :
                 <button className="ev-cta" disabled={!e.abgestimmt} onClick={festhalten}>{bs ? `${bs.nummer} aktualisieren` : 'Beschluss festhalten'} →</button>}
             </div>}
-            <p className="muted small" style={{ marginTop: 8 }}>Einfache Mehrheit der abgegebenen Ja- und Nein-Stimmen, Enthaltungen zählen nicht mit (§ 25 Abs. 1 WEG). {mea ? 'Gezählt wird nach Miteigentumsanteilen.' : 'Jeder Eigentümer hat eine Stimme (Kopfprinzip, § 25 Abs. 2 WEG).'}</p>
+            <p className="muted small" style={{ marginTop: 8 }}>{e && e.mehrheit !== 'einfach' ? <><b>Erforderlich: {MEHRHEITEN[e.mehrheit]}.</b> {e.begruendung}. </> : 'Einfache Mehrheit der abgegebenen Ja- und Nein-Stimmen, Enthaltungen zählen nicht mit (§ 25 Abs. 1 WEG). '}{mea ? 'Gezählt wird nach Miteigentumsanteilen.' : 'Jeder Eigentümer hat eine Stimme (Kopfprinzip, § 25 Abs. 2 WEG).'}</p>
           </> : !fertig && <div className="ev-fuss"><span /><button className="ev-cta" onClick={festhalten}>{top.erledigt ? 'Gespeichert' : 'Erledigt'} · nächster TOP →</button></div>}
         </section>}
       </div>

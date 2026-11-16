@@ -866,4 +866,34 @@ CREATE TABLE abrechnung_betraege (
   PRIMARY KEY (objekt_id, jahr, buchungskonto_id)
 );
 `,
+  // 33: Schutz der fest genutzten Kontonummern und Änderungsprotokoll (wer nicht, aber was und wann) für Buchungen, Rechnungen,
+  //     offene Posten, Abschlüsse und gelöschte Bankumsätze. Abschluss aufheben nur mit Begründung.
+  `
+CREATE TRIGGER systemkonto_nummer BEFORE UPDATE OF nummer ON buchungskonten
+WHEN OLD.nummer IN ('1000','1001','1002','1003','1010','1011','1200','1260','1261','1262','1405','1601','1602','1701') AND NEW.nummer IS NOT OLD.nummer
+BEGIN SELECT RAISE(ABORT, 'Diese Kontonummer nutzt NEOSS fest (z. B. Rücklage, Hausgeld, Mieten, Heizkosten) und lässt sich nicht ändern. Bezeichnung und Haken dürfen geändert werden.'); END;
+ALTER TABLE abrechnungen ADD COLUMN aufhebung_grund TEXT;
+ALTER TABLE abrechnungen ADD COLUMN aufgehoben_am TEXT;
+CREATE TABLE protokoll (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  zeit TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+  tabelle TEXT NOT NULL,
+  datensatz INTEGER,
+  aktion TEXT NOT NULL,        -- neu, geändert, gelöscht
+  inhalt TEXT                  -- Stand des Datensatzes als JSON (bei „gelöscht“ der letzte Stand)
+);
+CREATE INDEX protokoll_zeit ON protokoll(zeit);
+CREATE TRIGGER protokoll_buchungen_insert AFTER INSERT ON buchungen BEGIN INSERT INTO protokoll (tabelle, datensatz, aktion, inhalt) VALUES ('buchungen', NEW.id, 'neu', json_object('datum', NEW.datum, 'betrag', NEW.betrag, 'buchungskonto_id', NEW.buchungskonto_id, 'objekt_id', NEW.objekt_id, 'einheit_id', NEW.einheit_id, 'jahr', NEW.jahr, 'text', NEW.text, 'sollstellung_id', NEW.sollstellung_id, 'rechnung_id', NEW.rechnung_id, 'bankumsatz_id', NEW.bankumsatz_id)); END;
+CREATE TRIGGER protokoll_buchungen_update AFTER UPDATE ON buchungen BEGIN INSERT INTO protokoll (tabelle, datensatz, aktion, inhalt) VALUES ('buchungen', NEW.id, 'geändert', json_object('datum', NEW.datum, 'betrag', NEW.betrag, 'buchungskonto_id', NEW.buchungskonto_id, 'objekt_id', NEW.objekt_id, 'einheit_id', NEW.einheit_id, 'jahr', NEW.jahr, 'text', NEW.text, 'sollstellung_id', NEW.sollstellung_id, 'rechnung_id', NEW.rechnung_id, 'bankumsatz_id', NEW.bankumsatz_id)); END;
+CREATE TRIGGER protokoll_buchungen_delete AFTER DELETE ON buchungen BEGIN INSERT INTO protokoll (tabelle, datensatz, aktion, inhalt) VALUES ('buchungen', OLD.id, 'gelöscht', json_object('datum', OLD.datum, 'betrag', OLD.betrag, 'buchungskonto_id', OLD.buchungskonto_id, 'objekt_id', OLD.objekt_id, 'einheit_id', OLD.einheit_id, 'jahr', OLD.jahr, 'text', OLD.text, 'sollstellung_id', OLD.sollstellung_id, 'rechnung_id', OLD.rechnung_id, 'bankumsatz_id', OLD.bankumsatz_id)); END;
+CREATE TRIGGER protokoll_rechnungen_insert AFTER INSERT ON rechnungen BEGIN INSERT INTO protokoll (tabelle, datensatz, aktion, inhalt) VALUES ('rechnungen', NEW.id, 'neu', json_object('datum', NEW.datum, 'betrag', NEW.betrag, 'buchungskonto_id', NEW.buchungskonto_id, 'objekt_id', NEW.objekt_id, 'einheit_id', NEW.einheit_id, 'rechnungsnr', NEW.rechnungsnr, 'firma_id', NEW.firma_id, 'bezahlt_am', NEW.bezahlt_am)); END;
+CREATE TRIGGER protokoll_rechnungen_update AFTER UPDATE ON rechnungen BEGIN INSERT INTO protokoll (tabelle, datensatz, aktion, inhalt) VALUES ('rechnungen', NEW.id, 'geändert', json_object('datum', NEW.datum, 'betrag', NEW.betrag, 'buchungskonto_id', NEW.buchungskonto_id, 'objekt_id', NEW.objekt_id, 'einheit_id', NEW.einheit_id, 'rechnungsnr', NEW.rechnungsnr, 'firma_id', NEW.firma_id, 'bezahlt_am', NEW.bezahlt_am)); END;
+CREATE TRIGGER protokoll_rechnungen_delete AFTER DELETE ON rechnungen BEGIN INSERT INTO protokoll (tabelle, datensatz, aktion, inhalt) VALUES ('rechnungen', OLD.id, 'gelöscht', json_object('datum', OLD.datum, 'betrag', OLD.betrag, 'buchungskonto_id', OLD.buchungskonto_id, 'objekt_id', OLD.objekt_id, 'einheit_id', OLD.einheit_id, 'rechnungsnr', OLD.rechnungsnr, 'firma_id', OLD.firma_id, 'bezahlt_am', OLD.bezahlt_am)); END;
+CREATE TRIGGER protokoll_sollstellungen_update AFTER UPDATE ON sollstellungen BEGIN INSERT INTO protokoll (tabelle, datensatz, aktion, inhalt) VALUES ('sollstellungen', NEW.id, 'geändert', json_object('monat', NEW.monat, 'art', NEW.art, 'betrag', NEW.betrag, 'einheit_id', NEW.einheit_id, 'person_id', NEW.person_id, 'faellig', NEW.faellig)); END;
+CREATE TRIGGER protokoll_sollstellungen_delete AFTER DELETE ON sollstellungen BEGIN INSERT INTO protokoll (tabelle, datensatz, aktion, inhalt) VALUES ('sollstellungen', OLD.id, 'gelöscht', json_object('monat', OLD.monat, 'art', OLD.art, 'betrag', OLD.betrag, 'einheit_id', OLD.einheit_id, 'person_id', OLD.person_id, 'faellig', OLD.faellig)); END;
+CREATE TRIGGER protokoll_abrechnungen_insert AFTER INSERT ON abrechnungen BEGIN INSERT INTO protokoll (tabelle, datensatz, aktion, inhalt) VALUES ('abrechnungen', NEW.id, 'neu', json_object('objekt_id', NEW.objekt_id, 'art', NEW.art, 'jahr', NEW.jahr, 'status', NEW.status, 'abgeschlossen_am', NEW.abgeschlossen_am, 'aufhebung_grund', NEW.aufhebung_grund)); END;
+CREATE TRIGGER protokoll_abrechnungen_update AFTER UPDATE ON abrechnungen BEGIN INSERT INTO protokoll (tabelle, datensatz, aktion, inhalt) VALUES ('abrechnungen', NEW.id, 'geändert', json_object('objekt_id', NEW.objekt_id, 'art', NEW.art, 'jahr', NEW.jahr, 'status', NEW.status, 'abgeschlossen_am', NEW.abgeschlossen_am, 'aufhebung_grund', NEW.aufhebung_grund)); END;
+CREATE TRIGGER protokoll_bankumsaetze_delete AFTER DELETE ON bankumsaetze BEGIN INSERT INTO protokoll (tabelle, datensatz, aktion, inhalt) VALUES ('bankumsaetze', OLD.id, 'gelöscht', json_object('datum', OLD.datum, 'betrag', OLD.betrag, 'gegenpartei', OLD.gegenpartei, 'verwendungszweck', OLD.verwendungszweck, 'status', OLD.status, 'bankkonto_id', OLD.bankkonto_id)); END;
+ALTER TABLE versammlung_tops ADD COLUMN mehrheit TEXT DEFAULT 'einfach';
+`,
 ];

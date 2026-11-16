@@ -15,7 +15,7 @@ import { Brief, EIGENTUEMER_HINWEIS, HINWEIS_35A_VERMIETER, absender, dDatum, ei
 import { oeffnen, speichern } from '../lib/dateien';
 import { WerteJeEinheit } from '../components/WerteJeEinheit';
 import { ruecklageJahr } from '../logic/ruecklage';
-import { nkBerechnen } from '../logic/nebenkosten';
+import { HEIZ_HINWEIS, heizkostenOhneMessung, nkBerechnen } from '../logic/nebenkosten';
 
 const RUECKLAGE = ['1260', '1261', '1262'];
 // Nachzahlungen und Erstattungen aus der Abrechnung des Vorjahres sind keine Kosten des Jahres und werden nicht verteilt
@@ -67,6 +67,7 @@ export function WegAbrechnungPage() {
   const [stand, setStand] = useState(0);
   const [zu, setZu] = useState<Row | null>(null);
   const [werteFehlen, setWerteFehlen] = useState('');
+  const [heizOhne, setHeizOhne] = useState(false);
   const nichtVerteilt = nichtVerteilteKosten(pos, erg);
   const anteile = (kontoId: number) => {
     const m: Record<number, number> = {};
@@ -89,6 +90,7 @@ export function WegAbrechnungPage() {
       .filter((x) => !RUECKLAGE.includes(x.nummer) && !VORJAHRESABRECHNUNG.includes(x.nummer))
       .map((x) => ({ ...x, schluessel: x.nummer === HEIZ_KONTO && h.length ? 'Messdienst' as const : eigene.has(x.konto_id) ? x.schluessel : 'MEA' as const }));
     setPos(p);
+    setHeizOhne(heizkostenOhneMessung(p, eigene));
     // Für den Abschluss: Konten mit Verbrauch/manueller Verteilung, für die Werte fehlen oder nicht aufgehen
     setWerteFehlen(p.filter((x) => x.schluessel === 'Verbrauch' || x.schluessel === 'Summe').filter((x) => {
       const w = v.filter((y) => y.buchungskonto_id === x.konto_id);
@@ -165,7 +167,18 @@ export function WegAbrechnungPage() {
         LEFT JOIN firmen f ON f.id = r.firma_id LEFT JOIN buchungskonten k ON k.id = r.buchungskonto_id
       WHERE r.objekt_id = $1 AND r.datum <= $2 AND (r.bezahlt_am IS NULL OR r.bezahlt_am > $2) ORDER BY r.datum, r.id`, [objekt, ende]);
     const hgImJahr = posten.filter((x) => (x.art === 'Hausgeld' || x.art === 'Rücklage') && String(x.monat).startsWith(String(jahr))).length;
-    setVerm({ ruecklage: rl.bestand, ruecklageIst: rl.bestandIst, ruecklageOffen: rl.offen, zufIstJahr: rl.zufuehrungIst, zufJahr, sonderJahr: rl.sonder, entnahmeJahr: rl.entnahme, zinsJahr: rl.zinsen, banken,
+    // Einnahmen des Jahres (Zahlungseingänge laut Bank, nach Buchungskonto) und Entwicklung der Bankkonten 01.01. bis 31.12.
+    const anfang = `${jahr}-01-01`;
+    const einnahmen = await db.select(`SELECT k.nummer, k.name, SUM(b.betrag) AS betrag FROM buchungen b JOIN buchungskonten k ON k.id = b.buchungskonto_id
+      WHERE b.objekt_id = $1 AND b.bankumsatz_id IS NOT NULL AND b.betrag > 0 AND b.datum BETWEEN $2 AND $3 GROUP BY k.id ORDER BY k.nummer`, [objekt, anfang, ende]);
+    const entwicklung = await db.select(`SELECT b.id, b.name, b.iban, b.saldo_datum,
+        b.anfangssaldo + COALESCE((SELECT SUM(u.betrag) FROM bankumsaetze u WHERE u.bankkonto_id = b.id AND u.datum < $2 AND (b.saldo_datum IS NULL OR u.datum > b.saldo_datum)), 0) AS start,
+        COALESCE((SELECT SUM(u.betrag) FROM bankumsaetze u WHERE u.bankkonto_id = b.id AND u.betrag > 0 AND u.datum BETWEEN $2 AND $3 AND (b.saldo_datum IS NULL OR u.datum > b.saldo_datum)), 0) AS ein,
+        COALESCE((SELECT SUM(u.betrag) FROM bankumsaetze u WHERE u.bankkonto_id = b.id AND u.betrag < 0 AND u.datum BETWEEN $2 AND $3 AND (b.saldo_datum IS NULL OR u.datum > b.saldo_datum)), 0) AS aus
+      FROM bankkonten b WHERE b.objekt_id = $1 ORDER BY b.id`, [objekt, anfang, ende]);
+    const zahlungsEin = r2(entwicklung.reduce((a, b) => a + Number(b.ein), 0));
+    const einSumme = r2(einnahmen.reduce((a, x) => a + Number(x.betrag), 0));
+    setVerm({ einnahmen, einSumme, einOffen: zahlungsEin - einSumme > 0.005 ? r2(zahlungsEin - einSumme) : 0, entwicklung, ruecklage: rl.bestand, ruecklageIst: rl.bestandIst, ruecklageOffen: rl.offen, zufIstJahr: rl.zufuehrungIst, zufJahr, sonderJahr: rl.sonder, entnahmeJahr: rl.entnahme, zinsJahr: rl.zinsen, banken,
       forderungen: r2(offen.filter((z) => z.saldo > 0).reduce((a, z) => a + z.saldo, 0)),
       guthaben: r2(offen.filter((z) => z.saldo < 0).reduce((a, z) => a - z.saldo, 0)),
       opKonten: offen, hgImJahr, offeneRechnungen,
@@ -191,6 +204,14 @@ export function WegAbrechnungPage() {
     if (pN.length) g.tabelle(['Konto', 'Nicht umlagefähige Kosten', 'Schlüssel', 'Betrag'], pN.map((p) => [p.nummer, p.name, p.schluessel, geld(p.betrag)]),
       [['', 'Summe nicht umlagefähige Kosten', '', geld(sum(pN))]], 3);
     g.tabelle(['', 'Betrag'], [['Umlagefähige Kosten', geld(sum(pU))], ['Nicht umlagefähige Kosten', geld(sum(pN))]], [['Summe Ausgaben gesamt', geld(sum(pos))]]);
+    const einZ: Row[] = verm.einnahmen ?? [];
+    g.tabelle(['Konto', `Einnahmen ${jahr} (Zahlungseingänge)`, 'Betrag'], [
+      ...einZ.map((x) => [x.nummer, x.name, geld(Number(x.betrag))]),
+      ...(verm.einOffen ? [['', 'Zahlungseingänge noch ohne Zuordnung', geld(verm.einOffen)]] : []),
+    ], [['', 'Summe Einnahmen', geld((verm.einSumme ?? 0) + (verm.einOffen ?? 0))]], 2);
+    const ent: Row[] = verm.entwicklung ?? [];
+    if (ent.length) g.tabelle(['Bankkonto', 'Stand 01.01.', 'Eingänge', 'Ausgänge', 'Stand 31.12.'],
+      ent.map((b) => [`${b.name}${b.iban ? ` (${b.iban})` : ''}`, geld(Number(b.start)), geld(Number(b.ein)), geld(Number(b.aus)), geld(Number(b.start) + Number(b.ein) + Number(b.aus))]), undefined, 1);
     const anteil = (r: typeof erg[number], u: boolean) => r.zeilen.filter((z) => z.pos.umlagefaehig === u).reduce((a, z) => a + z.betrag, 0);
     g.tabelle(['Einheit', 'Eigentümer', 'umlagefähig', 'nicht umlagef.', 'Kostenanteil', 'Vorschüsse', 'Spitze'],
       erg.map((r) => [r.einheit.nummer, r.nutzer.name, geld(anteil(r, true)), geld(anteil(r, false)), geld(r.summe), geld(r.vorschuss), saldoZelle(r.spitze, geld(r.spitze))]), undefined, 2);
@@ -285,6 +306,7 @@ export function WegAbrechnungPage() {
         extra={[
           { ok: erg.length > 0, sperrt: true, text: 'Eigentümer und Einheiten für das Jahr vorhanden' },
           { ok: !werteFehlen, sperrt: true, text: 'Werte für Verbrauch und manuelle Verteilung eingetragen', hinweis: werteFehlen ? `Fehlt bei: ${werteFehlen}` : undefined },
+          { ok: !heizOhne, sperrt: true, text: 'Heizkosten verbrauchsabhängig (Messdienst oder Verbrauch)', hinweis: heizOhne ? HEIZ_HINWEIS : undefined },
           { ok: !nichtVerteilt.length, sperrt: true, text: 'Alle Kosten sind vollständig verteilt', hinweis: nichtVerteilt.length ? `Nicht verteilt: ${nichtVerteilt.map((x) => `${x.name} ${eur(x.rest)}`).join(', ')}` : undefined },
         ]}
         vorschau={async (entwurf) => (await erzeugen({ entwurf }))!} ablegen={async () => { await erzeugen(null); }}
@@ -313,6 +335,20 @@ export function WegAbrechnungPage() {
         </table>
       </section>
       <section className="card abr-uebersicht">
+        <div className="card-head"><h2>Einnahmen {jahr} und Entwicklung der Bankkonten</h2></div>
+        <table className="list"><tbody>
+          {(verm.einnahmen ?? []).map((x: Row) => <tr key={x.nummer}><td>{x.nummer} {x.name}</td><td className="num">{eur(Number(x.betrag))}</td></tr>)}
+          {verm.einOffen ? <tr><td className="muted">Zahlungseingänge noch ohne Zuordnung (unter „Bank &amp; Zuordnung“)</td><td className="num muted">{eur(verm.einOffen)}</td></tr> : null}
+          <tr><td><b>Summe Einnahmen {jahr}</b></td><td className="num"><b>{eur((verm.einSumme ?? 0) + (verm.einOffen ?? 0))}</b></td></tr>
+        </tbody></table>
+        <table className="list" style={{ marginTop: 14 }}>
+          <thead><tr><th>Bankkonto</th><th className="num">Stand 01.01.</th><th className="num">Eingänge</th><th className="num">Ausgänge</th><th className="num">Stand 31.12.</th></tr></thead>
+          <tbody>{(verm.entwicklung ?? []).map((b: Row) => <tr key={b.id}><td>{b.name}{b.saldo_datum > `${jahr}-01-01` ? <span className="muted small"> (erfasst ab {datum(b.saldo_datum)})</span> : null}</td>
+            <td className="num">{eur(Number(b.start))}</td><td className="num">{eur(Number(b.ein))}</td><td className="num">{eur(Number(b.aus))}</td><td className="num"><b>{eur(Number(b.start) + Number(b.ein) + Number(b.aus))}</b></td></tr>)}
+          </tbody></table>
+        {!(verm.entwicklung ?? []).length && <p className="muted small">Für dieses Objekt ist kein Bankkonto angelegt.</p>}
+      </section>
+      <section className="card abr-uebersicht">
         <div className="card-head"><h2>Vermögensbericht zum 31.12.{jahr}</h2></div>
         <table className="list"><tbody>
           <tr><td>Erhaltungsrücklage laut Wirtschaftsplan (Soll)</td><td className="num"><b>{eur(verm.ruecklage ?? 0)}</b></td></tr>
@@ -334,6 +370,7 @@ export function WegAbrechnungPage() {
         extra={[
           { ok: erg.length > 0, sperrt: true, text: 'Eigentümer und Einheiten für das Jahr vorhanden' },
           { ok: !werteFehlen, sperrt: true, text: 'Werte für Verbrauch und manuelle Verteilung eingetragen', hinweis: werteFehlen ? `Fehlt bei: ${werteFehlen}` : undefined },
+          { ok: !heizOhne, sperrt: true, text: 'Heizkosten verbrauchsabhängig (Messdienst oder Verbrauch)', hinweis: heizOhne ? HEIZ_HINWEIS : undefined },
           { ok: !nichtVerteilt.length, sperrt: true, text: 'Alle Kosten sind vollständig verteilt', hinweis: nichtVerteilt.length ? `Nicht verteilt: ${nichtVerteilt.map((x) => `${x.name} ${eur(x.rest)}`).join(', ')}` : undefined },
         ]}
         vorschau={async (entwurf) => (await erzeugen({ entwurf }))!} ablegen={async () => { await erzeugen(null); }}

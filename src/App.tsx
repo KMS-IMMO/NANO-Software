@@ -37,6 +37,7 @@ const EinstellungenPage = seite(() => import('./pages/Konten'), 'EinstellungenPa
 const KontenPage = seite(() => import('./pages/Konten'), 'KontenPage');
 const RechnungenPage = seite(() => import('./pages/Konten'), 'RechnungenPage');
 const PapierkorbPage = seite(() => import('./pages/Papierkorb'), 'PapierkorbPage');
+const ProtokollPage = seite(() => import('./pages/Protokoll'), 'ProtokollPage');
 const BeschluessePage = seite(() => import('./pages/Weg'), 'BeschluessePage');
 const InstandhaltungPage = seite(() => import('./pages/Weg'), 'InstandhaltungPage');
 const AuswertungPage = seite(() => import('./pages/Buchhaltung'), 'AuswertungPage');
@@ -90,6 +91,7 @@ const NAV: Abschnitt[] = [
     { label: 'Buchungskonten', icon: <Network size={I} />, items: [
       { to: '/konten', label: 'Kontenplan' },
       { to: '/journal', label: 'Buchungsjournal' },
+      { to: '/protokoll', label: 'Änderungsprotokoll' },
       { to: '/auswertung', label: 'Auswertung (GuV)' },
       { to: '/berichte', label: 'Berichte' },
     ] },
@@ -298,6 +300,7 @@ function Rahmen() {
               <Route path="/konten" element={<KontenPage />} />
               <Route path="/einstellungen" element={<EinstellungenPage />} />
               <Route path="/papierkorb" element={<PapierkorbPage />} />
+              <Route path="/protokoll" element={<ProtokollPage />} />
               <Route path="/bank" element={<BankPage />} />
               <Route path="/mahnungen" element={<MahnungenPage />} />
               <Route path="/nebenkosten" element={<NebenkostenPage />} />

@@ -19,8 +19,12 @@ export async function abschliessen(objekt: number, jahr: number, art: AbschlussA
     [objekt, art, jahr, new Date().toISOString().slice(0, 10), JSON.stringify(ergebnis)]);
 }
 
-export async function abschlussAufheben(objekt: number, jahr: number, art: AbschlussArt) {
-  await db.execute(`UPDATE abrechnungen SET status = 'Aufgehoben' WHERE objekt_id = $1 AND jahr = $2 AND art = $3 AND status = 'Abgeschlossen'`, [objekt, jahr, art]);
+/** Abschluss aufheben: nur mit Begründung, sie steht mit Datum am Abschluss und im Änderungsprotokoll */
+export async function abschlussAufheben(objekt: number, jahr: number, art: AbschlussArt, grund: string) {
+  const g = String(grund ?? '').trim();
+  if (g.length < 5) throw new Error('Bitte kurz begründen, warum der Abschluss aufgehoben wird.');
+  await db.execute(`UPDATE abrechnungen SET status = 'Aufgehoben', aufhebung_grund = $4, aufgehoben_am = $5 WHERE objekt_id = $1 AND jahr = $2 AND art = $3 AND status = 'Abgeschlossen'`,
+    [objekt, jahr, art, g, new Date().toISOString().slice(0, 10)]);
 }
 
 /** Ist das Jahr dieses Datums für die Liegenschaft abgeschlossen? Gibt den Namen der Abrechnung zurück, sonst null. */

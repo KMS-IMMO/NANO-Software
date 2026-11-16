@@ -62,10 +62,13 @@ export function AbschlussKarte({ objekt, jahr, art, extra, stand, vorschau, able
     // Nach dem Abschluss direkt die fertige Abrechnung (ohne ENTWURF) zeigen
     await zeigen(false);
   }
+  const [grundOffen, setGrundOffen] = useState(false);
+  const [grund, setGrund] = useState('');
   async function aufheben() {
-    if (!window.confirm(`Abschluss der ${name} ${jahr} aufheben? Buchungen des Jahres lassen sich dann wieder ändern.`)) return;
-    await abschlussAufheben(objekt, jahr, art);
-    await laden(); melden(); onStatus(null, `Abschluss der ${name} ${jahr} aufgehoben.`);
+    if (grund.trim().length < 5) return;
+    await abschlussAufheben(objekt, jahr, art, grund);
+    setGrundOffen(false); setGrund('');
+    await laden(); melden(); onStatus(null, `Abschluss der ${name} ${jahr} aufgehoben (Grund: ${grund.trim()}). Der Vorgang steht im Änderungsprotokoll.`);
   }
   async function los(k: string, f: () => Promise<void>) { setBusy(k); try { await f(); } finally { setBusy(''); } }
 
@@ -109,10 +112,15 @@ export function AbschlussKarte({ objekt, jahr, art, extra, stand, vorschau, able
         <button onClick={() => zeigen()} disabled={!!busy}><Eye size={16} />{busy === 'vorschau' ? 'PDF wird erstellt …' : 'PDF-Vorschau'}</button>
         <span className="grow" />
         {!ab ? <button className="primary" onClick={abschluss} disabled={!!blocker.length} title={blocker.length ? 'Erst die rot markierten Punkte erledigen' : ''}><Lock size={16} />Abrechnung abschließen</button> : <>
-          <button onClick={aufheben}><Unlock size={16} />Abschluss aufheben</button>
+          <button onClick={() => setGrundOffen(!grundOffen)}><Unlock size={16} />Abschluss aufheben</button>
           {buchen && <button onClick={() => los('buchen', buchen)} disabled={!!busy}>{buchenText}</button>}
           <button className="primary" onClick={() => los('ablegen', ablegen)} disabled={!!busy}><FileDown size={16} />{busy === 'ablegen' ? 'Wird abgelegt …' : 'PDFs erstellen und ablegen'}</button></>}
       </div>
+      {ab && grundOffen && <div className="row abschluss-grund">
+        <input autoFocus style={{ flex: 1 }} placeholder="Grund, z. B. „Rechnung Hausmeister Dezember nachgebucht“" value={grund} onChange={(e) => setGrund(e.target.value)} />
+        <button className="primary" disabled={grund.trim().length < 5} onClick={aufheben}>Aufheben</button>
+        <button onClick={() => { setGrundOffen(false); setGrund(''); }}>Abbrechen</button>
+      </div>}
       <p className="muted small">{ab
         ? 'Die Abrechnung ist abgeschlossen. Buchungen und Rechnungen dieses Jahres sind für die Liegenschaft gesperrt. Zum Korrigieren hebst du den Abschluss auf.'
         : 'Die Vorschau zeigt alle Schreiben in einem PDF, noch mit dem Schriftzug „ENTWURF“. Abschließen geht, wenn alle rot markierten Punkte erledigt sind.'}</p>

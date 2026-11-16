@@ -10,8 +10,8 @@ import { SchluesselWahl, schluesselText } from '../components/SchluesselWahl';
 import { AbschlussKarte } from '../components/AbschlussKarte';
 import { useObjektKontext } from '../logic/objektKontext';
 import { eur, farbe, num, datum } from '../components/EntityTable';
-import { nichtVerteilteKosten, tageImJahr, type Position, type Schluessel } from '../logic/verteilung';
-import { HEIZ_KONTO, nkBerechnen, type NkErgebnis } from '../logic/nebenkosten';
+import { eigeneSchluessel, nichtVerteilteKosten, tageImJahr, type Position, type Schluessel } from '../logic/verteilung';
+import { HEIZ_HINWEIS, HEIZ_KONTO, heizkostenOhneMessung, nkBerechnen, type NkErgebnis } from '../logic/nebenkosten';
 import { Brief, absender, dDatum, geld } from '../lib/pdf';
 import { oeffnen, speichern } from '../lib/dateien';
 
@@ -32,6 +32,7 @@ export function NebenkostenPage() {
   const [, setBusy] = useState(false);
   const [zu, setZu] = useState<Row | null>(null);
   const [stand, setStand] = useState(0);
+  const [eigene, setEigene] = useState<Set<number>>(new Set());
 
   useEffect(() => {
     db.select(`SELECT * FROM objekte ORDER BY verwaltungsart, name`).then((o) => { setObjekte(o); if (o.length && !fix) setObjekt(o[0].id); });
@@ -50,6 +51,7 @@ export function NebenkostenPage() {
   async function rechnen() {
     if (objekt === '') return;
     const r = await nkBerechnen(Number(objekt), jahr);
+    setEigene(await eigeneSchluessel(Number(objekt), jahr));
     setEinheiten(r.einheiten); setPos(r.positionen); setErg(r.erg);
   }
 
@@ -121,7 +123,8 @@ export function NebenkostenPage() {
     ...summenAbweichung.map((x) => x.p)].map((p) => `${p.nummer} ${p.name}`);
   // Kosten, die mangels Werten (Verbrauch, Messdienst, Personen) bei niemandem ankommen
   const nichtVerteilt = nichtVerteilteKosten(pos, erg);
-  const heizFehlt = pos.some((p) => p.nummer === HEIZ_KONTO) && !Object.values(heiz).some((x) => zahl(x.heizkosten) || zahl(x.warmwasser));
+  // Heizkostenverordnung: verbrauchsabhängig (Messdienst oder Verbrauch); ein für die Liegenschaft bewusst gewählter Schlüssel gilt als Ausnahme
+  const heizFehlt = heizkostenOhneMessung(pos, eigene);
 
   return (
     <>
@@ -138,7 +141,7 @@ export function NebenkostenPage() {
         extra={[
           { ok: mieter.length > 0, sperrt: true, text: 'Mieter mit Abrechnung im Jahr vorhanden' },
           { ok: !werteFehlen.length, sperrt: true, text: 'Werte für Verbrauch und manuelle Verteilung eingetragen', hinweis: werteFehlen.length ? `Fehlt bei: ${werteFehlen.join(', ')}` : undefined },
-          { ok: !heizFehlt, sperrt: false, text: 'Heizkosten laut Messdienst eingetragen', hinweis: heizFehlt ? `Konto ${HEIZ_KONTO} wird sonst nach Schlüssel verteilt.` : undefined },
+          { ok: !heizFehlt, sperrt: true, text: 'Heizkosten verbrauchsabhängig (Messdienst oder Verbrauch)', hinweis: heizFehlt ? HEIZ_HINWEIS : undefined },
           { ok: !nichtVerteilt.length, sperrt: true, text: 'Alle Kosten sind vollständig verteilt', hinweis: nichtVerteilt.length ? `Nicht verteilt: ${nichtVerteilt.map((x) => `${x.name} ${eur(x.rest)}`).join(', ')}` : undefined },
         ]}
         vorschau={vorschauPdf} ablegen={pdfs} buchen={buchen} buchenText="Ergebnis als offene Posten buchen"
@@ -216,7 +219,7 @@ export function NebenkostenPage() {
         extra={[
           { ok: mieter.length > 0, sperrt: true, text: 'Mieter mit Abrechnung im Jahr vorhanden' },
           { ok: !werteFehlen.length, sperrt: true, text: 'Werte für Verbrauch und manuelle Verteilung eingetragen', hinweis: werteFehlen.length ? `Fehlt bei: ${werteFehlen.join(', ')}` : undefined },
-          { ok: !heizFehlt, sperrt: false, text: 'Heizkosten laut Messdienst eingetragen', hinweis: heizFehlt ? `Konto ${HEIZ_KONTO} wird sonst nach Schlüssel verteilt.` : undefined },
+          { ok: !heizFehlt, sperrt: true, text: 'Heizkosten verbrauchsabhängig (Messdienst oder Verbrauch)', hinweis: heizFehlt ? HEIZ_HINWEIS : undefined },
           { ok: !nichtVerteilt.length, sperrt: true, text: 'Alle Kosten sind vollständig verteilt', hinweis: nichtVerteilt.length ? `Nicht verteilt: ${nichtVerteilt.map((x) => `${x.name} ${eur(x.rest)}`).join(', ')}` : undefined },
         ]}
         vorschau={vorschauPdf} ablegen={pdfs} buchen={buchen} buchenText="Ergebnis als offene Posten buchen"

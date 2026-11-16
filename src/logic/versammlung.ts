@@ -6,7 +6,15 @@ export type Stimme = 'Ja' | 'Nein' | 'Enthaltung';
 export type Status = 'Anwesend' | 'Abwesend' | 'Vertreten';
 export const ARTEN = ['Ordentliche Versammlung', 'Außerordentliche Versammlung', 'Umlaufbeschluss'] as const;
 
-export interface Top { id?: number; nr: number; titel: string; antrag: string; beschluss: boolean; aktiv: boolean; herkunft?: 'vorlage' | 'nano' | 'eigen'; hinweis?: string }
+export interface Top { id?: number; nr: number; titel: string; antrag: string; beschluss: boolean; aktiv: boolean; herkunft?: 'vorlage' | 'nano' | 'eigen'; hinweis?: string; mehrheit?: Mehrheit }
+
+/** Erforderliche Mehrheit: einfach (§ 25 Abs. 1 WEG), qualifiziert (§ 21 Abs. 2 WEG: mehr als zwei Drittel der abgegebenen Stimmen und mehr als die Hälfte aller Miteigentumsanteile), allstimmig (Zustimmung aller Eigentümer) */
+export type Mehrheit = 'einfach' | 'qualifiziert' | 'allstimmig';
+export const MEHRHEITEN: Record<Mehrheit, string> = {
+  einfach: 'Einfache Mehrheit (§ 25 WEG)',
+  qualifiziert: 'Qualifiziert: > 2/3 und > 50 % MEA (§ 21 Abs. 2 WEG)',
+  allstimmig: 'Allstimmig: alle Eigentümer',
+};
 
 /** ISO-Datum plus n Monate (für Anfechtungsfrist und Einladungsfrist) */
 export function plusTage(iso: string, tage: number) {
@@ -95,8 +103,8 @@ export async function versammlungSpeichern(objektId: number, werte: Row, tops: T
   const behalten = new Set(tops.filter((t) => t.id).map((t) => t.id));
   for (const a of alt) if (!behalten.has(a.id)) await db.execute('DELETE FROM versammlung_tops WHERE id = $1', [a.id]);
   for (const t of nummerieren(tops).filter((x) => x.aktiv)) {
-    if (t.id) await db.execute('UPDATE versammlung_tops SET nr = $1, titel = $2, antrag = $3, beschluss = $4 WHERE id = $5', [t.nr, t.titel, t.antrag || null, t.beschluss ? 1 : 0, t.id]);
-    else await db.execute('INSERT INTO versammlung_tops (versammlung_id, nr, titel, antrag, beschluss) VALUES ($1, $2, $3, $4, $5)', [id, t.nr, t.titel, t.antrag || null, t.beschluss ? 1 : 0]);
+    if (t.id) await db.execute('UPDATE versammlung_tops SET nr = $1, titel = $2, antrag = $3, beschluss = $4, mehrheit = $6 WHERE id = $5', [t.nr, t.titel, t.antrag || null, t.beschluss ? 1 : 0, t.id, t.mehrheit ?? 'einfach']);
+    else await db.execute('INSERT INTO versammlung_tops (versammlung_id, nr, titel, antrag, beschluss, mehrheit) VALUES ($1, $2, $3, $4, $5, $6)', [id, t.nr, t.titel, t.antrag || null, t.beschluss ? 1 : 0, t.mehrheit ?? 'einfach']);
   }
   await teilnehmerAbgleichen(id, objektId, felder.datum);
   return id;
@@ -109,22 +117,39 @@ export async function teilnehmerAbgleichen(versammlungId: number, objektId: numb
   }
 }
 
-export interface Ergebnis { ja: number; nein: number; enthaltung: number; jaN: number; neinN: number; enthN: number; offen: number; angenommen: boolean; abgestimmt: boolean }
+export interface Ergebnis { ja: number; nein: number; enthaltung: number; jaN: number; neinN: number; enthN: number; offen: number; angenommen: boolean; abgestimmt: boolean; mehrheit: Mehrheit; jaMea: number; begruendung: string }
 
 /** Ergebnis eines TOP: einfache Mehrheit der abgegebenen Ja- und Nein-Stimmen; Enthaltungen zählen nicht (§ 25 Abs. 1 WEG) */
 export function ergebnis(topId: number, vs: Versammlung): Ergebnis {
   const mea = vs.v.zaehlung === 'MEA';
+  const top = vs.tops.find((t) => t.id === topId);
+  const mehrheit: Mehrheit = top?.mehrheit === 'qualifiziert' || top?.mehrheit === 'allstimmig' ? top.mehrheit : 'einfach';
   const stimmb = vs.teilnehmer.filter((t) => t.status === 'Anwesend' || t.status === 'Vertreten');
-  const e: Ergebnis = { ja: 0, nein: 0, enthaltung: 0, jaN: 0, neinN: 0, enthN: 0, offen: 0, angenommen: false, abgestimmt: false };
+  const e: Ergebnis = { ja: 0, nein: 0, enthaltung: 0, jaN: 0, neinN: 0, enthN: 0, offen: 0, angenommen: false, abgestimmt: false, mehrheit, jaMea: 0, begruendung: '' };
   for (const t of stimmb) {
     const s = vs.stimmen.find((x) => x.top_id === topId && x.teilnehmer_id === t.id)?.stimme as Stimme | undefined;
     const g = mea ? Number(t.mea) || 0 : 1;
-    if (s === 'Ja') { e.ja += g; e.jaN++; } else if (s === 'Nein') { e.nein += g; e.neinN++; } else if (s === 'Enthaltung') { e.enthaltung += g; e.enthN++; } else e.offen++;
+    if (s === 'Ja') { e.ja += g; e.jaN++; e.jaMea += Number(t.mea) || 0; } else if (s === 'Nein') { e.nein += g; e.neinN++; } else if (s === 'Enthaltung') { e.enthaltung += g; e.enthN++; } else e.offen++;
   }
   e.abgestimmt = e.jaN + e.neinN + e.enthN > 0;
-  e.angenommen = e.ja > e.nein;
+  if (mehrheit === 'einfach') {
+    e.angenommen = e.ja > e.nein;
+    e.begruendung = 'Einfache Mehrheit der abgegebenen Ja- und Nein-Stimmen (§ 25 Abs. 1 WEG)';
+  } else if (mehrheit === 'qualifiziert') {
+    const gesamt = Number(vs.v.gesamt_mea) || vs.teilnehmer.reduce((a, t) => a + (Number(t.mea) || 0), 0);
+    const zweiDrittel = e.ja * 3 > (e.ja + e.nein) * 2;
+    const haelfte = e.jaMea * 2 > gesamt;
+    e.angenommen = zweiDrittel && haelfte;
+    e.begruendung = `Qualifizierte Mehrheit (§ 21 Abs. 2 WEG): mehr als zwei Drittel der abgegebenen Stimmen ${zweiDrittel ? 'erreicht' : 'nicht erreicht'}, mehr als die Hälfte aller Miteigentumsanteile ${haelfte ? 'erreicht' : 'nicht erreicht'} (Ja: ${zahlKurz(e.jaMea)} von ${zahlKurz(gesamt)} MEA)`;
+  } else {
+    const alleJa = vs.teilnehmer.length > 0 && vs.teilnehmer.every((t) => vs.stimmen.find((x) => x.top_id === topId && x.teilnehmer_id === t.id)?.stimme === 'Ja');
+    e.angenommen = alleJa;
+    e.begruendung = `Allstimmigkeit: alle ${vs.teilnehmer.length} Eigentümer müssen zustimmen, auch die nicht anwesenden${alleJa ? ' – erreicht' : ' – nicht erreicht'}`;
+  }
   return e;
 }
+
+function zahlKurz(n: number) { return n.toLocaleString('de-DE', { maximumFractionDigits: 3 }); }
 
 export async function stimmeSetzen(topId: number, teilnehmerId: number, stimme: Stimme | null) {
   if (!stimme) await db.execute('DELETE FROM versammlung_stimmen WHERE top_id = $1 AND teilnehmer_id = $2', [topId, teilnehmerId]);

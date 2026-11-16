@@ -18,7 +18,7 @@ import { KI_MODELLE, KI_STANDARD, kiEinstellungen, kiSchluesselSpeichern } from 
 
 const haken = (v: any) => (v ? '✓' : '');
 /** Konten, deren Nummer das Programm fest verwendet (Rücklage, Sollstellungen, Heizkosten, Bankgebühren) */
-const SYSTEMKONTEN = ['1000', '1001', '1002', '1003', '1010', '1011', '1200', '1260', '1261', '1262', '1405'];
+const SYSTEMKONTEN = ['1000', '1001', '1002', '1003', '1010', '1011', '1200', '1260', '1261', '1262', '1405', '1601', '1602', '1701'];
 
 export function KontenPage() {
   return (
@@ -28,7 +28,7 @@ export function KontenPage() {
         So wirken die Haken: <b>EÜR</b> = zählt im Ergebnis der GuV/EÜR, in der Jahresübersicht und in der Eigentümerabrechnung (ohne Haken: getrennt unter „Nicht in der EÜR“).
         {' '}<b>Umlagefähig</b> = kommt in die Nebenkostenabrechnung der Mieter. <b>HDL/HWL</b> = § 35a-Ausweis in den Abrechnungen.
         {' '}<b>MwSt</b> = Vorschlag beim Erfassen einer Rechnung. <b>Schlüssel</b> = Vorschlag für die Nebenkostenabrechnung (WEG verteilt ohne eigene Auswahl nach MEA).
-        {' '}Die Kontonummern {SYSTEMKONTEN.join(', ')} nutzt das Programm fest (Rücklage, Mieten, Hausgeld, Heizkosten, Kontoführung). Diese Nummern bitte nicht ändern.
+        {' '}Die Kontonummern {SYSTEMKONTEN.join(', ')} nutzt das Programm fest (Rücklage, Mieten, Hausgeld, Heizkosten, Kontoführung). Diese Nummern sind geschützt: Sie lassen sich weder ändern noch löschen (Bezeichnung und Haken schon).
       </p>
     </section>
     <EntityTable
@@ -50,6 +50,7 @@ export function KontenPage() {
       ]}
       listSql="SELECT * FROM buchungskonten ORDER BY nummer"
       groupBy="gruppe"
+      loeschSperre={(r) => SYSTEMKONTEN.includes(String(r.nummer)) ? `Konto ${r.nummer} nutzt NEOSS fest und lässt sich nicht löschen.` : null}
     />
     </>
   );
@@ -106,7 +107,7 @@ const EINST: [string, string][] = [
   ['firma_email', 'E-Mail'],
   ['mahnung_gebuehr_1', 'Gebühr Zahlungserinnerung (€)'],
   ['mahnung_gebuehr_2', 'Gebühr 1. Mahnung (€)'],
-  ['mahnung_gebuehr_3', 'Gebühr 2. Mahnung (€)'],
+  ['mahnung_gebuehr_3', 'Gebühr 2. Mahnung (€) – bei Mietern höchstens 2,50 € je Mahnung (nur tatsächlicher Aufwand), bei Eigentümern nur mit Beschluss'],
   ['mahnung_frist_tage', 'Zahlungsfrist in Mahnungen (Tage)'],
   ['mahnen_ab_tage', 'Offene Posten auf „mahnen“ setzen ab (Tage nach Fälligkeit, Standard 14)'],
   ['ablage_pfad', 'Ablageordner für Dokumente (später NAS)'],

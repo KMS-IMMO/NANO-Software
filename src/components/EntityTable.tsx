@@ -62,6 +62,8 @@ interface Props {
   onNew?: () => void;
   /** Eigener Ablauf beim Löschen (z. B. mit Bestätigungsfeld) */
   onDelete?: (row: Row) => void;
+  /** Grund, warum ein Datensatz nicht gelöscht werden darf (sonst null) */
+  loeschSperre?: (row: Row) => string | null;
   /** Ändert sich der Wert, wird die Liste neu geladen */
   version?: number;
   /** Zusätzliche CSS-Klasse je Zeile, z. B. Farbe nach Rolle */
@@ -72,7 +74,7 @@ interface Props {
 
 type Opt = { value: string | number; label: string };
 
-export function EntityTable({ title, table, fields, listSql, listParams = [], fixed, onOpen, emptyText, onChange, groupBy, newLabel, icon, onNew, onDelete, version, rowClass, editExtra }: Props) {
+export function EntityTable({ title, table, fields, listSql, listParams = [], fixed, onOpen, emptyText, onChange, groupBy, newLabel, icon, onNew, onDelete, loeschSperre, version, rowClass, editExtra }: Props) {
   const [rows, setRows] = useState<Row[]>([]);
   const [editing, setEditing] = useState<Row | null>(null);
   const [opts, setOpts] = useState<Record<string, Opt[]>>({});
@@ -156,6 +158,8 @@ export function EntityTable({ title, table, fields, listSql, listParams = [], fi
 
   async function del() {
     if (!editing?.id) return;
+    const sperre = loeschSperre?.(editing);
+    if (sperre) { setError(sperre); return; }
     if (onDelete) { const r = editing; setEditing(null); onDelete(r); return; }
     if (!window.confirm('Datensatz löschen? Er liegt danach 30 Tage im Papierkorb und lässt sich dort wiederherstellen.')) return;
     try {
