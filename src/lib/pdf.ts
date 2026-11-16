@@ -32,6 +32,13 @@ function ergebnisFarbe(raw: unknown): [number, number, number] | null {
 /** Betrag als farbige Tabellenzelle: positiv = Forderung/Nachzahlung (rot), negativ = Guthaben (grün) */
 export const saldoZelle = (wert: number, text: string) => ({ content: text, styles: { textColor: wert > 0.005 ? ROT : wert < -0.005 ? GRUEN : 0 } as never });
 
+/** Helles N+C-Design (Stand 16.11.2026): Tabellenkopf weiß mit Goldlinien, zarte Zebra-Zeilen, Summenzeile mit dunkler Linie */
+const GOLD: [number, number, number] = [176, 138, 74], GOLD_DUNKEL: [number, number, number] = [147, 115, 59], LINIE: [number, number, number] = [232, 228, 220];
+const KOPF_STIL = { fillColor: [255, 255, 255] as [number, number, number], textColor: GOLD_DUNKEL, fontStyle: 'bold' as const, lineColor: GOLD, lineWidth: { top: 0.35, bottom: 0.35, left: 0, right: 0 } };
+const ZEILE_STIL = { lineColor: LINIE, lineWidth: { bottom: 0.15, top: 0, left: 0, right: 0 } };
+const FUSS_STIL = { fillColor: [255, 255, 255] as [number, number, number], textColor: [31, 35, 40] as [number, number, number], fontStyle: 'bold' as const, lineColor: [31, 35, 40] as [number, number, number], lineWidth: { top: 0.45, bottom: 0, left: 0, right: 0 } };
+const ZEBRA = { fillColor: [247, 246, 243] as [number, number, number] };
+
 export class Brief {
   doc = new jsPDF({ unit: 'mm', format: 'a4' });
   y = 0;
@@ -114,9 +121,9 @@ export class Brief {
     for (let i = rechtsAb; i < head.length; i++) align[i] = { halign: 'right', cellWidth: 'wrap' };
     autoTable(this.doc, {
       startY: this.y, head: [head], body, foot, showFoot: 'lastPage', margin: { left: 20, right: 20, top: this.abs.briefpapier ? this.obenFolge : 15, bottom: this.abs.briefpapier ? 297 - this.grenzeUnten : 15 },
-      styles: { font: SCHRIFT(), fontSize: 9.5, cellPadding: 1.8 },
-      headStyles: { fillColor: [176, 138, 74], textColor: 255 },
-      footStyles: { fillColor: [248, 240, 227], textColor: 0, fontStyle: 'bold' },
+      theme: 'plain',
+      styles: { font: SCHRIFT(), fontSize: 9.5, cellPadding: { top: 2, bottom: 2, left: 1.8, right: 1.8 }, textColor: 25, ...ZEILE_STIL },
+      headStyles: KOPF_STIL, footStyles: FUSS_STIL, alternateRowStyles: ZEBRA,
       columnStyles: align,
       didParseCell: (h) => {
         if (h.section !== 'body' && h.column.index >= rechtsAb) h.cell.styles.halign = 'right';
@@ -231,8 +238,10 @@ export class Brief {
   abschnitt(titel: string) {
     this.platz(34);   // Überschrift nie allein am Seitenende
     const d = this.doc;
-    d.setFont(SCHRIFT(), 'bold'); d.setFontSize(11.5); d.setTextColor(150, 112, 52);
-    d.text(titel.toUpperCase(), 20, this.y);
+    // kurzer Goldbalken über der Überschrift wie im hellen N+C-Design
+    d.setFillColor(...GOLD); d.rect(20, this.y - 6.2, 11, 0.9, 'F');
+    d.setFont(SCHRIFT(), 'bold'); d.setFontSize(10.5); d.setTextColor(...GOLD_DUNKEL);
+    d.text(titel.toUpperCase(), 20, this.y, { charSpace: 0.35 });
     d.setTextColor(0); d.setFont(SCHRIFT(), 'normal'); d.setFontSize(10.5);
     this.y += 4;
   }
@@ -259,7 +268,7 @@ export class Brief {
     const body: RowInput[] = [];
     // Je Konto zuerst die Gesamtsumme, darunter die einzelnen Zeilen
     for (const g of gruppen) {
-      const kopf = { fontStyle: 'bold' as const, fillColor: [246, 241, 232] as [number, number, number], textColor: 30 };
+      const kopf = { fontStyle: 'bold' as const, fillColor: [246, 239, 227] as [number, number, number], textColor: 30 };
       body.push([{ content: g.titel, colSpan: letzte, styles: kopf }, { content: g.summe, styles: { ...kopf, halign: 'right' } }]);
       for (const z of g.zeilen) body.push(z);
     }
@@ -268,28 +277,30 @@ export class Brief {
     cs[letzte] = { ...cs[letzte], halign: 'right' };
     autoTable(this.doc, {
       startY: this.y, head: [head], body, foot: [[{ content: 'Gesamt', colSpan: letzte, styles: { halign: 'right' } }, { content: gesamt, styles: { halign: 'right' } }]], showFoot: 'lastPage', showHead: 'everyPage',
-      margin: this.raender, theme: 'grid',
-      styles: { font: SCHRIFT(), fontSize: 9, cellPadding: { top: 2.2, bottom: 2.2, left: 2, right: 2 }, lineColor: [228, 222, 211], lineWidth: 0.15, textColor: 25 },
-      headStyles: { fillColor: farbe, textColor: 255, fontStyle: 'bold' },
-      footStyles: { fillColor: [248, 240, 227], textColor: 0, fontStyle: 'bold' },
+      margin: this.raender, theme: 'plain',
+      styles: { font: SCHRIFT(), fontSize: 9, cellPadding: { top: 2.2, bottom: 2.2, left: 2, right: 2 }, textColor: 25, ...ZEILE_STIL },
+      // Kopf in der Farbe der Gruppe (Einnahmen grün, Ausgaben gold) als Linie und Schrift, nicht als Fläche
+      headStyles: { ...KOPF_STIL, textColor: farbe.map((c) => Math.round(c * 0.85)) as [number, number, number], lineColor: farbe },
+      footStyles: FUSS_STIL,
       columnStyles: cs,
       didParseCell: (h) => { if (h.section === 'head' && h.column.index === letzte) h.cell.styles.halign = 'right'; },
     });
     this.y = (this.doc as any).lastAutoTable.finalY + 9;
   }
 
-  /** Kleine Übersicht, z. B. Einnahmen, Ausgaben, Ergebnis */
-  kennzahlen(werte: [string, string][]) {
-    const w = 170 / werte.length;
+  /** Kleine Übersicht, z. B. Einnahmen, Ausgaben, Ergebnis: helle Karten mit feinem Rahmen, eine Karte (hervor) in Gold hervorgehoben */
+  kennzahlen(werte: [string, string][], hervor = -1) {
+    const w = 170 / werte.length, d = this.doc;
     this.platz(18);
     werte.forEach(([t, v], i) => {
-      const x = 20 + i * w;
-      this.doc.setFillColor(248, 244, 237); this.doc.roundedRect(x, this.y, w - 3, 15, 1.5, 1.5, 'F');
-      this.doc.setFontSize(8); this.doc.setTextColor(110); this.doc.text(t.toUpperCase(), x + 3.5, this.y + 5.2);
-      this.doc.setFont(SCHRIFT(), 'bold'); this.doc.setFontSize(12); this.doc.setTextColor(25); this.doc.text(v, x + 3.5, this.y + 11.6);
-      this.doc.setFont(SCHRIFT(), 'normal');
+      const x = 20 + i * w, h = i === hervor;
+      d.setLineWidth(h ? 0.45 : 0.25); d.setDrawColor(...(h ? GOLD : LINIE)); d.setFillColor(...(h ? [246, 239, 227] as [number, number, number] : [255, 255, 255] as [number, number, number]));
+      d.roundedRect(x, this.y, w - 3, 15, 2, 2, 'FD');
+      d.setFontSize(7.5); d.setTextColor(...(h ? GOLD_DUNKEL : [107, 111, 118] as [number, number, number])); d.text(t.toUpperCase(), x + 3.5, this.y + 5.2, { charSpace: 0.25 });
+      d.setFont(SCHRIFT(), 'bold'); d.setFontSize(12); d.setTextColor(25); d.text(v, x + 3.5, this.y + 11.6);
+      d.setFont(SCHRIFT(), 'normal');
     });
-    this.doc.setTextColor(0); this.doc.setFontSize(10.5);
+    d.setTextColor(0); d.setFontSize(10.5);
     this.y += 23;
   }
 
@@ -332,11 +343,9 @@ export async function listePdf(titel: string, untertitel: string, head: string[]
   autoTable(b.doc, {
     startY: b.y, head: [head], body, foot, showFoot: 'lastPage', showHead: 'everyPage',
     margin: { left: 20, right: 20, top: b.abs.briefpapier ? b.obenFolge : 18, bottom: b.abs.briefpapier ? 297 - b.grenzeUnten : 18 },
-    theme: 'grid',
-    styles: { font: SCHRIFT(), fontSize: schrift, cellPadding: { top: 1.8, bottom: 1.8, left: 1.6, right: 1.6 }, lineColor: [228, 222, 211], lineWidth: 0.15, textColor: 25, overflow: 'linebreak' },
-    headStyles: { fillColor: [176, 138, 74], textColor: 255, fontStyle: 'bold' },
-    footStyles: { fillColor: [248, 240, 227], textColor: 0, fontStyle: 'bold' },
-    alternateRowStyles: { fillColor: [252, 250, 246] },
+    theme: 'plain',
+    styles: { font: SCHRIFT(), fontSize: schrift, cellPadding: { top: 1.8, bottom: 1.8, left: 1.6, right: 1.6 }, textColor: 25, overflow: 'linebreak', ...ZEILE_STIL },
+    headStyles: KOPF_STIL, footStyles: FUSS_STIL, alternateRowStyles: ZEBRA,
     columnStyles: cs,
     didParseCell: (h) => { if (h.section !== 'body' && rechts.includes(h.column.index)) h.cell.styles.halign = 'right'; },
   });
@@ -360,7 +369,7 @@ export async function einnahmenAusgabenPdf(p: { objekt: string; adresse?: string
   const summe = (l: typeof ein) => l.reduce((a, x) => a + Math.abs(x.betrag), 0);
   const sEig = eig.reduce((a, x) => a + x.betrag, 0);
   b.kennzahlen([['Einnahmen', geld(summe(ein))], ['Ausgaben', geld(summe(aus))], ['Ergebnis', geld(summe(ein) - summe(aus))],
-    ...(eig.length ? [['An Eigentümer ausgezahlt', geld(-sEig)] as [string, string]] : [])]);
+    ...(eig.length ? [['An Eigentümer ausgezahlt', geld(-sEig)] as [string, string]] : [])], 2);
   const nachKonto = (l: typeof ein) => {
     const m = new Map<string, typeof ein>();
     for (const x of [...l].sort((a, c) => a.konto.localeCompare(c.konto, 'de', { numeric: true }) || a.datum.localeCompare(c.datum))) { if (!m.has(x.konto)) m.set(x.konto, []); m.get(x.konto)!.push(x); }
@@ -427,7 +436,7 @@ export async function einnahmenOderAusgabenPdf(p: { art: 'Einnahmen' | 'Ausgaben
   const summe = liste.reduce((a, x) => a + Math.abs(x.betrag), 0);
   const m = new Map<string, typeof liste>();
   for (const x of [...liste].sort((a, c) => a.konto.localeCompare(c.konto, 'de', { numeric: true }) || a.datum.localeCompare(c.datum))) { if (!m.has(x.konto)) m.set(x.konto, []); m.get(x.konto)!.push(x); }
-  b.kennzahlen([[`Summe ${p.art}`, geld(summe)], ['Buchungen', String(liste.length)], ['Buchungskonten', String(m.size)]]);
+  b.kennzahlen([[`Summe ${p.art}`, geld(summe)], ['Buchungen', String(liste.length)], ['Buchungskonten', String(m.size)]], 0);
   const wo = (x: (typeof liste)[number]) => (p.mitLiegenschaft ? [x.objekt, x.einheit].filter(Boolean).join(' · ') : x.einheit ?? '') || (ein ? '' : 'alle');
   const gruppen = [...m].map(([titel, z]) => ({ titel, summe: geld(z.reduce((a, x) => a + Math.abs(x.betrag), 0)),
     zeilen: z.map((x) => [dDatum(x.datum), [x.firma, x.text].filter(Boolean).join(' · ') || '–', wo(x), geld(Math.abs(x.betrag))]) }));
