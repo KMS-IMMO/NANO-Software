@@ -73,7 +73,7 @@ const { chromium } = require('playwright');
   ok('Abrechnungsprüfung liefert Befunde und Kontoabgleich', r.pr.befunde.length > 3 && /Stand 01\.01\.2025/.test(r.pr.kontoabgleich) && r.pr.befunde.some((x) => x.stufe === 'rot'), r.pr.befunde.length);
   ok('Abrechnungsprüfung meldet offenen Umsatz', r.pr.befunde.some((x) => /Bankumsätze/.test(x.text) && x.stufe === 'rot'));
   ok('Werkzeug „suchen“ findet die Liegenschaft', JSON.parse(r.such.text).objekte.some((x) => x.id === r.o));
-  ok('Werkzeug „kontoabgleich“ nennt Anfangs- und Endbestand', /Stand 01\.01\.2025 2\.000,00 €.*Stand 31\.12\.2025 2\.395,00 €/.test(r.wka.text) && /stimmt mit dem Kontoauszug/i.test(r.wka.text), r.wka.text.split('\n')[0]);
+  ok('Werkzeug „kontoabgleich“ nennt Anfangs- und Endbestand', /Stand 01\.01\.2025 2\.000,00\s€.*Stand 31\.12\.2025 2\.395,00\s€/.test(r.wka.text) && /stimmt mit dem Kontoauszug/i.test(r.wka.text), r.wka.text.split('\n')[0]);
   ok('Werkzeug „abrechnung_pruefen“ liefert Text mit PROBLEM/OK', /\[PROBLEM\]/.test(r.wap.text) && /\[OK\]/.test(r.wap.text));
   ok('Werkzeug ohne Objekt/Jahr meldet Fehler statt zu raten', r.wohne.fehler === true);
   ok('Einstellungen (API-Schlüssel) sind für den Agenten gesperrt', r.wein.fehler === true);
