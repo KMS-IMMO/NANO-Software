@@ -3,7 +3,6 @@ import { Link } from 'react-router-dom';
 import { db, type Row } from '../db';
 import { useObjektKontext } from '../logic/objektKontext';
 import { datum, eur } from '../components/EntityTable';
-import { personOptions } from '../db/labels';
 import { BankAbruf, BankVerbindungen } from '../components/BankAbruf';
 import { RechnungErfassen } from '../components/RechnungErfassen';
 import { BuchungBelege } from '../components/BuchungBelege';
@@ -15,7 +14,6 @@ import {
   automatischZuordnen, umsaetzeLoeschen, vorschlag, zuordnungLoesen, type Vorschlag,
 } from '../logic/bank';
 
-type Opt = { value: number; label: string };
 
 export function BankPage() {
   const fix = useObjektKontext();
@@ -25,7 +23,6 @@ export function BankPage() {
   const [filter, setFilter] = useState<'offen' | 'zugeordnet' | 'ignoriert' | 'alle'>('offen');
   const [vorschlaege, setVorschlaege] = useState<Record<number, Vorschlag | null>>({});
   const [info, setInfo] = useState('');
-  const [personen, setPersonen] = useState<Opt[]>([]);
   const [belegUmsatz, setBelegUmsatz] = useState<{ u: Row; datei?: File; objekt?: number } | null>(null);
   const [belegBuchung, setBelegBuchung] = useState<Row | null>(null);
   const [rowOver, setRowOver] = useState<number | null>(null);
@@ -49,7 +46,6 @@ export function BankPage() {
     (async () => {
       const k = await ladeKonten();
       if (k.length && konto === '') setKonto(k[0].id);
-      setPersonen(await db.select<Opt>(personOptions()));
     })();
   }, []);
 
@@ -154,7 +150,7 @@ export function BankPage() {
                   <td className={'num ' + (u.betrag < 0 ? 'neg' : 'pos')}><b>{eur(u.betrag)}</b></td>
                   <td>
                     {u.status === 'offen'
-                      ? <><Zuordnen u={u} v={vorschlaege[u.id]} personen={personen} done={load} buchen={() => setBuchenU(u)} />
+                      ? <><Zuordnen u={u} v={vorschlaege[u.id]} done={load} buchen={() => setBuchenU(u)} />
                           <button className="link small" onClick={() => belegZuUmsatz(u)} title="Oder PDF direkt auf die Zeile ziehen"><Paperclip size={13} /> Mit Beleg als Rechnung erfassen</button>
                           <button className="link small neg" style={{ marginLeft: 12 }} onClick={() => loeschen([u.id])} title="Umsatz löschen"><Trash2 size={13} /> Löschen</button></>
                       : <div className="small">

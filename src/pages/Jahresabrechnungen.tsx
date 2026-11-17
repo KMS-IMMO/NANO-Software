@@ -9,6 +9,8 @@ import { AbrechnungsUebersicht } from '../components/AbrechnungsUebersicht';
 import { SchluesselWahl, schluesselText } from '../components/SchluesselWahl';
 import { AbschlussKarte } from '../components/AbschlussKarte';
 import { KontoabgleichKarte } from '../components/KontoabgleichKarte';
+import { ZahlungenOhnePostenKarte } from '../components/ZahlungenOhnePostenKarte';
+import { zahlungenOhnePosten, type ZahlungOhnePosten } from '../logic/zahlungenOhnePosten';
 import { kontoabgleich } from '../logic/kontoabgleich';
 import { useObjektKontext } from '../logic/objektKontext';
 import { eur, farbe, num, datum } from '../components/EntityTable';
@@ -70,6 +72,7 @@ export function WegAbrechnungPage() {
   const [zu, setZu] = useState<Row | null>(null);
   const [werteFehlen, setWerteFehlen] = useState('');
   const [heizOhne, setHeizOhne] = useState(false);
+  const [ohnePosten, setOhnePosten] = useState<ZahlungOhnePosten[]>([]);
   const nichtVerteilt = nichtVerteilteKosten(pos, erg);
   const anteile = (kontoId: number) => {
     const m: Record<number, number> = {};
@@ -149,10 +152,19 @@ export function WegAbrechnungPage() {
       if (!z) { z = { key: k, name: x.name || 'ohne Eigentümer', einheit: x.einheit, soll: 0, ist: 0, posten: [] }; konten.push(z); }
       z.soll += Number(x.betrag); z.ist += Number(x.bezahlt); z.posten.push(x);
     }
-    // Überzahlungen ohne offenen Posten (Guthaben) dem Eigentümer der Einheit am Zahltag zurechnen
-    const ueber = await db.select(`SELECT b.betrag, b.datum, b.einheit_id, e.nummer AS einheit FROM buchungen b JOIN einheiten e ON e.id = b.einheit_id
-      WHERE b.objekt_id = $1 AND b.sollstellung_id IS NULL AND b.bankumsatz_id IS NOT NULL AND b.text LIKE 'Überzahlung%' AND b.datum <= $2`, [objekt, ende]);
+    // Zahlungen ohne offenen Posten (Überzahlung oder frei auf Hausgeld gebucht) dem Eigentümer der Einheit am Zahltag zurechnen.
+    // Ohne Einheit erscheinen sie als Guthaben „ohne Zuordnung“, damit kein Geld aus dem Bericht verschwindet.
+    const ueber = await db.select(`SELECT b.betrag, b.datum, b.einheit_id, COALESCE(e.nummer, '–') AS einheit FROM buchungen b LEFT JOIN einheiten e ON e.id = b.einheit_id
+      LEFT JOIN buchungskonten k ON k.id = b.buchungskonto_id
+      WHERE b.objekt_id = $1 AND b.sollstellung_id IS NULL AND b.rechnung_id IS NULL AND b.bankumsatz_id IS NOT NULL AND b.betrag > 0
+        AND (b.text LIKE 'Überzahlung%' OR k.nummer = '1010') AND b.datum <= $2`, [objekt, ende]);
     for (const x of ueber) {
+      if (!x.einheit_id) {
+        let z = konten.find((y) => y.key === 'ohne');
+        if (!z) { z = { key: 'ohne', name: 'Zahlung ohne Einheit/Eigentümer (siehe „Zahlungen ohne offenen Posten“)', einheit: '–', soll: 0, ist: 0, posten: [] }; konten.push(z); }
+        z.ist += Number(x.betrag);
+        continue;
+      }
       const ei = (await db.select(`SELECT ei.person_id, TRIM(COALESCE(p.firma, '') || CASE WHEN p.firma IS NOT NULL AND p.nachname IS NOT NULL THEN ', ' ELSE '' END ||
           COALESCE(p.nachname, '') || CASE WHEN p.vorname IS NOT NULL THEN ', ' || p.vorname ELSE '' END) AS name
         FROM eigentum ei JOIN personen p ON p.id = ei.person_id WHERE ei.einheit_id = $1 AND (ei.von IS NULL OR ei.von <= $2) AND (ei.bis IS NULL OR ei.bis >= $2)
@@ -180,6 +192,7 @@ export function WegAbrechnungPage() {
       FROM bankkonten b WHERE b.objekt_id = $1 ORDER BY b.id`, [objekt, anfang, ende]);
     const zahlungsEin = r2(entwicklung.reduce((a, b) => a + Number(b.ein), 0));
     const einSumme = r2(einnahmen.reduce((a, x) => a + Number(x.betrag), 0));
+    setOhnePosten(await zahlungenOhnePosten(Number(objekt), jahr));
     setVerm({ einnahmen, einSumme, einOffen: zahlungsEin - einSumme > 0.005 ? r2(zahlungsEin - einSumme) : 0, entwicklung, ruecklage: rl.bestand, ruecklageIst: rl.bestandIst, ruecklageOffen: rl.offen, zufIstJahr: rl.zufuehrungIst, zufJahr, sonderJahr: rl.sonder, entnahmeJahr: rl.entnahme, zinsJahr: rl.zinsen, banken,
       forderungen: r2(offen.filter((z) => z.saldo > 0).reduce((a, z) => a + z.saldo, 0)),
       guthaben: r2(offen.filter((z) => z.saldo < 0).reduce((a, z) => a - z.saldo, 0)),
@@ -319,6 +332,8 @@ export function WegAbrechnungPage() {
           { ok: !werteFehlen, sperrt: true, text: 'Werte für Verbrauch und manuelle Verteilung eingetragen', hinweis: werteFehlen ? `Fehlt bei: ${werteFehlen}` : undefined },
           { ok: !heizOhne, sperrt: true, text: 'Heizkosten verbrauchsabhängig (Messdienst oder Verbrauch)', hinweis: heizOhne ? HEIZ_HINWEIS : undefined },
           { ok: !nichtVerteilt.length, sperrt: true, text: 'Alle Kosten sind vollständig verteilt', hinweis: nichtVerteilt.length ? `Nicht verteilt: ${nichtVerteilt.map((x) => `${x.name} ${eur(x.rest)}`).join(', ')}` : undefined },
+          { ok: !ohnePosten.length, sperrt: false, text: 'Alle Hausgeldzahlungen sind offenen Posten zugeordnet',
+            hinweis: ohnePosten.length ? `${ohnePosten.length === 1 ? "1 Zahlung" : `${ohnePosten.length} Zahlungen`} ohne offenen Posten: ${ohnePosten.slice(0, 3).map((z) => `${datum(z.datum)} ${z.gegenpartei} ${eur(z.betrag)} (${z.grund})`).join('; ')}. Siehe Karte „Zahlungen ohne offenen Posten“.` : undefined },
         ]}
         vorschau={async (entwurf) => (await erzeugen({ entwurf }))!} ablegen={async () => { await erzeugen(null); }}
         buchen={buchen} buchenText="Abrechnungsspitzen als offene Posten buchen"
@@ -353,6 +368,8 @@ export function WegAbrechnungPage() {
           <tr><td><b>Summe Einnahmen {jahr}</b></td><td className="num"><b>{eur((verm.einSumme ?? 0) + (verm.einOffen ?? 0))}</b></td></tr>
         </tbody></table>
       </section>
+      {objekt !== '' && <ZahlungenOhnePostenKarte objekt={Number(objekt)} jahr={jahr} liste={ohnePosten} gesperrt={!!zu}
+        onChanged={(t) => { setInfo(t); setStand(stand + 1); rechnen(); }} />}
       {objekt !== '' && <KontoabgleichKarte objekt={Number(objekt)} jahr={jahr} stand={stand} gesperrt={!!zu} />}
       <section className="card abr-uebersicht">
         <div className="card-head"><h2>Vermögensbericht zum 31.12.{jahr}</h2></div>
@@ -378,6 +395,8 @@ export function WegAbrechnungPage() {
           { ok: !werteFehlen, sperrt: true, text: 'Werte für Verbrauch und manuelle Verteilung eingetragen', hinweis: werteFehlen ? `Fehlt bei: ${werteFehlen}` : undefined },
           { ok: !heizOhne, sperrt: true, text: 'Heizkosten verbrauchsabhängig (Messdienst oder Verbrauch)', hinweis: heizOhne ? HEIZ_HINWEIS : undefined },
           { ok: !nichtVerteilt.length, sperrt: true, text: 'Alle Kosten sind vollständig verteilt', hinweis: nichtVerteilt.length ? `Nicht verteilt: ${nichtVerteilt.map((x) => `${x.name} ${eur(x.rest)}`).join(', ')}` : undefined },
+          { ok: !ohnePosten.length, sperrt: false, text: 'Alle Hausgeldzahlungen sind offenen Posten zugeordnet',
+            hinweis: ohnePosten.length ? `${ohnePosten.length === 1 ? "1 Zahlung" : `${ohnePosten.length} Zahlungen`} ohne offenen Posten: ${ohnePosten.slice(0, 3).map((z) => `${datum(z.datum)} ${z.gegenpartei} ${eur(z.betrag)} (${z.grund})`).join('; ')}. Siehe Karte „Zahlungen ohne offenen Posten“.` : undefined },
         ]}
         vorschau={async (entwurf) => (await erzeugen({ entwurf }))!} ablegen={async () => { await erzeugen(null); }}
         buchen={buchen} buchenText="Abrechnungsspitzen als offene Posten buchen"
