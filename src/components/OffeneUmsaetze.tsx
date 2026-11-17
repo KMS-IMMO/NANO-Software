@@ -4,17 +4,34 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Landmark, Trash2 } from 'lucide-react';
 import { db, type Row } from '../db';
-import { personOptions } from '../db/labels';
+import { objektPersonenSql, personOptions } from '../db/labels';
 import { datum, eur } from './EntityTable';
 import { BuchenDialog } from './BuchenDialog';
 import { umsaetzeLoeschen, vorschlag, zuordnenKonto, zuordnenPerson, zuordnenRechnung, type Vorschlag } from '../logic/bank';
 
-type Opt = { value: number; label: string };
+type Opt = { value: number; label: string; gruppe?: string; aktiv?: number };
+
+/** Wer kann diesen Zahlungseingang geleistet haben? Nur Eigentümer und Mieter der Liegenschaft, zu der das Bankkonto gehört
+ *  (WEG: Eigentümer zuerst). Gehört das Konto zu keiner Liegenschaft, stehen alle Personen zur Wahl. Kurz zwischengespeichert je Bankkonto. */
+const personenCache = new Map<number, { zeit: number; p: Promise<{ weg: boolean; l: Opt[] }> }>();
+function personenFuerKonto(bankkontoId: number) {
+  const c = personenCache.get(bankkontoId);
+  if (c && Date.now() - c.zeit < 15000) return c.p;
+  const p = (async () => {
+    const o = (await db.select('SELECT o.id, o.verwaltungsart FROM bankkonten b JOIN objekte o ON o.id = b.objekt_id WHERE b.id = $1', [bankkontoId]))[0];
+    if (!o) return { weg: false, l: await db.select<Opt>(personOptions()) };
+    const weg = o.verwaltungsart === 'WEG';
+    const l = await db.select<Opt>(objektPersonenSql(o.id));
+    const vorn = weg ? 'Eigentümer' : 'Mieter';
+    return { weg, l: [...l.filter((x) => x.gruppe === vorn), ...l.filter((x) => x.gruppe !== vorn)] };
+  })();
+  personenCache.set(bankkontoId, { zeit: Date.now(), p });
+  return p;
+}
 
 export function OffeneUmsaetze({ objektId, version, onChange }: { objektId: number | null; version: number; onChange: (info?: string) => void }) {
   const [rows, setRows] = useState<Row[]>([]);
   const [vorschlaege, setVorschlaege] = useState<Record<number, Vorschlag | null>>({});
-  const [personen, setPersonen] = useState<Opt[]>([]);
   const [wahl, setWahl] = useState<Set<number>>(new Set());
   const [alle, setAlle] = useState(false);
   const [buchenU, setBuchenU] = useState<Row | null>(null);
@@ -30,7 +47,6 @@ export function OffeneUmsaetze({ objektId, version, onChange }: { objektId: numb
     setVorschlaege(v);
   };
   useEffect(() => { load(); }, [objektId, version]);
-  useEffect(() => { db.select<Opt>(personOptions()).then(setPersonen); }, []);
   const fertig = (info?: string) => { load(); onChange(info); };
 
   if (!rows.length) return null;
@@ -88,7 +104,7 @@ export function OffeneUmsaetze({ objektId, version, onChange }: { objektId: numb
             <td>{u.gegenpartei}<div className="muted small">{u.gegen_iban}</div></td>
             <td className="small">{u.verwendungszweck}</td>
             <td className={'num nowrap ' + (u.betrag < 0 ? 'neg' : 'pos')}><b>{eur(u.betrag)}</b></td>
-            <td><Zuordnen u={u} v={vorschlaege[u.id]} personen={personen} done={() => fertig()} buchen={() => setBuchenU(u)} />
+            <td><Zuordnen u={u} v={vorschlaege[u.id]} done={() => fertig()} buchen={() => setBuchenU(u)} />
               <button className="link small neg" onClick={() => loeschen([u.id])}><Trash2 size={13} /> Löschen</button></td>
           </tr>))}</tbody>
       </table></div>
@@ -99,8 +115,11 @@ export function OffeneUmsaetze({ objektId, version, onChange }: { objektId: numb
   );
 }
 
-export function Zuordnen({ u, v, personen, done, buchen }: { u: Row; v?: Vorschlag | null; personen: Opt[]; done: () => void; buchen: () => void }) {
+export function Zuordnen({ u, v, done, buchen }: { u: Row; v?: Vorschlag | null; done: () => void; buchen: () => void }) {
   const [wahl, setWahl] = useState('');
+  const [personen, setPersonen] = useState<{ weg: boolean; l: Opt[] }>({ weg: false, l: [] });
+  useEffect(() => { if (u.betrag > 0) personenFuerKonto(u.bankkonto_id).then(setPersonen); }, [u.bankkonto_id, u.betrag]);
+  const gruppen = [...new Set(personen.l.map((p) => p.gruppe ?? ''))];
   const [fehler, setFehler] = useState('');
   /** Zuordnen; ist das Jahr abgeschlossen, erscheint der Hinweis statt einer Buchung */
   async function ausfuehren(f: () => Promise<void>) {
@@ -123,8 +142,12 @@ export function Zuordnen({ u, v, personen, done, buchen }: { u: Row; v?: Vorschl
         <button className="primary small-btn" onClick={buchen} title="Konto, Einheiten, Buchungsjahr und mehr im Buchen-Fenster wählen">Buchen</button>
         {u.betrag > 0 && <>
           <select value={wahl} onChange={(e) => setWahl(e.target.value)} style={{ flex: 1, minWidth: 0 }}>
-            <option value="">Mieter / Eigentümer …</option>
-            {personen.map((p) => <option key={'p' + p.value} value={'p:' + p.value}>{p.label}</option>)}
+            <option value="">{gruppen.length === 1 && gruppen[0] ? `${gruppen[0]} …` : personen.weg ? 'Eigentümer / Mieter …' : 'Mieter / Eigentümer …'}</option>
+            {gruppen.map((g) => {
+              const opts = personen.l.filter((p) => (p.gruppe ?? '') === g).map((p) =>
+                <option key={g + p.value} value={'p:' + p.value}>{p.label}{p.gruppe && !p.aktiv ? ' (früher)' : ''}</option>);
+              return g && gruppen.length > 1 ? <optgroup key={g} label={g}>{opts}</optgroup> : opts;
+            })}
           </select>
           <button className="small-btn" disabled={!wahl} onClick={ok}>OK</button></>}
         <span className="grow" />

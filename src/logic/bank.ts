@@ -244,8 +244,22 @@ export function monatImText(text: string, ops: Row[]): string | null {
   return treffer.size === 1 && l.length === 1 ? l[0] : null;
 }
 
+/** Ist die Person in der Liegenschaft Eigentümer oder Mieter (oder hat dort Sollstellungen)? */
+export async function personInObjekt(personId: number, objekt: number): Promise<boolean> {
+  return (await db.select(`SELECT 1 FROM eigentum ei JOIN einheiten e ON e.id = ei.einheit_id WHERE e.objekt_id = $1 AND ei.person_id = $2
+    UNION ALL SELECT 1 FROM mietvertraege v JOIN einheiten e ON e.id = v.einheit_id WHERE e.objekt_id = $1 AND v.mieter_id = $2
+    UNION ALL SELECT 1 FROM sollstellungen s JOIN einheiten e ON e.id = s.einheit_id WHERE e.objekt_id = $1 AND s.person_id = $2 LIMIT 1`, [objekt, personId])).length > 0;
+}
+
 export async function zuordnenPerson(u: Row, personId: number) {
   const objekt = (await db.select('SELECT objekt_id FROM bankkonten WHERE id = $1', [u.bankkonto_id]))[0]?.objekt_id ?? null;
+  // Nur Eigentümer bzw. Mieter der Liegenschaft des Bankkontos: sonst landet die Zahlung als „Überzahlung“ ohne Einheit
+  // auf einem falschen Konto, und der offene Posten des eigentlichen Zahlers bleibt stehen
+  if (objekt && !(await personInObjekt(personId, objekt))) {
+    const n = (await db.select(`SELECT TRIM(COALESCE(firma, '') || ' ' || COALESCE(vorname, '') || ' ' || COALESCE(nachname, '')) AS n FROM personen WHERE id = $1`, [personId]))[0]?.n;
+    const on = (await db.select('SELECT name FROM objekte WHERE id = $1', [objekt]))[0]?.name;
+    throw new Error(`${n || 'Diese Person'} ist in ${on || 'dieser Liegenschaft'} weder Eigentümer noch Mieter. Bitte den richtigen Zahler wählen.`);
+  }
   let ops = (await db.select(`SELECT * FROM (${OP_SQL}) WHERE person_id = $1 AND betrag - bezahlt > 0.005 ORDER BY faellig, einheit_lfd, id`, [personId]))
     .filter((o) => !objekt || o.objekt_id === objekt);
   const offen = (o: Row) => Math.round((o.betrag - o.bezahlt) * 100) / 100;
@@ -295,9 +309,15 @@ export async function zuordnenPerson(u: Row, personId: number) {
     // damit die Buchung ein Konto hat (sonst sperrt sie den Abschluss) und im Vermögensbericht als Guthaben erscheint
     const letzter = (await db.select(`SELECT s.art, s.einheit_id, e.objekt_id, o.verwaltungsart FROM sollstellungen s JOIN einheiten e ON e.id = s.einheit_id
       JOIN objekte o ON o.id = e.objekt_id WHERE s.person_id = $1 ${objekt ? 'AND e.objekt_id = ' + Number(objekt) : ''} ORDER BY s.monat DESC, s.id DESC LIMIT 1`, [personId]))[0];
-    const art = letzter ? (letzter.verwaltungsart === 'WEG' && letzter.art === 'Rücklage' ? 'Hausgeld' : letzter.art) : 'Kaltmiete';
+    // Noch kein Posten in dieser Liegenschaft: Einheit aus Eigentum (WEG: Hausgeld) bzw. Mietvertrag (Kaltmiete)
+    const bezug = letzter ? null : objekt ? (await db.select(`SELECT * FROM (
+        SELECT ei.einheit_id, 'Hausgeld' AS art, CASE WHEN o.verwaltungsart = 'WEG' THEN 0 ELSE 2 END AS rang, COALESCE(ei.von, '') AS ab FROM eigentum ei
+          JOIN einheiten e ON e.id = ei.einheit_id JOIN objekte o ON o.id = e.objekt_id WHERE e.objekt_id = $1 AND ei.person_id = $2
+        UNION ALL SELECT v.einheit_id, 'Kaltmiete', 1, COALESCE(v.beginn, '') FROM mietvertraege v JOIN einheiten e ON e.id = v.einheit_id WHERE e.objekt_id = $1 AND v.mieter_id = $2)
+      ORDER BY rang, ab DESC LIMIT 1`, [objekt, personId]))[0] : null;
+    const art = letzter ? (letzter.verwaltungsart === 'WEG' && letzter.art === 'Rücklage' ? 'Hausgeld' : letzter.art) : bezug?.art ?? 'Kaltmiete';
     await insert('buchungen', { datum: u.datum, betrag: rest, buchungskonto_id: kontoId(art), objekt_id: objekt ?? letzter?.objekt_id ?? null,
-      einheit_id: letzter?.einheit_id ?? null, bankumsatz_id: u.id, text: `Überzahlung / Guthaben: ${u.gegenpartei}` });
+      einheit_id: letzter?.einheit_id ?? bezug?.einheit_id ?? null, bankumsatz_id: u.id, text: `Überzahlung / Guthaben: ${u.gegenpartei}` });
   }
   // IBAN beim Mieter/Eigentümer merken, damit es beim nächsten Mal automatisch klappt
   if (u.gegen_iban) await db.execute(`UPDATE personen SET iban = $1 WHERE id = $2 AND (iban IS NULL OR iban = '')`, [u.gegen_iban, personId]);

@@ -32,3 +32,22 @@ export const einheitPerson = (e = 'e') => `COALESCE(
     WHERE ee.einheit_id = ${e}.id AND (ee.bis IS NULL OR ee.bis >= date('now')) ORDER BY ee.anteil DESC LIMIT 1))`;
 /** „WE 01 · Müller, Anna“ */
 export const einheitLabel = (e = 'e') => `${e}.nummer || COALESCE(' · ' || ${einheitPerson(e)}, '')`;
+
+/** Eigentümer und Mieter einer Liegenschaft (für die Zuordnung von Hausgeld- und Mietzahlungen):
+ *  value, label („Yetim, Familie · WE 1“), gruppe ('Eigentümer' | 'Mieter') und aktiv (1 = heute noch Eigentümer bzw. Mieter).
+ *  Personen mit Sollstellungen in der Liegenschaft zählen mit, auch wenn Eigentum oder Vertrag inzwischen beendet sind. */
+export const objektPersonenSql = (objektId: number) => {
+  const o = Math.trunc(Number(objektId));
+  return `SELECT p.id AS value, ${personLabel('p')} || COALESCE(' · ' || GROUP_CONCAT(DISTINCT x.einheit), '') AS label, x.gruppe, MAX(x.aktiv) AS aktiv
+  FROM (
+    SELECT ei.person_id AS pid, 'Eigentümer' AS gruppe, e.nummer AS einheit, CASE WHEN ei.bis IS NULL OR ei.bis >= date('now') THEN 1 ELSE 0 END AS aktiv
+      FROM eigentum ei JOIN einheiten e ON e.id = ei.einheit_id WHERE e.objekt_id = ${o}
+    UNION ALL
+    SELECT v.mieter_id, 'Mieter', e.nummer, CASE WHEN v.ende IS NULL OR v.ende >= date('now') THEN 1 ELSE 0 END
+      FROM mietvertraege v JOIN einheiten e ON e.id = v.einheit_id WHERE e.objekt_id = ${o}
+    UNION ALL
+    SELECT s.person_id, CASE WHEN s.vertrag_id IS NULL THEN 'Eigentümer' ELSE 'Mieter' END, e.nummer, 0
+      FROM sollstellungen s JOIN einheiten e ON e.id = s.einheit_id WHERE e.objekt_id = ${o} AND s.person_id IS NOT NULL
+  ) x JOIN personen p ON p.id = x.pid
+  GROUP BY p.id, x.gruppe ORDER BY x.gruppe, MAX(x.aktiv) DESC, label`;
+};
