@@ -126,7 +126,7 @@ export function SollstellungenPage() {
                     <td className="num">{eur(r.bezahlt)}</td>
                     <td><span className={'pill st-' + STATUS_KLASSE[st]}>{st}</span></td>
                     <td className="actions">
-                      {st !== 'bezahlt' && <button className="link" onClick={async () => { await zahlungBuchen(r); load(); }}>Als bezahlt buchen</button>}
+                      {st !== 'bezahlt' && <button className="link" onClick={async () => { try { await zahlungBuchen(r); } catch (e) { setInfo(String((e as Error)?.message ?? e)); } load(); }}>Als bezahlt buchen</button>}
                       <button className="icon-btn" title="Posten löschen" onClick={() => loeschen(r)}><Trash2 size={15} /></button>
                     </td>
                   </tr>);

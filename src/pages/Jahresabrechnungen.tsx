@@ -11,6 +11,7 @@ import { AbschlussKarte } from '../components/AbschlussKarte';
 import { KontoabgleichKarte } from '../components/KontoabgleichKarte';
 import { ZahlungenOhnePostenKarte } from '../components/ZahlungenOhnePostenKarte';
 import { zahlungenOhnePosten, type ZahlungOhnePosten } from '../logic/zahlungenOhnePosten';
+import { handzahlungenDatieren, spaeteHandzahlungen } from '../logic/soll';
 import { kontoabgleich } from '../logic/kontoabgleich';
 import { useObjektKontext } from '../logic/objektKontext';
 import { eur, farbe, num, datum } from '../components/EntityTable';
@@ -73,6 +74,7 @@ export function WegAbrechnungPage() {
   const [werteFehlen, setWerteFehlen] = useState('');
   const [heizOhne, setHeizOhne] = useState(false);
   const [ohnePosten, setOhnePosten] = useState<ZahlungOhnePosten[]>([]);
+  const [spaet, setSpaet] = useState<Row[]>([]);
   const nichtVerteilt = nichtVerteilteKosten(pos, erg);
   const anteile = (kontoId: number) => {
     const m: Record<number, number> = {};
@@ -193,6 +195,7 @@ export function WegAbrechnungPage() {
     const zahlungsEin = r2(entwicklung.reduce((a, b) => a + Number(b.ein), 0));
     const einSumme = r2(einnahmen.reduce((a, x) => a + Number(x.betrag), 0));
     setOhnePosten(await zahlungenOhnePosten(Number(objekt), jahr));
+    setSpaet(await spaeteHandzahlungen(Number(objekt), jahr));
     setVerm({ einnahmen, einSumme, einOffen: zahlungsEin - einSumme > 0.005 ? r2(zahlungsEin - einSumme) : 0, entwicklung, ruecklage: rl.bestand, ruecklageIst: rl.bestandIst, ruecklageOffen: rl.offen, zufIstJahr: rl.zufuehrungIst, zufJahr, sonderJahr: rl.sonder, entnahmeJahr: rl.entnahme, zinsJahr: rl.zinsen, banken,
       forderungen: r2(offen.filter((z) => z.saldo > 0).reduce((a, z) => a + z.saldo, 0)),
       guthaben: r2(offen.filter((z) => z.saldo < 0).reduce((a, z) => a - z.saldo, 0)),
@@ -332,6 +335,8 @@ export function WegAbrechnungPage() {
           { ok: !werteFehlen, sperrt: true, text: 'Werte für Verbrauch und manuelle Verteilung eingetragen', hinweis: werteFehlen ? `Fehlt bei: ${werteFehlen}` : undefined },
           { ok: !heizOhne, sperrt: true, text: 'Heizkosten verbrauchsabhängig (Messdienst oder Verbrauch)', hinweis: heizOhne ? HEIZ_HINWEIS : undefined },
           { ok: !nichtVerteilt.length, sperrt: true, text: 'Alle Kosten sind vollständig verteilt', hinweis: nichtVerteilt.length ? `Nicht verteilt: ${nichtVerteilt.map((x) => `${x.name} ${eur(x.rest)}`).join(', ')}` : undefined },
+          { ok: !spaet.length, sperrt: false, text: `Von Hand bezahlte Posten ${jahr} sind im Jahr ${jahr} datiert`,
+            hinweis: spaet.length ? `${spaet.length} Zahlungen mit Datum nach dem 31.12.${jahr}. Sie zählen deshalb zum Stichtag als offen. Siehe Karte „Als bezahlt gebucht, aber nach dem Stichtag datiert“.` : undefined },
           { ok: !ohnePosten.length, sperrt: false, text: 'Alle Hausgeldzahlungen sind offenen Posten zugeordnet',
             hinweis: ohnePosten.length ? `${ohnePosten.length === 1 ? "1 Zahlung" : `${ohnePosten.length} Zahlungen`} ohne offenen Posten: ${ohnePosten.slice(0, 3).map((z) => `${datum(z.datum)} ${z.gegenpartei} ${eur(z.betrag)} (${z.grund})`).join('; ')}. Siehe Karte „Zahlungen ohne offenen Posten“.` : undefined },
         ]}
@@ -368,6 +373,18 @@ export function WegAbrechnungPage() {
           <tr><td><b>Summe Einnahmen {jahr}</b></td><td className="num"><b>{eur((verm.einSumme ?? 0) + (verm.einOffen ?? 0))}</b></td></tr>
         </tbody></table>
       </section>
+      {objekt !== '' && spaet.length > 0 && <section className="card abr-uebersicht">
+        <div className="card-head"><h2>Als bezahlt gebucht, aber nach dem Stichtag datiert</h2></div>
+        <p className="muted small">Diese Hausgeld-Posten {jahr} wurden mit „Als bezahlt buchen“ erledigt. Die Zahlung trägt aber das Datum des Klicks
+          (z. B. {datum(spaet[0].datum)}), also nach dem 31.12.{jahr}. Für den Vermögensbericht zum 31.12.{jahr} gelten sie deshalb als offen, obwohl das Soll gezahlt ist.
+          Mit dem Knopf bekommen diese Zahlungen das Fälligkeitsdatum des jeweiligen Postens. Betrag, Konto und Zuordnung bleiben gleich.</p>
+        <table className="list"><thead><tr><th>Einheit</th><th>Monat</th><th>Art</th><th>fällig</th><th>gebucht am</th><th className="num">Betrag</th></tr></thead>
+          <tbody>{spaet.slice(0, 24).map((b) => <tr key={b.id}><td>{b.einheit}</td><td>{b.monat}</td><td>{b.art}</td><td>{datum(b.faellig)}</td><td className="neg">{datum(b.datum)}</td><td className="num">{eur(Number(b.betrag))}</td></tr>)}</tbody></table>
+        {spaet.length > 24 && <p className="muted small">und {spaet.length - 24} weitere</p>}
+        <div className="row"><button className="primary" disabled={!!zu} onClick={async () => {
+          try { const n = await handzahlungenDatieren(Number(objekt), jahr); setInfo(`${n} Zahlungen auf den Fälligkeitstag datiert.`); setStand(stand + 1); rechnen(); }
+          catch (e) { setInfo(String((e as Error)?.message ?? e)); } }}>Alle {spaet.length} auf den Fälligkeitstag datieren</button></div>
+      </section>}
       {objekt !== '' && <ZahlungenOhnePostenKarte objekt={Number(objekt)} jahr={jahr} liste={ohnePosten} gesperrt={!!zu}
         onChanged={(t) => { setInfo(t); setStand(stand + 1); rechnen(); }} />}
       {objekt !== '' && <KontoabgleichKarte objekt={Number(objekt)} jahr={jahr} stand={stand} gesperrt={!!zu} />}
@@ -395,6 +412,8 @@ export function WegAbrechnungPage() {
           { ok: !werteFehlen, sperrt: true, text: 'Werte für Verbrauch und manuelle Verteilung eingetragen', hinweis: werteFehlen ? `Fehlt bei: ${werteFehlen}` : undefined },
           { ok: !heizOhne, sperrt: true, text: 'Heizkosten verbrauchsabhängig (Messdienst oder Verbrauch)', hinweis: heizOhne ? HEIZ_HINWEIS : undefined },
           { ok: !nichtVerteilt.length, sperrt: true, text: 'Alle Kosten sind vollständig verteilt', hinweis: nichtVerteilt.length ? `Nicht verteilt: ${nichtVerteilt.map((x) => `${x.name} ${eur(x.rest)}`).join(', ')}` : undefined },
+          { ok: !spaet.length, sperrt: false, text: `Von Hand bezahlte Posten ${jahr} sind im Jahr ${jahr} datiert`,
+            hinweis: spaet.length ? `${spaet.length} Zahlungen mit Datum nach dem 31.12.${jahr}. Sie zählen deshalb zum Stichtag als offen. Siehe Karte „Als bezahlt gebucht, aber nach dem Stichtag datiert“.` : undefined },
           { ok: !ohnePosten.length, sperrt: false, text: 'Alle Hausgeldzahlungen sind offenen Posten zugeordnet',
             hinweis: ohnePosten.length ? `${ohnePosten.length === 1 ? "1 Zahlung" : `${ohnePosten.length} Zahlungen`} ohne offenen Posten: ${ohnePosten.slice(0, 3).map((z) => `${datum(z.datum)} ${z.gegenpartei} ${eur(z.betrag)} (${z.grund})`).join('; ')}. Siehe Karte „Zahlungen ohne offenen Posten“.` : undefined },
         ]}

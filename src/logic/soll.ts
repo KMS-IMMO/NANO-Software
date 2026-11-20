@@ -1,6 +1,7 @@
 // Soll-Stellung: erzeugt die monatlichen Forderungen (offene Posten)
 // für Mietverträge (inkl. Staffel-/Index-/Erhöhungen und USt) und für Hausgeld (WEG).
 import { db, type Row } from '../db';
+import { gesperrt, sperrText } from './abschluss';
 
 export function monate(von: string, bis: string): string[] {
   const out: string[] = [];
@@ -182,11 +183,38 @@ export const OP_SQL = `
   JOIN objekte o ON o.id = e.objekt_id
   LEFT JOIN personen p ON p.id = s.person_id`;
 
+/** Zahldatum für „Als bezahlt buchen“: Posten aus einem früheren Jahr gelten am Fälligkeitstag als bezahlt, sonst heute.
+ *  Sonst stünde z. B. Hausgeld 2025, das erst im November 2026 nachgetragen wird, zum 31.12.2025 noch als offene Forderung im Vermögensbericht. */
+export function zahldatumFuer(r: Row, heute = new Date().toISOString().slice(0, 10)): string {
+  const f = String(r.faellig ?? '').slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(f) && f.slice(0, 4) < heute.slice(0, 4) ? f : heute;
+}
+
 /** Restbetrag eines offenen Postens als Zahlung buchen (z. B. bar oder ohne Bankumsatz) */
-export async function zahlungBuchen(r: Row, datum = new Date().toISOString().slice(0, 10)) {
+export async function zahlungBuchen(r: Row, datum = zahldatumFuer(r)) {
+  const sp = await gesperrt(r.objekt_id, datum);
+  if (sp) throw new Error(sperrText(sp));
   const konto = (await db.select('SELECT id FROM buchungskonten WHERE nummer = $1', [KONTO_FUER_ART[r.art] ?? '1000']))[0];
-  await db.execute(`INSERT INTO buchungen (datum, betrag, buchungskonto_id, objekt_id, einheit_id, sollstellung_id, text) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-    [datum, Math.round((r.betrag - r.bezahlt) * 100) / 100, konto?.id ?? null, r.objekt_id, r.einheit_id, r.id, `Zahlung ${r.art} ${r.monat} (manuell)`]);
+  const jahr = /^\d{4}-\d{2}$/.test(String(r.monat)) ? Number(String(r.monat).slice(0, 4)) : Number(datum.slice(0, 4));
+  await db.execute(`INSERT INTO buchungen (datum, betrag, buchungskonto_id, objekt_id, einheit_id, sollstellung_id, text, jahr) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+    [datum, Math.round((r.betrag - r.bezahlt) * 100) / 100, konto?.id ?? null, r.objekt_id, r.einheit_id, r.id, `Zahlung ${r.art} ${r.monat} (manuell)`, jahr]);
+}
+
+/** Von Hand als bezahlt gebuchte Posten eines Jahres, deren Zahldatum erst nach dem 31.12. liegt (früher: Datum des Klicks) */
+export async function spaeteHandzahlungen(objekt: number, jahr: number): Promise<Row[]> {
+  return db.select(`SELECT b.id, b.datum, b.betrag, s.faellig, s.monat, s.art, e.nummer AS einheit FROM buchungen b JOIN sollstellungen s ON s.id = b.sollstellung_id
+      JOIN einheiten e ON e.id = s.einheit_id
+    WHERE e.objekt_id = $1 AND b.bankumsatz_id IS NULL AND b.text LIKE 'Zahlung % (manuell)' AND substr(s.monat, 1, 4) = $2 AND b.datum > $3 AND s.faellig <= $3
+    ORDER BY e.lfd_nr, e.nummer, s.monat`, [objekt, String(jahr), `${jahr}-12-31`]);
+}
+
+/** Diese Handzahlungen auf den Fälligkeitstag des Postens datieren. Ist das Jahr abgeschlossen, bricht es ohne Änderung ab. */
+export async function handzahlungenDatieren(objekt: number, jahr: number): Promise<number> {
+  const sp = await gesperrt(objekt, `${jahr}-12-31`);
+  if (sp) throw new Error(sperrText(sp));
+  const l = await spaeteHandzahlungen(objekt, jahr);
+  for (const b of l) await db.execute('UPDATE buchungen SET datum = $1, jahr = $2 WHERE id = $3', [b.faellig, jahr, b.id]);
+  return l.length;
 }
 
 /** Status eines Postens: bezahlt, erwartet (noch nicht fällig), fällig (überfällig in der Frist), mahnen, gemahnt */
