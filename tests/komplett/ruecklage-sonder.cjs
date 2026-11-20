@@ -37,7 +37,7 @@ const { chromium } = require('playwright');
   await p.goto('http://localhost:5179/#/weg-abrechnung'); await p.waitForTimeout(1500);
   const sel = p.locator('select').filter({ has: p.locator('option', { hasText: 'Rücklage Testhaus' }) }).first();
   await sel.selectOption({ label: 'Rücklage Testhaus' }); await p.waitForTimeout(500);
-  const jahr = p.locator('label:has-text("Jahr") input').first(); if (await jahr.count()) { await jahr.fill('2025'); await p.waitForTimeout(1500); }
+  const jahr = p.locator('label:has-text("Jahr") select').first(); if (await jahr.count()) { await jahr.selectOption('2025'); await p.waitForTimeout(1500); }
   const t = await p.locator('main').innerText();
   ok('Vermögensbericht zeigt Sonderzuführung', /Sonderzuführungen 2025[\s\S]{0,80}7\.529,10/.test(t));
   ok('Keine Fehler in der Konsole', errs.length === 0, errs.slice(0, 2).join(' | '));

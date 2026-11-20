@@ -65,7 +65,7 @@ const { chromium } = require('playwright');
   await feld('davon Rücklage').fill('400'); await hk.locator('button.primary').click(); await p.waitForTimeout(300);
   ok('Rücklage höher als Hausgeld wird abgelehnt', /Rücklage muss zwischen/.test(await hk.innerText()));
   await feld('Hausgeld / Monat').fill('320'); await feld('davon Rücklage').fill('60'); await p.waitForTimeout(200);
-  const ab = await feld('gilt ab').inputValue();
+  const ab = (await feld('gilt ab').inputValue()).replace(/^(\d{2})\.(\d{2})\.(\d{4})$/, '$3-$2-$1');   // Datumsfeld zeigt TT.MM.JJJJ
   await hk.locator('button.primary').click(); await p.waitForTimeout(1000);
   const h = await q(`SELECT betrag, davon_ruecklage FROM hausgeld WHERE einheit_id = ${d.e1} AND gueltig_ab = '${ab}'`);
   ok('Neues Hausgeld gespeichert (ab 1. nächsten Monats)', h.length === 1 && h[0].betrag === 320 && h[0].davon_ruecklage === 60 && /-01$/.test(ab), `${ab} ${JSON.stringify(h)}`);

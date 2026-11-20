@@ -23,7 +23,7 @@ const { chromium } = require('playwright');
   });
   await p.goto('http://localhost:5179/#/weg-abrechnung'); await p.waitForTimeout(1500);
   await p.locator('select').filter({ has: p.locator('option', { hasText: 'Anpassung Testhaus' }) }).first().selectOption({ label: 'Anpassung Testhaus' }); await p.waitForTimeout(500);
-  await p.locator('label:has-text("Jahr") input').first().fill('2025'); await p.waitForTimeout(1500);
+  await p.locator('label:has-text("Jahr") select').first().selectOption('2025'); await p.waitForTimeout(1500);
   const zeile = (nr) => p.locator(`.abr-uebersicht tr:has(td:text-is("${nr}"))`).first();
   ok('Heizkosten gebucht 1.000,00', (await zeile('1200').innerText()).includes('1.000,00'));
   // 1) Gesamtkosten anpassen
@@ -88,7 +88,7 @@ const { chromium } = require('playwright');
   for (const [pfad, name] of [['nebenkosten', 'Nebenkostenabrechnung'], ['eigentuemer-abrechnung', 'Eigentümerabrechnung']]) {
     await p.goto('http://localhost:5179/#/' + pfad); await p.waitForTimeout(1500);
     { const s = p.locator('select').filter({ has: p.locator('option', { hasText: 'Anpassung Miethaus' }) }).first(); const v = await s.locator('option', { hasText: 'Anpassung Miethaus' }).first().getAttribute('value'); await s.selectOption(v); } await p.waitForTimeout(500);
-    await p.locator('label:has-text("Jahr") input').first().fill('2025'); await p.waitForTimeout(1500);
+    await p.locator('label:has-text("Jahr") select').first().selectOption('2025'); await p.waitForTimeout(1500);
     const z = p.locator('.abr-uebersicht tr:has(td:text-is("1215"))').first();
     ok(`${name}: Stift und Papierkorb an den Kosten`, await z.locator('button[title="Gesamtkosten für die Abrechnung anpassen"]').count() === 1 && await z.locator('button[title="Kostenposition aus der Abrechnung nehmen"]').count() === 1);
   }

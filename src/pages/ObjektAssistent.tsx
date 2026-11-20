@@ -1,5 +1,5 @@
 // Assistent „Liegenschaft hinzufügen“: Grunddaten → Einheiten erfassen → Zusammenfassung.
-import { BetragFeld } from '../components/BetragFeld';
+import { BetragFeld, MengeFeld } from '../components/BetragFeld';
 import { ortZurPlz } from '../lib/pruefen';
 import { betragZahl } from '../lib/betrag';
 import { useEffect, useState } from 'react';
@@ -11,6 +11,7 @@ import { eur, num } from '../components/EntityTable';
 
 const zahl = (s: any) => betragZahl(s) ?? 0;
 import { WARMWASSER } from '../db/labels';
+import { DatumFeld } from '../components/DatumFeld';
 const HEIZUNG = ['Gas-Zentralheizung', 'Öl-Zentralheizung', 'Fernwärme', 'Wärmepumpe', 'Pellets', 'Gasetagenheizung', 'Nachtspeicher', 'Sonstige'];
 type Einheit = { nummer: string; typ: string; lage: string; flaeche: string; mea: string; personenzahl: string;
   vorname: string; nachname: string; telefon: string; email: string;
@@ -199,7 +200,7 @@ export function ObjektAssistentPage() {
                   <td><input value={e.nummer} onChange={(x) => setE(i, 'nummer', x.target.value)} style={{ width: 110 }} /></td>
                   <td><select value={e.typ} style={{ minWidth: 130 }} onChange={(x) => setE(i, 'typ', x.target.value)}>{EINHEIT_TYPEN.map((t) => <option key={t}>{t}</option>)}</select></td>
                   <td><input value={e.lage} placeholder="EG, 1. OG, DG …" style={{ width: 100 }} onChange={(x) => setEinheiten(einheiten.map((y, j) => (j === i ? mitEtage(y, x.target.value) : y)))} /></td>
-                  <td className="num"><input className="cell" inputMode="decimal" value={e.flaeche} style={{ width: 80 }} onChange={(x) => setE(i, 'flaeche', x.target.value)} /></td>
+                  <td className="num"><MengeFeld zelle className="cell" einheit="m²" value={e.flaeche} style={{ width: 96 }} onChange={(x) => setE(i, 'flaeche', x.target.value)} /></td>
                   <td className="num"><input className="cell" inputMode="decimal" value={e.mea} style={{ width: 80 }} onChange={(x) => setE(i, 'mea', x.target.value)} /></td>
                   <td className="num"><input className="cell" inputMode="numeric" value={e.personenzahl} style={{ width: 60 }} onChange={(x) => setE(i, 'personenzahl', x.target.value)} /></td>
                   {weg && <>
@@ -211,7 +212,7 @@ export function ObjektAssistentPage() {
                     <td className="num"><BetragFeld zelle className="cell" value={e.ruecklage} style={{ width: 110 }} onChange={(x) => setE(i, 'ruecklage', x.target.value)} /></td>
                     <td><input value={e.mVorname} placeholder="leer = nicht vermietet" onChange={(x) => setE(i, 'mVorname', x.target.value)} style={{ width: 140 }} /></td>
                     <td><input value={e.mNachname} onChange={(x) => setE(i, 'mNachname', x.target.value)} style={{ width: 140 }} /></td>
-                    <td><input type="date" value={e.mSeit} disabled={!e.mNachname.trim()} onChange={(x) => setE(i, 'mSeit', x.target.value)} /></td>
+                    <td><DatumFeld value={e.mSeit} disabled={!e.mNachname.trim()} onChange={(x) => setE(i, 'mSeit', x.target.value)} /></td>
                     <td className="num"><BetragFeld zelle className="cell" value={e.nkVz} disabled={!e.mNachname.trim()} style={{ width: 110 }} onChange={(x) => setE(i, 'nkVz', x.target.value)} /></td>
                   </>}
                   <td className="actions"><button className="icon-btn" title="Entfernen" disabled={einheiten.length === 1} onClick={() => setEinheiten(einheiten.filter((_, j) => j !== i))}><Trash2 size={17} /></button></td>

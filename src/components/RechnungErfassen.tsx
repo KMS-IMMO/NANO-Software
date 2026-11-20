@@ -10,6 +10,7 @@ import { db, insert, type Row } from '../db';
 import { einheitPerson } from '../db/labels';
 import { eur } from './EntityTable';
 import { letztesDokument, speichern } from '../lib/dateien';
+import { DatumFeld } from './DatumFeld';
 
 const heute = () => new Date().toISOString().slice(0, 10);
 const zahl = (s: string) => betragZahl(s) ?? 0;
@@ -202,7 +203,7 @@ export function RechnungErfassen({ objektFest, onSaved, vorlage }: { objektFest?
       <div className="rerf-grid">
         <div className="rerf-form">
           <div className="bf-kopf">
-            <label><span>Datum *</span><input type="date" value={datum} onChange={(e) => setDatum(e.target.value)} /></label>
+            <label><span>Datum *</span><DatumFeld value={datum} onChange={(e) => setDatum(e.target.value)} /></label>
             <label className="grow"><span>Rechnungsnummer{k?.rechnung_pflicht ? ' *' : ''}</span><input value={nr} onChange={(e) => setNr(e.target.value)} placeholder="z. B. RE-2026-0815" /></label>
             <label><span>Betrag brutto *</span><BetragFeld value={betrag} onChange={(e) => setBetrag(e.target.value)} /></label>
           </div>
@@ -269,8 +270,8 @@ export function RechnungErfassen({ objektFest, onSaved, vorlage }: { objektFest?
 
           <details className="rerf-mehr"><summary>Weitere Angaben (Fälligkeit, bezahlt, Notiz)</summary>
             <div className="form f3">
-              <label><span>Fällig am</span><input type="date" value={faellig} onChange={(e) => setFaellig(e.target.value)} /></label>
-              <label><span>Bezahlt am</span><input type="date" value={bezahlt} onChange={(e) => setBezahlt(e.target.value)} /></label>
+              <label><span>Fällig am</span><DatumFeld value={faellig} onChange={(e) => setFaellig(e.target.value)} /></label>
+              <label><span>Bezahlt am</span><DatumFeld value={bezahlt} onChange={(e) => setBezahlt(e.target.value)} /></label>
               <label className="span3"><span>Notiz</span><input value={notiz} onChange={(e) => setNotiz(e.target.value)} /></label>
             </div>
           </details>

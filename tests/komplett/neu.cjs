@@ -104,7 +104,7 @@ const O = AUS + '/neu/'; fs.mkdirSync(O, { recursive: true });
   // Auswertung
   await p.goto('http://localhost:5179/#/auswertung'); await p.waitForTimeout(2500);
   await p.locator('main select').first().selectOption({ label: 'Miethaus Test' }).catch(() => {});
-  await p.locator('main input[type=date]').first().fill('2025-01-01'); await p.locator('main input[type=date]').nth(1).fill('2025-12-31'); await p.waitForTimeout(2500);
+  await p.locator('main input.datum-eingabe').first().fill('2025-01-01'); await p.locator('main input.datum-eingabe').nth(1).fill('2025-12-31'); await p.waitForTimeout(2500);
   const gv = await p.locator('main').innerText(); await p.screenshot({ path: O + 'auswertung.png', fullPage: true });
   ok('Auswertung: Ergebnis 10.840 € ohne Auszahlungen, eigener Block', gv.includes('10.840,00') && gv.includes('Auszahlungen an den Eigentümer') && gv.includes('7.240,00'), '');
 

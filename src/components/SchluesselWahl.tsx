@@ -2,6 +2,7 @@
 // Bei „Verbrauch“ und „Manuell“ (Summe) öffnet sich ein Fenster: Gesamtverbrauch bzw. Gesamtsumme und die Werte je Einheit.
 // Gespeichert wird erst, wenn die Summe der Einheiten genau mit dem Gesamtwert übereinstimmt.
 import { betragZahl } from '../lib/betrag';
+import { MengeFeld } from './BetragFeld';
 import { useState } from 'react';
 import { Pencil } from 'lucide-react';
 import { db, type Row } from '../db';
@@ -109,7 +110,7 @@ export function SchluesselWahl({ objekt, jahr, p, anteile, onChanged }: {
               <thead><tr><th>Einheit</th><th className="num">{f.art === 'Summe' ? 'Betrag €' : `Verbrauch${f.masseinheit ? ` (${f.masseinheit})` : ''}`}</th>{f.art === 'Verbrauch' && <th className="num">Anteil</th>}<th className="num">Kosten</th></tr></thead>
               <tbody>{f.einheiten.map((e) => (
                 <tr key={e.id}><td>{e.nummer} <span className="muted small">{e.typ}</span></td>
-                  <td className="num"><input className="cell" inputMode="decimal" placeholder={inEuro ? '0,00' : ''} value={f.werte[e.id] ?? ''} onChange={(x) => setF({ ...f, werte: { ...f.werte, [e.id]: x.target.value } })} /></td>
+                  <td className="num"><MengeFeld zelle className="cell" einheit={f.art === 'Summe' ? '€' : f.masseinheit} placeholder={inEuro || f.art === 'Summe' ? '0,00' : ''} value={f.werte[e.id] ?? ''} onChange={(x) => setF({ ...f, werte: { ...f.werte, [e.id]: x.target.value } })} /></td>
                   {f.art === 'Verbrauch' && <td className="num">{gesamt ? fmt(zahl(f.werte[e.id] ?? '') / gesamt * 100, 1) + ' %' : '–'}</td>}
                   <td className="num">{eur(kosten(e))}</td></tr>))}
               </tbody>

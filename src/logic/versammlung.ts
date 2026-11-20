@@ -70,7 +70,7 @@ export async function eigentuemerAmTag(objektId: number, datum: string): Promise
       GROUP_CONCAT(e.nummer, ', ') AS einheiten, SUM(COALESCE(e.mea, 0) * COALESCE(ei.anteil, 100) / 100.0) AS mea
     FROM eigentum ei JOIN einheiten e ON e.id = ei.einheit_id JOIN personen p ON p.id = ei.person_id
     WHERE e.objekt_id = $1 AND (ei.von IS NULL OR ei.von <= $2) AND (ei.bis IS NULL OR ei.bis >= $2)
-    GROUP BY p.id ORDER BY MIN(e.nummer), name`, [objektId, datum]);
+    GROUP BY p.id ORDER BY MIN(COALESCE(e.lfd_nr, 9999)), MIN(e.nummer), name`, [objektId, datum]);
   return r;
 }
 

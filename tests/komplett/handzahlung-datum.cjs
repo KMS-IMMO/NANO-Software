@@ -27,7 +27,7 @@ const { chromium } = require('playwright');
   ok('Posten im laufenden Jahr: heute', r.heute === '2026-11-20' && r.alt === '2025-03-03', `${r.heute} / ${r.alt}`);
   ok('Späte Handzahlungen erkannt', r.vor === 12, r.vor);
   await p.goto('http://localhost:5179/#/weg-abrechnung'); await p.waitForTimeout(2500);
-  await p.locator('select').first().selectOption({ label: 'WEG Handzahlung' }); await p.locator('input[type=number]').first().fill('2025'); await p.waitForTimeout(3500);
+  await p.locator('select').first().selectOption({ label: 'WEG Handzahlung' }); await p.locator('select.jahr-wahl').first().selectOption('2025'); await p.waitForTimeout(3500);
   const t1 = (await p.locator('main').innerText()).replace(/ /g, ' ');
   ok('Vorher: Forderung 4.800 € zum 31.12.', /Offene Forderungen gegen Eigentümer\s+4\.800,00 €/.test(t1));
   ok('Karte „nach dem Stichtag datiert“ erscheint', /Als bezahlt gebucht, aber nach dem Stichtag datiert/.test(t1));

@@ -7,6 +7,7 @@ import { db, type Row } from '../db';
 import { objektPersonenSql, personOptions } from '../db/labels';
 import { datum, eur } from './EntityTable';
 import { BuchenDialog } from './BuchenDialog';
+import { MehrfachZuordnen } from './MehrfachZuordnen';
 import { umsaetzeLoeschen, vorschlag, zuordnenKonto, zuordnenPerson, zuordnenRechnung, type Vorschlag } from '../logic/bank';
 
 type Opt = { value: number; label: string; gruppe?: string; aktiv?: number };
@@ -121,6 +122,7 @@ export function Zuordnen({ u, v, done, buchen }: { u: Row; v?: Vorschlag | null;
   useEffect(() => { if (u.betrag > 0) personenFuerKonto(u.bankkonto_id).then(setPersonen); }, [u.bankkonto_id, u.betrag]);
   const gruppen = [...new Set(personen.l.map((p) => p.gruppe ?? ''))];
   const [fehler, setFehler] = useState('');
+  const [mehrfach, setMehrfach] = useState(false);
   /** Zuordnen; ist das Jahr abgeschlossen, erscheint der Hinweis statt einer Buchung */
   async function ausfuehren(f: () => Promise<void>) {
     setFehler('');
@@ -149,11 +151,13 @@ export function Zuordnen({ u, v, done, buchen }: { u: Row; v?: Vorschlag | null;
               return g && gruppen.length > 1 ? <optgroup key={g} label={g}>{opts}</optgroup> : opts;
             })}
           </select>
-          <button className="small-btn" disabled={!wahl} onClick={ok}>OK</button></>}
+          <button className="small-btn" disabled={!wahl} onClick={ok}>OK</button>
+          <button className="small-btn" title="Auf mehrere Eigentümer/Mieter aufteilen oder der Gemeinschaft zuführen (z. B. Miete Funkanlage)" onClick={() => setMehrfach(true)}>Mehrere …</button></>}
         <span className="grow" />
         <button className="link small" onClick={async () => { await db.execute(`UPDATE bankumsaetze SET status='ignoriert' WHERE id=$1`, [u.id]); done(); }}>Ignorieren</button>
       </div>
       {fehler && <p className="error small">{fehler}</p>}
+      {mehrfach && <MehrfachZuordnen u={u} start={personen.weg && !v ? 'gemeinschaft' : 'mehrere'} onClose={() => setMehrfach(false)} onDone={() => { setMehrfach(false); done(); }} />}
     </div>
   );
 }

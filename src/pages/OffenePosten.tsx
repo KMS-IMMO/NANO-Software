@@ -38,14 +38,17 @@ export function OffenePostenPage() {
 
   const stat = useMemo(() => {
     const key = (r: Row) => gruppe === 'Objekt' ? r.objekt : gruppe === 'Schuldner' ? r.schuldner : gruppe === 'Monat' ? r.monat : r.monat.slice(0, 4);
-    const m = new Map<string, { soll: number; ist: number }>();
+    const m = new Map<string, { soll: number; ist: number; lfd: number }>();
     for (const r of basis) {
       const k = key(r) || '–';
-      const x = m.get(k) ?? { soll: 0, ist: 0 };
-      x.soll += r.betrag; x.ist += r.bezahlt; m.set(k, x);
+      const x = m.get(k) ?? { soll: 0, ist: 0, lfd: 9999 };
+      x.soll += r.betrag; x.ist += r.bezahlt; x.lfd = Math.min(x.lfd, Number(r.einheit_lfd ?? 9999)); m.set(k, x);
     }
     const arr = [...m.entries()];
-    return gruppe === 'Monat' || gruppe === 'Jahr' ? arr.sort((a, b) => b[0].localeCompare(a[0])) : arr.sort((a, b) => (b[1].soll - b[1].ist) - (a[1].soll - a[1].ist));
+    // Monat/Jahr: neueste zuerst; Schuldner: in der Reihenfolge der Einheiten (wie überall), Liegenschaft: nach Name
+    return gruppe === 'Monat' || gruppe === 'Jahr' ? arr.sort((a, b) => b[0].localeCompare(a[0]))
+      : gruppe === 'Schuldner' ? arr.sort((a, b) => a[1].lfd - b[1].lfd || a[0].localeCompare(b[0], 'de'))
+      : arr.sort((a, b) => a[0].localeCompare(b[0], 'de'));
   }, [basis, gruppe]);
 
   return (

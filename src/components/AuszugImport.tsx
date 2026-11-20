@@ -9,6 +9,7 @@ import { db, insert, type Row } from '../db';
 import { auszugLesen, automatischZuordnen, bilderLesen, importieren, saldoHinweis, startsaldoUebernehmen, type Umsatz } from '../logic/bank';
 import { istBild } from '../logic/ocr';
 import { datum, eur } from './EntityTable';
+import { DatumFeld } from './DatumFeld';
 
 const zahl = (s: string) => betragZahl(s) ?? 0;
 
@@ -121,7 +122,7 @@ export function AuszugImport({ objektId, onDone, kompakt, kontoId }: { objektId:
                     <label><span>Bezeichnung</span><input value={neu.name} onChange={(e) => setNeu({ ...neu, name: e.target.value })} /></label>
                     <label><span>IBAN</span><input value={neu.iban} onChange={(e) => setNeu({ ...neu, iban: e.target.value })} /></label>
                     <label><span>Kontostand vor dem ersten Umsatz</span><BetragFeld value={neu.saldo} onChange={(e) => setNeu({ ...neu, saldo: e.target.value })} /></label>
-                    <label><span>Kontostand vom</span><input type="date" value={neu.datum} onChange={(e) => setNeu({ ...neu, datum: e.target.value })} /></label></>
+                    <label><span>Kontostand vom</span><DatumFeld value={neu.datum} onChange={(e) => setNeu({ ...neu, datum: e.target.value })} /></label></>
                   : <p className="warn">Noch kein Bankkonto vorhanden. Bitte in der Liegenschaft ein Bankkonto anlegen.</p>}
               </div>
               <div className="tablewrap auszug-liste"><table className="list">

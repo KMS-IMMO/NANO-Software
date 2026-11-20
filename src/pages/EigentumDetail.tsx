@@ -11,6 +11,7 @@ import { betragZahl } from '../lib/betrag';
 import { StammdatenKarte, personFelder, personWerte, personAenderungen, type SGruppe } from '../components/Stammdaten';
 import { OP_SQL, hausgeldNeuStellen } from '../logic/soll';
 import { personLabel, widSql } from '../db/labels';
+import { DatumFeld } from '../components/DatumFeld';
 
 export function EigentumDetailPage({ objektId, eigentumId }: { objektId: number; eigentumId: number }) {
   const [ei, setEi] = useState<Row | null | undefined>(undefined);
@@ -192,7 +193,7 @@ function HausgeldAnpassen({ einheitId, objektId, aktuell, verlauf, nk, onSaved }
       <div className="form f3">
         <label><span>Hausgeld / Monat</span><BetragFeld value={gesamt} onChange={(e) => setGesamt(e.target.value)} /></label>
         <label><span>davon Rücklage</span><BetragFeld value={rl} onChange={(e) => setRl(e.target.value)} /></label>
-        <label><span>gilt ab</span><input type="date" value={ab} onChange={(e) => setAb(e.target.value)} /></label>
+        <label><span>gilt ab</span><DatumFeld value={ab} onChange={(e) => setAb(e.target.value)} /></label>
       </div>
       {g > 0 && <p className={'small ' + (rest < -0.005 ? 'neg' : 'muted')}>Aufteilung: Rücklage {eur(r)}{nk ? ` · NK Mieter ${eur(nk)}` : ''} · {nk ? 'Eigentümer' : 'Bewirtschaftung'} {eur(rest)}
         {rest < -0.005 ? ' – die NK-Vorauszahlung des Mieters ist höher als das Hausgeld ohne Rücklage.' : ''}</p>}
