@@ -25,6 +25,10 @@ export interface KontoAbgleich {
   /** Zugeordnete Umsätze, deren Buchungen nicht genau den Umsatzbetrag ergeben */
   abweichend: Umsatz[];
   monateOhne: string[];
+  /** Regelmäßige Zahler (mind. 6 Eingänge im Jahr), bei denen in einzelnen Monaten kein oder ein doppelter Eingang vorliegt */
+  regelmaessig: { name: string; betrag: number; anzahl: number; fehlt: string[]; doppelt: string[] }[];
+  /** Gelöschte Umsätze dieses Jahres (laut Änderungsprotokoll), die nicht wieder eingelesen wurden */
+  geloescht: (Umsatz & { geloeschtAm: string })[];
   ok: boolean;
 }
 
@@ -58,8 +62,39 @@ export async function kontoabgleich(objekt: number, jahr: number): Promise<Konto
       const mm = `${jahr}-${String(i + 1).padStart(2, '0')}`;
       return i + 1 >= ersterMonat && `${mm}-31` < heute.slice(0, 7) + '-01' && !u.some((x) => String(x.datum).startsWith(mm));
     });
+    // Regelmäßige Zahler (Hausgeld, Miete): Monate ohne Eingang zeigen, wo ein Umsatz fehlt, wenn der Endbestand nicht zum Auszug passt
+    const gruppen = new Map<string, Row[]>();
+    // Nach IBAN gruppieren; Umsätze ohne IBAN (z. B. von Hand nachgetragen) zählen beim Zahler mit gleichem Namen
+    const nm = (x: Row) => String(x.gegenpartei || '').trim().toLowerCase();
+    const eing = u.filter((x) => Number(x.betrag) > 0);
+    for (const x of [...eing.filter((x) => x.gegen_iban), ...eing.filter((x) => !x.gegen_iban)]) {
+      const iban = String(x.gegen_iban || '').replace(/\s/g, '').toUpperCase();
+      const key = iban || [...gruppen.entries()].find(([, l]) => nm(x) && l.some((y) => nm(y) === nm(x)))?.[0] || nm(x);
+      if (!key) continue;
+      gruppen.set(key, [...(gruppen.get(key) ?? []), x]);
+    }
+    const regelmaessig: KontoAbgleich['regelmaessig'] = [];
+    for (const l of gruppen.values()) {
+      if (l.length < 6) continue;
+      const je = new Map<number, number>();
+      for (const x of l) { const mo = Number(String(x.datum).slice(5, 7)); je.set(mo, (je.get(mo) ?? 0) + 1); }
+      const haeufig = [...l.reduce((m, x) => m.set(r2(Number(x.betrag)), (m.get(r2(Number(x.betrag))) ?? 0) + 1), new Map<number, number>()).entries()].sort((a, b) => b[1] - a[1])[0][0];
+      const bisMonat = Number(bis.slice(0, 7) < heute.slice(0, 7) ? 12 : Number(heute.slice(5, 7)) - 1);
+      const fehlt = MONATE.filter((_, i) => i + 1 >= ersterMonat && i + 1 <= bisMonat && !je.has(i + 1));
+      const doppelt = MONATE.filter((_, i) => (je.get(i + 1) ?? 0) > 1);
+      if (fehlt.length || doppelt.length) regelmaessig.push({ name: l[0].gegenpartei || l[0].gegen_iban || 'ohne Namen', betrag: haeufig, anzahl: l.length, fehlt, doppelt });
+    }
+    const geloescht: KontoAbgleich['geloescht'] = [];
+    for (const x of await db.select(`SELECT p.datensatz AS id, p.zeit, json_extract(p.inhalt, '$.datum') AS datum, json_extract(p.inhalt, '$.betrag') AS betrag,
+        json_extract(p.inhalt, '$.gegenpartei') AS gegenpartei, json_extract(p.inhalt, '$.verwendungszweck') AS zweck FROM protokoll p
+      WHERE p.tabelle = 'bankumsaetze' AND p.aktion = 'gelöscht' AND json_extract(p.inhalt, '$.bankkonto_id') = $1
+        AND json_extract(p.inhalt, '$.datum') BETWEEN $2 AND $3 ORDER BY json_extract(p.inhalt, '$.datum')`, [k.id, von, bis])) {
+      if (k.saldo_datum && x.datum <= k.saldo_datum) continue;
+      const wieder = u.some((y) => y.datum === x.datum && Math.abs(Number(y.betrag) - Number(x.betrag)) < 0.005 && String(y.gegenpartei ?? '') === String(x.gegenpartei ?? ''));
+      if (!wieder) geloescht.push({ id: x.id, datum: x.datum, betrag: Number(x.betrag), gegenpartei: x.gegenpartei ?? '', zweck: x.zweck ?? '', geloeschtAm: String(x.zeit ?? '') });
+    }
     out.push({
-      id: k.id, name: k.name, iban: k.iban ?? '', erfasstAb, start: r2(start), ein, aus, ende, auszug, notiz: ab?.notiz ?? '', differenz,
+      id: k.id, name: k.name, regelmaessig, geloescht, iban: k.iban ?? '', erfasstAb, start: r2(start), ein, aus, ende, auszug, notiz: ab?.notiz ?? '', differenz,
       anzahl: u.length, gebucht: u.filter((x) => x.status === 'zugeordnet').length, ignoriert: ign.length, ignoriertSumme: r2(ign.reduce((a, x) => a + Number(x.betrag), 0)),
       offen, offenSumme: r2(offen.reduce((a, x) => a + x.betrag, 0)), abweichend, monateOhne,
       ok: !offen.length && !abweichend.length && differenz !== null && Math.abs(differenz) < 0.005,
@@ -105,5 +140,17 @@ export function abgleichText(l: KontoAbgleich[], jahr: number): string {
     ...k.offen.slice(0, 20).map((u) => `  offen: ${dT(u.datum)} ${eurT(u.betrag)} ${u.gegenpartei} ${u.zweck}`.trimEnd()),
     ...k.abweichend.slice(0, 20).map((u) => `  Buchung weicht ab: ${dT(u.datum)} ${u.gegenpartei} Umsatz ${eurT(u.betrag)}, gebucht ${eurT(u.gebucht ?? 0)}`),
     k.monateOhne.length ? `Keine Umsätze im ${k.monateOhne.join(', ')}.` : '',
+    ...k.geloescht.map((g) => `  gelöscht am ${dT(g.geloeschtAm.slice(0, 10))}: ${dT(g.datum)} ${eurT(g.betrag)} ${g.gegenpartei} ${g.zweck}`.trimEnd()),
+    ...k.regelmaessig.map((g) => `  Regelmäßiger Zahler ${g.name} (${eurT(g.betrag)}, ${g.anzahl} Eingänge)${g.fehlt.length ? `: kein Eingang im ${g.fehlt.join(', ')}` : ''}${g.doppelt.length ? `; zwei Eingänge im ${g.doppelt.join(', ')}` : ''}`),
   ].filter(Boolean).join('\n')).join('\n\n');
+}
+
+/** Fehlenden Umsatz von Hand nachtragen (steht auf dem Kontoauszug, kam beim Einlesen aber nicht an).
+ *  Er steht danach unter „Bank & Zuordnung“ zum Zuordnen bereit wie jeder eingelesene Umsatz. */
+export async function umsatzNachtragen(bankkontoId: number, u: { datum: string; betrag: number; gegenpartei: string; zweck: string }) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(u.datum) || !Number.isFinite(u.betrag) || !u.betrag) throw new Error('Bitte Datum und Betrag angeben.');
+  const k = (await db.select('SELECT saldo_datum FROM bankkonten WHERE id = $1', [bankkontoId]))[0];
+  if (k?.saldo_datum && u.datum <= k.saldo_datum) throw new Error(`Umsätze bis ${dT(k.saldo_datum)} stecken schon im Anfangssaldo. Bitte ein späteres Datum wählen.`);
+  await db.execute(`INSERT INTO bankumsaetze (bankkonto_id, datum, betrag, verwendungszweck, gegenpartei, gegen_iban, import_hash) VALUES ($1, $2, $3, $4, $5, '', $6)`,
+    [bankkontoId, u.datum, r2(u.betrag), u.zweck || 'von Hand nachgetragen', u.gegenpartei, `hand|${bankkontoId}|${u.datum}|${r2(u.betrag)}|${Date.now()}`]);
 }
