@@ -29,6 +29,9 @@ export interface KontoAbgleich {
   regelmaessig: { name: string; betrag: number; anzahl: number; fehlt: string[]; doppelt: string[] }[];
   /** Gelöschte Umsätze dieses Jahres (laut Änderungsprotokoll), die nicht wieder eingelesen wurden */
   geloescht: (Umsatz & { geloeschtAm: string })[];
+  /** Buchungen der Liegenschaft ohne Kontoumsatz, deren Betrag genau der Differenz entspricht (z. B. unter „Einnahmen & Ausgaben“ gebucht).
+   *  Sie ändern den Kontostand nicht, weil der nur aus den Kontoauszügen kommt. */
+  ohneUmsatz: { id: number; datum: string; betrag: number; text: string; konto: string; einheit: string }[];
   ok: boolean;
 }
 
@@ -78,11 +81,14 @@ export async function kontoabgleich(objekt: number, jahr: number): Promise<Konto
       if (l.length < 6) continue;
       const je = new Map<number, number>();
       for (const x of l) { const mo = Number(String(x.datum).slice(5, 7)); je.set(mo, (je.get(mo) ?? 0) + 1); }
-      const haeufig = [...l.reduce((m, x) => m.set(r2(Number(x.betrag)), (m.get(r2(Number(x.betrag))) ?? 0) + 1), new Map<number, number>()).entries()].sort((a, b) => b[1] - a[1])[0][0];
+      const [haeufig, nHaeufig] = [...l.reduce((m, x) => m.set(r2(Number(x.betrag)), (m.get(r2(Number(x.betrag))) ?? 0) + 1), new Map<number, number>()).entries()].sort((a, b) => b[1] - a[1])[0];
+      // Nur echte Daueraufträge (gleicher Betrag in den meisten Monaten), sonst zu viele Hinweise
+      if (nHaeufig < 6 || nHaeufig < l.length * 0.7) continue;
       const bisMonat = Number(bis.slice(0, 7) < heute.slice(0, 7) ? 12 : Number(heute.slice(5, 7)) - 1);
       const fehlt = MONATE.filter((_, i) => i + 1 >= ersterMonat && i + 1 <= bisMonat && !je.has(i + 1));
       const doppelt = MONATE.filter((_, i) => (je.get(i + 1) ?? 0) > 1);
-      if (fehlt.length || doppelt.length) regelmaessig.push({ name: l[0].gegenpartei || l[0].gegen_iban || 'ohne Namen', betrag: haeufig, anzahl: l.length, fehlt, doppelt });
+      // Mehrere Eingänge je Monat allein sind normal (mehrere Einheiten, getrennte Überweisungen); interessant nur zusammen mit einer Lücke
+      if (fehlt.length) regelmaessig.push({ name: l[0].gegenpartei || l[0].gegen_iban || 'ohne Namen', betrag: haeufig, anzahl: l.length, fehlt, doppelt });
     }
     const geloescht: KontoAbgleich['geloescht'] = [];
     for (const x of await db.select(`SELECT p.datensatz AS id, p.zeit, json_extract(p.inhalt, '$.datum') AS datum, json_extract(p.inhalt, '$.betrag') AS betrag,
@@ -93,8 +99,15 @@ export async function kontoabgleich(objekt: number, jahr: number): Promise<Konto
       const wieder = u.some((y) => y.datum === x.datum && Math.abs(Number(y.betrag) - Number(x.betrag)) < 0.005 && String(y.gegenpartei ?? '') === String(x.gegenpartei ?? ''));
       if (!wieder) geloescht.push({ id: x.id, datum: x.datum, betrag: Number(x.betrag), gegenpartei: x.gegenpartei ?? '', zweck: x.zweck ?? '', geloeschtAm: String(x.zeit ?? '') });
     }
+    const ohneUmsatz: KontoAbgleich['ohneUmsatz'] = differenz !== null && Math.abs(differenz) >= 0.005
+      ? (await db.select(`SELECT b.id, b.datum, b.betrag, COALESCE(b.text, '') AS text, COALESCE(kk.nummer || ' ' || kk.name, '') AS konto, COALESCE(e.nummer, '') AS einheit
+          FROM buchungen b LEFT JOIN buchungskonten kk ON kk.id = b.buchungskonto_id LEFT JOIN einheiten e ON e.id = b.einheit_id
+          WHERE b.objekt_id = $1 AND b.bankumsatz_id IS NULL AND b.rechnung_id IS NULL AND b.datum BETWEEN $2 AND $3 AND ABS(b.betrag - $4) < 0.005
+            AND COALESCE(b.text, '') NOT LIKE 'Zahlung % (manuell)' AND ($5 IS NULL OR b.datum > $5) ORDER BY b.id DESC LIMIT 10`, [objekt, von, bis, differenz, k.saldo_datum ?? null]))
+        .map((x) => ({ id: x.id, datum: x.datum, betrag: Number(x.betrag), text: x.text, konto: x.konto, einheit: x.einheit }))
+      : [];
     out.push({
-      id: k.id, name: k.name, regelmaessig, geloescht, iban: k.iban ?? '', erfasstAb, start: r2(start), ein, aus, ende, auszug, notiz: ab?.notiz ?? '', differenz,
+      id: k.id, name: k.name, regelmaessig, geloescht, ohneUmsatz, iban: k.iban ?? '', erfasstAb, start: r2(start), ein, aus, ende, auszug, notiz: ab?.notiz ?? '', differenz,
       anzahl: u.length, gebucht: u.filter((x) => x.status === 'zugeordnet').length, ignoriert: ign.length, ignoriertSumme: r2(ign.reduce((a, x) => a + Number(x.betrag), 0)),
       offen, offenSumme: r2(offen.reduce((a, x) => a + x.betrag, 0)), abweichend, monateOhne,
       ok: !offen.length && !abweichend.length && differenz !== null && Math.abs(differenz) < 0.005,
@@ -153,4 +166,17 @@ export async function umsatzNachtragen(bankkontoId: number, u: { datum: string; 
   if (k?.saldo_datum && u.datum <= k.saldo_datum) throw new Error(`Umsätze bis ${dT(k.saldo_datum)} stecken schon im Anfangssaldo. Bitte ein späteres Datum wählen.`);
   await db.execute(`INSERT INTO bankumsaetze (bankkonto_id, datum, betrag, verwendungszweck, gegenpartei, gegen_iban, import_hash) VALUES ($1, $2, $3, $4, $5, '', $6)`,
     [bankkontoId, u.datum, r2(u.betrag), u.zweck || 'von Hand nachgetragen', u.gegenpartei, `hand|${bankkontoId}|${u.datum}|${r2(u.betrag)}|${Date.now()}`]);
+}
+
+/** Eine Buchung ohne Kontoumsatz (z. B. unter „Einnahmen & Ausgaben“ erfasst) als Umsatz dieses Bankkontos übernehmen:
+ *  Es entsteht ein Kontoumsatz mit Datum und Betrag der Buchung, die Buchung wird mit ihm verbunden. Damit zählt sie im Kontostand. */
+export async function buchungAlsUmsatz(bankkontoId: number, buchungId: number) {
+  const b = (await db.select('SELECT * FROM buchungen WHERE id = $1', [buchungId]))[0];
+  if (!b) throw new Error('Die Buchung gibt es nicht mehr.');
+  if (b.bankumsatz_id) throw new Error('Diese Buchung gehört schon zu einem Kontoumsatz.');
+  const k = (await db.select('SELECT saldo_datum FROM bankkonten WHERE id = $1', [bankkontoId]))[0];
+  if (k?.saldo_datum && b.datum <= k.saldo_datum) throw new Error(`Umsätze bis ${dT(k.saldo_datum)} stecken schon im Anfangssaldo.`);
+  const r = await db.execute(`INSERT INTO bankumsaetze (bankkonto_id, datum, betrag, verwendungszweck, gegenpartei, gegen_iban, import_hash, status) VALUES ($1, $2, $3, $4, $5, '', $6, 'zugeordnet')`,
+    [bankkontoId, b.datum, r2(Number(b.betrag)), b.text || 'aus Buchung übernommen', 'von Hand (aus Buchung)', `buchung|${bankkontoId}|${buchungId}`]);
+  await db.execute('UPDATE buchungen SET bankumsatz_id = $1 WHERE id = $2', [r.lastInsertId ?? null, buchungId]);
 }

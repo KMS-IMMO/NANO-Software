@@ -32,6 +32,20 @@ const { chromium } = require('playwright');
   if (process.env.ZEIG) console.log(t2.split('\n').filter((z) => /Differenz|nachgetragen|Bitte|Fehler|error/i.test(z)).join('\n'));
   ok('Nach dem Nachtragen: Differenz 400 €, Mai-Lücke weg', /Differenz 400,00 €/.test(t2) && !/kein Eingang im Mai/.test(t2) && /nachgetragen/.test(t2));
   ok('Nachgetragener Umsatz ist offen zum Zuordnen', /2\.5\.2025 · Familie Lueck · von Hand nachgetragen/.test(t2), (t2.match(/Umsätze, davon[^\n]*/) ?? [''])[0]);
+  // Unter „Einnahmen & Ausgaben“ gebucht statt als Kontoumsatz: wird erkannt und lässt sich übernehmen
+  await p.evaluate(async () => {
+    const { db, insert } = await import('/src/db/index.ts');
+    const o = (await db.select("SELECT id FROM objekte WHERE name = 'WEG Differenz'"))[0].id;
+    const k = (await db.select("SELECT id FROM buchungskonten WHERE nummer = '1010'"))[0].id;
+    await insert('buchungen', { datum: '2025-03-05', betrag: 400, buchungskonto_id: k, objekt_id: o, text: 'Hausgeld März Herr Voll' });
+  });
+  await p.goto('http://localhost:5179/#/'); await p.waitForTimeout(1000); await p.goto('http://localhost:5179/#/weg-abrechnung'); await p.waitForTimeout(2500);
+  await p.locator('select').first().selectOption({ label: 'WEG Differenz' }); await p.locator('select.jahr-wahl').first().selectOption('2025'); await p.waitForTimeout(3500);
+  const t3 = (await p.locator('main').innerText()).replace(/\u00a0/g, ' ');
+  ok('Buchung ohne Kontoumsatz wird erkannt', /Buchung vom 5\.3\.2025 über 400,00 € .* hat keinen Kontoumsatz/.test(t3));
+  await p.getByRole('button', { name: 'Als Kontoumsatz übernehmen' }).click(); await p.waitForTimeout(3000);
+  const t4 = (await p.locator('main').innerText()).replace(/\u00a0/g, ' ');
+  ok('Nach dem Übernehmen: Abgleich stimmt', /stimmt/.test(t4) && !/Differenz 400,00 €/.test(t4) && /als Kontoumsatz übernommen/.test(t4));
   ok('Keine Fehler in der Konsole', !errs.length, errs.slice(0, 3).join(' | '));
   await b.close();
 })();
