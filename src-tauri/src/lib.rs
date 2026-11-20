@@ -1,5 +1,7 @@
 mod bank;
 mod datenbank;
+mod ms365;
+mod ocr;
 mod server;
 
 use tauri_plugin_fs::FsExt;
@@ -19,12 +21,14 @@ pub fn run() {
     .plugin(tauri_plugin_opener::init())
     .manage(bank::BankState::default())
     .manage(datenbank::DbState::default())
+    .manage(ms365::MsState::default())
     .invoke_handler(tauri::generate_handler![
       bank::bank_start, bank::bank_abholen, bank::bank_abbrechen, bank::bank_pin_vorhanden, bank::bank_pin_loeschen,
       datenbank::db_status, datenbank::db_einrichten, datenbank::db_oeffnen, datenbank::db_sperren,
       datenbank::db_passwort_aendern, datenbank::db_select, datenbank::db_select_lesend, datenbank::db_execute,
-      datenbank::db_auto_sicherung, datenbank::db_sicherung_erstellen, datenbank::db_sicherungen, datenbank::db_wiederherstellen,
-      ablage_freigeben, server::server_anfrage
+      datenbank::db_auto_sicherung, datenbank::db_sicherung_erstellen, datenbank::db_sicherung_extern, datenbank::db_sicherungen, datenbank::db_wiederherstellen,
+      ablage_freigeben, server::server_anfrage, ocr::ocr_bild,
+      ms365::ms_anmelden, ms365::ms_status, ms365::ms_abmelden, ms365::ms_graph
     ])
     .setup(|app| {
       if cfg!(debug_assertions) {

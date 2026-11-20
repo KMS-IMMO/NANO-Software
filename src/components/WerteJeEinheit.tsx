@@ -1,14 +1,20 @@
 // Eingabe je Einheit für Konten mit Schlüssel „Verbrauch“ (Menge) oder „Summe“ (fester Betrag in €).
+import { BetragFeld, MengeFeld } from './BetragFeld';
+import { betragZahl } from '../lib/betrag';
 import { useEffect, useState } from 'react';
 import { db, type Row } from '../db';
 import { eur, num } from './EntityTable';
+import { ZaehlerstaendeKnopf } from './Zaehlerstaende';
 import type { Position } from '../logic/verteilung';
 
-const zahl = (s: string) => Number(String(s).replace(/\./g, '').replace(',', '.')) || 0;
+const zahl = (s: string) => betragZahl(s) ?? 0;
 
 export function WerteJeEinheit({ objekt, jahr, einheiten, konten, onSaved }: { objekt: number; jahr: number; einheiten: Row[]; konten: Position[]; onSaved: () => void }) {
   const [werte, setWerte] = useState<Record<string, string>>({});
+  const [masse, setMasse] = useState<Record<number, string>>({});
   useEffect(() => {
+    db.select('SELECT buchungskonto_id, masseinheit FROM objekt_schluessel_jahr WHERE objekt_id = $1 AND jahr = $2 AND masseinheit IS NOT NULL', [objekt, jahr])
+      .then((m) => setMasse(Object.fromEntries(m.map((x) => [Number(x.buchungskonto_id), String(x.masseinheit)]))));
     db.select(`SELECT v.* FROM verbrauch v JOIN einheiten e ON e.id = v.einheit_id WHERE e.objekt_id = $1 AND v.jahr = $2`, [objekt, jahr])
       .then((v) => setWerte(Object.fromEntries(v.map((x) => [`${x.einheit_id}-${x.buchungskonto_id}`, String(x.menge).replace('.', ',')]))));
   }, [objekt, jahr]);
@@ -29,19 +35,25 @@ export function WerteJeEinheit({ objekt, jahr, einheiten, konten, onSaved }: { o
 
   return (
     <section className="card">
-      <div className="card-head"><h2>Beträge und Verbrauch je Einheit für {jahr}</h2><button onClick={speichern}>Speichern und neu berechnen</button></div>
+      <div className="card-head"><h2>Beträge und Verbrauch je Einheit für {jahr}</h2><div className="row">
+        <ZaehlerstaendeKnopf objekt={objekt} jahr={jahr} einheiten={einheiten} konten={konten.filter((p) => p.schluessel === 'Verbrauch').map((p) => ({ konto_id: p.konto_id, name: p.name }))} onSaved={onSaved} />
+        <button onClick={speichern}>Speichern und neu berechnen</button></div></div>
       <table className="list">
-        <thead><tr><th>Einheit</th>{konten.map((k) => <th key={k.konto_id} className="num">{k.schluessel === 'Summe' ? `${k.name} (€, manuell)` : `Verbrauch ${k.name}`}</th>)}</tr></thead>
+        <thead><tr><th>Einheit</th>{konten.map((k) => <th key={k.konto_id} className="num">{k.schluessel === 'Summe' ? `${k.name} (€, manuell)` : `Verbrauch ${k.name}${masse[k.konto_id] ? ` (${masse[k.konto_id]})` : ''}`}</th>)}</tr></thead>
         <tbody>{einheiten.map((e) => (
           <tr key={e.id}><td>{e.nummer}</td>
             {konten.map((k) => (
-              <td key={k.konto_id} className="num"><input className="cell" inputMode="decimal" value={werte[`${e.id}-${k.konto_id}`] ?? ''}
-                onChange={(ev) => setWerte({ ...werte, [`${e.id}-${k.konto_id}`]: ev.target.value })} /></td>))}
+              <td key={k.konto_id} className="num">{k.schluessel === 'Summe'
+                ? <BetragFeld zelle className="cell" placeholder="" value={werte[`${e.id}-${k.konto_id}`] ?? ''} onChange={(ev) => setWerte({ ...werte, [`${e.id}-${k.konto_id}`]: ev.target.value })} />
+                : masse[k.konto_id] === '€'
+                  ? <BetragFeld zelle className="cell" placeholder="" value={werte[`${e.id}-${k.konto_id}`] ?? ''} onChange={(ev) => setWerte({ ...werte, [`${e.id}-${k.konto_id}`]: ev.target.value })} />
+                  : <MengeFeld zelle className="cell" einheit={masse[k.konto_id]} value={werte[`${e.id}-${k.konto_id}`] ?? ''}
+                    onChange={(ev) => setWerte({ ...werte, [`${e.id}-${k.konto_id}`]: ev.target.value })} />}</td>))}
           </tr>))}
         </tbody>
         <tfoot><tr><td>Summe</td>{konten.map((k) => <td key={k.konto_id} className="num">{k.schluessel === 'Summe'
           ? <>{eur(einheiten.reduce((a, e) => a + zahl(werte[`${e.id}-${k.konto_id}`] ?? '0'), 0))}<div className="muted small">von {eur(k.betrag)}</div></>
-          : num(einheiten.reduce((a, e) => a + zahl(werte[`${e.id}-${k.konto_id}`] ?? '0'), 0))}</td>)}</tr></tfoot>
+          : `${num(einheiten.reduce((a, e) => a + zahl(werte[`${e.id}-${k.konto_id}`] ?? '0'), 0))}${masse[k.konto_id] ? ' ' + masse[k.konto_id] : ''}`}</td>)}</tr></tfoot>
       </table>
       {abw.map(({ p, s }) => <p key={p.konto_id} className="warn">{p.name} (manuell): eingetragen {eur(s)}, Kosten laut Buchhaltung {eur(p.betrag)}. Es fehlen {eur(p.betrag - s)} zur Gesamtsumme.</p>)}
     </section>
