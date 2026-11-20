@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AlertTriangle, CheckCircle2, XCircle } from 'lucide-react';
 import { eur, datum } from './EntityTable';
-import { auszugSpeichern, kontoabgleich, umsatzNachtragen, type KontoAbgleich } from '../logic/kontoabgleich';
+import { auszugSpeichern, buchungAlsUmsatz, kontoabgleich, umsatzNachtragen, type KontoAbgleich } from '../logic/kontoabgleich';
 
 const zahl = (s: string) => { const t = s.trim(); if (!t) return null; const n = Number(t.replace(/[€\s]/g, '').replace(/\.(?=\d{3}(\D|$))/g, '').replace(',', '.')); return Number.isFinite(n) ? n : NaN; };
 
@@ -96,10 +96,16 @@ export function KontoabgleichKarte({ objekt, jahr, stand, gesperrt }: { objekt: 
                   {g.doppelt.length ? <>, zwei Eingänge im {g.doppelt.join(', ')}</> : null}
                   {g.fehlt.length && passt(g.betrag) ? <b> · passt genau zur Differenz</b> : null}.
                   {g.fehlt.length ? ' Bitte im Kontoauszug prüfen, ob die Zahlung dort steht (evtl. von einem anderen Konto oder unter anderem Namen).' : ''}</span></li>)}
-                {!k.geloescht.length && !k.regelmaessig.length && <li className="hinweis"><AlertTriangle size={17} /><span>Kein Hinweis aus gelöschten Umsätzen oder regelmäßigen Zahlern. Bitte den Kontoauszug Monat für Monat mit „Bank &amp; Zuordnung“ vergleichen.</span></li>}
+                {k.ohneUmsatz.map((b) => <li key={'b' + b.id} className="fehlt"><XCircle size={17} /><span>
+                  Buchung vom {datum(b.datum)} über {eur(b.betrag)} ({[b.konto, b.einheit, b.text].filter(Boolean).join(' · ')}) hat <b>keinen Kontoumsatz</b> und zählt deshalb nicht im Kontostand.
+                  Steht die Zahlung so auf dem Kontoauszug, hier übernehmen:{' '}
+                  {!gesperrt && <button className="small-btn" onClick={async () => {
+                    try { await buchungAlsUmsatz(k.id, b.id); setFehler(''); setHinweis(`Buchung vom ${datum(b.datum)} als Kontoumsatz übernommen.`); await laden(); window.dispatchEvent(new Event('nano-abschluss')); }
+                    catch (e) { setFehler(String((e as Error)?.message ?? e)); } }}>Als Kontoumsatz übernehmen</button>}</span></li>)}
+                {!k.geloescht.length && !k.regelmaessig.length && !k.ohneUmsatz.length && <li className="hinweis"><AlertTriangle size={17} /><span>Kein Hinweis aus gelöschten Umsätzen oder regelmäßigen Zahlern. Bitte den Kontoauszug Monat für Monat mit „Bank &amp; Zuordnung“ vergleichen.</span></li>}
               </ul>
               {!gesperrt && <div className="row" style={{ flexWrap: 'wrap', gap: 8 }}>
-                <span className="small">Fehlenden Umsatz nachtragen:</span>
+                <span className="small" title="Buchungen unter „Einnahmen & Ausgaben“ ändern den Kontostand nicht. Er kommt nur aus den Umsätzen der Kontoauszüge.">Fehlenden Umsatz laut Kontoauszug nachtragen:</span>
                 <input type="date" value={f.datum} aria-label="Datum" onChange={(e) => setNeu({ ...neu, [k.id]: { ...f, datum: e.target.value } })} />
                 <input className="num" style={{ width: 110 }} placeholder="Betrag" aria-label="Betrag" value={f.betrag} onChange={(e) => setNeu({ ...neu, [k.id]: { ...f, betrag: e.target.value } })} />
                 <input style={{ width: 180 }} placeholder="Auftraggeber" aria-label="Auftraggeber" value={f.gegenpartei} onChange={(e) => setNeu({ ...neu, [k.id]: { ...f, gegenpartei: e.target.value } })} />
@@ -109,7 +115,7 @@ export function KontoabgleichKarte({ objekt, jahr, stand, gesperrt }: { objekt: 
             </div>);
         })}
         {hinweis && <p className="info small">{hinweis}</p>}
-        <p className="muted small">Der Stand 31.12. ergibt sich aus dem Anfangsbestand und allen eingelesenen Umsätzen. Trag den Kontostand vom echten Kontoauszug zum 31.12. ein.
+        <p className="muted small">Der Stand 31.12. ergibt sich aus dem Anfangsbestand und allen eingelesenen Umsätzen. Eine Buchung unter „Einnahmen &amp; Ausgaben“ ändert ihn nicht, nur ein Kontoumsatz. Trag den Kontostand vom echten Kontoauszug zum 31.12. ein.
           Weicht er ab, fehlen Umsätze oder es wurde ein Auszug nicht eingelesen.</p>
       </>}
     </section>
