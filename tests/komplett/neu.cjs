@@ -98,6 +98,8 @@ const O = AUS + '/neu/'; fs.mkdirSync(O, { recursive: true });
   const dls = []; p.on('download', (d) => dls.push(d));
   p.on('dialog', (d) => d.accept());
   await nkBtn.click(); await p.waitForTimeout(5000);
+  // Die Vorschau zeichnet die Seiten selbst (kein iframe mehr); die Datei kommt über „Im PDF-Programm öffnen“
+  await p.getByRole('button', { name: 'Im PDF-Programm öffnen' }).click(); await p.waitForTimeout(2500);
   let t2 = ''; for (const [i, d] of dls.entries()) { await d.saveAs(O + `nk-${i}.pdf`); t2 += await pdfText(O + `nk-${i}.pdf`); }
   ok('PDF Nebenkosten: § 35a mit Minijob, Dienstleistungen und Hinweisen', t2.includes('Steuerermäßigung § 35a') && t2.includes('Minijob im Haushalt') && t2.includes('VI R 24/20'), dls.length + ' PDF');
 
