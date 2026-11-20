@@ -55,7 +55,7 @@ const { chromium } = require('playwright');
   ok('Automatische Zuordnung lässt Umsatz im gesperrten Jahr offen', r.u2Status === 'offen', r.u2Status);
   // Oberfläche: Vermögensbericht zeigt die offene Rechnung, Gesamtkosten ohne sie
   await p.goto('http://localhost:5179/#/weg-abrechnung'); await p.waitForTimeout(2500);
-  await p.locator('select').first().selectOption({ label: 'WEG Pruefhaus' }); await p.locator('input[type=number]').first().fill('2025'); await p.waitForTimeout(3000);
+  await p.locator('select').first().selectOption({ label: 'WEG Pruefhaus' }); await p.locator('select.jahr-wahl').first().selectOption('2025'); await p.waitForTimeout(3000);
   const t = await p.locator('body').innerText();
   ok('Vermögensbericht nennt offene Rechnungen zum 31.12.2025', /Offene Rechnungen zum 31\.12\.2025[\s\S]{0,120}999,99/.test(t));
   ok('Keine Fehler in der Konsole', !errs.length, errs.join(' | ').slice(0, 300));

@@ -8,6 +8,7 @@ import { datum, eur } from './EntityTable';
 import { BetragFeld } from './BetragFeld';
 import { betragText, betragZahl } from '../lib/betrag';
 import { ibanFehler, ortZurPlz, plzFehler } from '../lib/pruefen';
+import { DatumFeld } from './DatumFeld';
 
 export type SFeld = {
   key: string; label: string;
@@ -141,7 +142,7 @@ export function StammdatenKarte({ titel, icon, gruppen, werte, onSpeichern, roll
                     {f.typ === 'auswahl'
                       ? <select value={v} onChange={set}>{f.optionen?.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</select>
                       : f.typ === 'lang' ? <textarea rows={2} value={v} onChange={set} />
-                      : f.typ === 'datum' ? <input type="date" value={v} onChange={set} />
+                      : f.typ === 'datum' ? <DatumFeld value={v} onChange={set} />
                       : f.typ === 'geld' ? <BetragFeld value={v} onChange={set} />
                       : <input inputMode={f.typ === 'zahl' ? 'decimal' : undefined} value={v} onChange={set} />}
                     {fe ? <small className="feld-fehler">{fe}</small> : hi ? <small className="feld-hinweis">{hi}</small> : null}

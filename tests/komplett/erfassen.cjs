@@ -21,7 +21,7 @@ const { chromium } = require('playwright'); const O = AUS + '/';
   const wert = async (lbl) => m.locator(`label:has(> span:text-is("${lbl}")) select, label:has(> span:text-is("${lbl}")) input`).first().inputValue();
   ok('Vorbelegung Mietart Standard', await wert('Mietart') === 'Standard');
   ok('Vorbelegung Fällig am 3', await wert('Fällig am (Tag im Monat)') === '3');
-  ok('Vorbelegung Beginn 1. nächster Monat', /-01$/.test(await wert('Beginn *')), await wert('Beginn *'));
+  ok('Vorbelegung Beginn 1. nächster Monat', /^01\.\d{2}\.\d{4}$/.test(await wert('Beginn *')), await wert('Beginn *'));
   ok('Index-Felder versteckt', await m.locator('text=Index-Basiswert').count() === 0);
   await m.locator('label:has(> span:text-is("Mietart")) select').selectOption('Indexmiete'); await p.waitForTimeout(200);
   ok('Index-Felder bei Indexmiete da', await m.locator('text=Index-Basiswert').count() === 1);

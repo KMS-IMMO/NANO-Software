@@ -29,6 +29,7 @@ import { db, type Row } from '../db';
 import { stammblattPdf } from '../lib/pdf';
 import { oeffnen, speichern as dateiSpeichern } from '../lib/dateien';
 import { AKTIV, EINHEIT_TYPEN, einheitLabel, SCHLUESSEL, WARMWASSER, personLabel, personOptions, widSql } from '../db/labels';
+import { DatumFeld } from '../components/DatumFeld';
 
 const adresse = (o: Row) => [o.strasse, [o.plz, o.ort].filter(Boolean).join(' ')].filter(Boolean).join(', ');
 const statusPill = (v: any) => <span className={'pill ' + String(v ?? 'Aktiv').toLowerCase()}>{v ?? 'Aktiv'}</span>;
@@ -310,7 +311,11 @@ function VorauszahlungenTab({ objektId, weg }: { objektId: number; weg: boolean 
         JOIN personen p ON p.id = v.mieter_id WHERE e.objekt_id = $1 AND ${AKTIV()} ORDER BY e.lfd_nr, e.nummer`, [objektId]);
       const a = await db.select(`SELECT a.* FROM mietanpassungen a JOIN mietvertraege v ON v.id = a.vertrag_id JOIN einheiten e ON e.id = v.einheit_id WHERE e.objekt_id = $1`, [objektId]);
       const m = new Date().toISOString().slice(0, 7);
-      setRows(v.map((x) => ({ ...x, jetzt: mieteImMonat(x, a.filter((y) => y.vertrag_id === x.id), m) })));
+      const heute = new Date().toISOString().slice(0, 10);
+      // Seit wann gilt die Vorauszahlung? Letzte Anpassung von NK/HK bis heute, sonst Vertragsbeginn
+      const seit = (x: Row) => a.filter((y) => y.vertrag_id === x.id && y.gueltig_ab <= heute && (y.nk_vorauszahlung != null || y.hk_vorauszahlung != null || y.kaltmiete != null))
+        .map((y) => String(y.gueltig_ab)).sort().pop() ?? x.beginn;
+      setRows(v.map((x) => ({ ...x, jetzt: mieteImMonat(x, a.filter((y) => y.vertrag_id === x.id), m), seit: seit(x) })));
     })();
   }, [objektId]);
   const s = (f: (r: Row) => number) => rows.reduce((a, r) => a + f(r), 0);
@@ -319,13 +324,13 @@ function VorauszahlungenTab({ objektId, weg }: { objektId: number; weg: boolean 
       <div className="card-head"><h2 className="title-ico"><Coins size={22} />{weg ? 'NK-Vorauszahlungen der Mieter' : 'Miete & Vorauszahlungen'}</h2></div>
       {rows.length === 0 ? <p className="muted">Keine aktiven Mietverträge. Lege sie unter „{weg ? 'Mieter vermieteter Einheiten' : 'Mieter & Mietverträge'}“ an.</p> : (
         <div className="tablewrap"><table className="list">
-          <thead><tr><th>Einheit</th><th>Mieter</th>{!weg && <th className="num">Kaltmiete</th>}<th className="num">NK-Vorauszahlung</th><th className="num">HK-Vorauszahlung</th>{!weg && <th className="num">Gesamt</th>}<th>Zahlt an</th><th /></tr></thead>
+          <thead><tr><th>Einheit</th><th>Mieter</th><th>Gültig seit</th>{!weg && <th className="num">Kaltmiete</th>}<th className="num">NK-Vorauszahlung</th><th className="num">HK-Vorauszahlung</th>{!weg && <th className="num">Gesamt</th>}<th>Zahlt an</th><th /></tr></thead>
           <tbody>{rows.map((r) => (
-            <tr key={r.id}><td><b>{r.einheit}</b></td><td>{r.mieter}</td>{!weg && <td className="num">{eur(r.jetzt.kalt)}</td>}
+            <tr key={r.id}><td><b>{r.einheit}</b></td><td>{r.mieter}</td><td className="nowrap">{datum(r.seit)}</td>{!weg && <td className="num">{eur(r.jetzt.kalt)}</td>}
               <td className="num">{eur(r.jetzt.nk)}</td><td className="num">{eur(r.jetzt.hk)}</td>{!weg && <td className="num">{eur(r.jetzt.kalt + r.jetzt.nk + r.jetzt.hk + r.jetzt.ust)}</td>}
               <td>{r.zahlung_an ?? 'Verwaltung'}</td>
               <td className="actions"><button className="link" onClick={() => nav(`/objekte/${objektId}/vertrag/${r.id}`)}>Anpassen</button></td></tr>))}</tbody>
-          <tfoot><tr><td colSpan={2}>Summe / Monat</td>{!weg && <td className="num">{eur(s((r) => r.jetzt.kalt))}</td>}<td className="num">{eur(s((r) => r.jetzt.nk))}</td>
+          <tfoot><tr><td colSpan={3}>Summe / Monat</td>{!weg && <td className="num">{eur(s((r) => r.jetzt.kalt))}</td>}<td className="num">{eur(s((r) => r.jetzt.nk))}</td>
             <td className="num">{eur(s((r) => r.jetzt.hk))}</td>{!weg && <td className="num">{eur(s((r) => r.jetzt.kalt + r.jetzt.nk + r.jetzt.hk + r.jetzt.ust))}</td>}<td colSpan={2} /></tr></tfoot>
         </table></div>)}
       <p className="muted small">Mit „Anpassen“ trägst du eine neue Vorauszahlung oder Miete mit Datum ein. Ab dann fordert das Programm automatisch den neuen Betrag.</p>
@@ -473,7 +478,7 @@ function EigentuemerTab({ objektId, nurHausgeld }: { objektId: number; nurHausge
   const nav = useNavigate();
   const [standard, setStandard] = useState('zusammen');
   const [rows, setRows] = useState<Row[]>([]);
-  const [edit, setEdit] = useState<Record<number, { bew: string; rl: string; zw: string }>>({});
+  const [edit, setEdit] = useState<Record<number, { bew: string; rl: string; zw: string; ab: string }>>({});
   const [ab, setAb] = useState(() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`; });
   const [info, setInfo] = useState('');
   const [version, setVersion] = useState(0);
@@ -487,7 +492,7 @@ function EigentuemerTab({ objektId, nurHausgeld }: { objektId: number; nurHausge
       LEFT JOIN hausgeld h ON h.id = (SELECT y.id FROM hausgeld y WHERE y.einheit_id = e.id AND y.gueltig_ab <= $2 ORDER BY y.gueltig_ab DESC LIMIT 1)
       WHERE e.objekt_id = $1 ORDER BY e.lfd_nr, e.nummer`, [objektId, ab]);
     setRows(r);
-    setEdit(Object.fromEntries(r.map((x) => [x.einheit_id, { bew: zahlStr((Number(x.hausgeld) || 0) - Number(x.ruecklage)), rl: zahlStr(Number(x.ruecklage)), zw: x.zahlweise ?? '' }])));
+    setEdit(Object.fromEntries(r.map((x) => [x.einheit_id, { bew: zahlStr((Number(x.hausgeld) || 0) - Number(x.ruecklage)), rl: zahlStr(Number(x.ruecklage)), zw: x.zahlweise ?? '', ab }])));
   };
   useEffect(() => { load(); }, [objektId, ab]);
 
@@ -499,22 +504,25 @@ function EigentuemerTab({ objektId, nurHausgeld }: { objektId: number; nurHausge
 
   async function speichern() {
     let geaendert = 0;
+    const daten = new Set<string>();
     for (const r of rows) {
       const e = edit[r.einheit_id]; if (!e) continue;
+      const abE = /^\d{4}-\d{2}-\d{2}$/.test(e.ab) ? e.ab : ab;   // eigenes Datum je Einheit, sonst das oben gewählte
       const bew = zahlIn(e.bew), rl = zahlIn(e.rl), gesamt = Math.round((bew + rl) * 100) / 100;
       if (Math.abs(gesamt - (Number(r.hausgeld) || 0)) > 0.005 || Math.abs(rl - Number(r.ruecklage)) > 0.005) {
-        const vorhanden = (await db.select('SELECT id FROM hausgeld WHERE einheit_id = $1 AND gueltig_ab = $2', [r.einheit_id, ab]))[0];
+        const vorhanden = (await db.select('SELECT id FROM hausgeld WHERE einheit_id = $1 AND gueltig_ab = $2', [r.einheit_id, abE]))[0];
         if (vorhanden) await db.execute('UPDATE hausgeld SET betrag = $1, davon_ruecklage = $2 WHERE id = $3', [gesamt, rl, vorhanden.id]);
-        else await db.execute('INSERT INTO hausgeld (einheit_id, gueltig_ab, betrag, davon_ruecklage) VALUES ($1, $2, $3, $4)', [r.einheit_id, ab, gesamt, rl]);
-        geaendert++;
+        else await db.execute('INSERT INTO hausgeld (einheit_id, gueltig_ab, betrag, davon_ruecklage) VALUES ($1, $2, $3, $4)', [r.einheit_id, abE, gesamt, rl]);
+        geaendert++; daten.add(abE);
       }
       if (r.eigentum_id && (e.zw || null) !== (r.zahlweise || null)) {
         await db.execute('UPDATE eigentum SET zahlweise = $1 WHERE id = $2', [e.zw || null, r.eigentum_id]); geaendert++;
       }
     }
     if (!geaendert) { setInfo('Keine Änderungen.'); return; }
-    const n = await hausgeldNeuStellen(objektId, ab.slice(0, 7));
-    setInfo(`Gespeichert. Gilt ab ${datum(ab)}.${n ? ` ${n} offene Hausgeld-Posten neu gestellt (bereits bezahlte bleiben unverändert).` : ''}`);
+    const fruehestes = [...daten, ab].sort()[0];
+    const n = await hausgeldNeuStellen(objektId, fruehestes.slice(0, 7));
+    setInfo(`Gespeichert. Gilt ab ${daten.size ? [...daten].sort().map(datum).join(', ') : datum(ab)}.${n ? ` ${n} offene Hausgeld-Posten neu gestellt (bereits bezahlte bleiben unverändert).` : ''}`);
     load(); setVersion(version + 1);
   }
 
@@ -530,18 +538,20 @@ function EigentuemerTab({ objektId, nurHausgeld }: { objektId: number; nurHausge
         <p className="muted small">Bei „getrennt“ entstehen jeden Monat zwei offene Posten (Hausgeld und Rücklage), damit zwei Überweisungen sauber zugeordnet werden.
           Je Eigentümer kannst du davon abweichen.</p>
         <div className="row" style={{ margin: '10px 0' }}>
-          <label className="inline">Beträge gültig ab <input type="date" value={ab} onChange={(x) => x.target.value && setAb(x.target.value)} /></label>
-          <span className="muted small">Zuerst das Datum wählen, dann die Beträge ändern.</span>
+          <label className="inline">Beträge gültig ab <DatumFeld value={ab} onChange={(x) => x.target.value && setAb(x.target.value)} /></label>
+          <span className="muted small">Zuerst das Datum wählen, dann die Beträge ändern. Je Einheit lässt sich in der Spalte „Gültig ab“ ein eigenes Datum setzen.</span>
         </div>
         {info && <p className="info">{info}</p>}
         <div className="tablewrap"><table className="list">
-          <thead><tr><th>W-ID</th><th>Einheit</th><th>Eigentümer</th><th className="num">Hausgeld ohne Rücklage</th><th className="num">Erhaltungsrücklage</th><th className="num">Hausgeld gesamt</th><th>Zahlweise</th><th>Überweisung</th></tr></thead>
+          <thead><tr><th>W-ID</th><th>Einheit</th><th>Eigentümer</th><th>Gültig ab</th><th className="num">Hausgeld ohne Rücklage</th><th className="num">Erhaltungsrücklage</th><th className="num">Hausgeld gesamt</th><th>Zahlweise</th><th>Überweisung</th></tr></thead>
           <tbody>{rows.map((r) => {
-            const e = edit[r.einheit_id] ?? { bew: '', rl: '', zw: '' };
+            const e = edit[r.einheit_id] ?? { bew: '', rl: '', zw: '', ab };
             const bew = zahlIn(e.bew), rl = zahlIn(e.rl), z = effektiv(e.zw);
             return (
               <tr key={r.einheit_id}>
                 <td className="nowrap"><b>{r.wid}</b></td><td>{r.nummer}</td><td>{r.eigentuemer ?? <span className="muted">kein Eigentümer</span>}</td>
+                <td className="nowrap"><DatumFeld className="cell" value={e.ab} onChange={(x) => x.target.value && setEdit({ ...edit, [r.einheit_id]: { ...e, ab: x.target.value } })} />
+                  <div className="muted small">{r.gueltig_ab ? `aktueller Satz seit ${datum(r.gueltig_ab)}` : 'noch kein Hausgeld'}</div></td>
                 <td className="num"><BetragFeld zelle className="cell" value={e.bew} onChange={(x) => setEdit({ ...edit, [r.einheit_id]: { ...e, bew: x.target.value } })} /></td>
                 <td className="num"><BetragFeld zelle className="cell" value={e.rl} onChange={(x) => setEdit({ ...edit, [r.einheit_id]: { ...e, rl: x.target.value } })} /></td>
                 <td className="num"><b>{eur(bew + rl)}</b></td>
@@ -551,13 +561,13 @@ function EigentuemerTab({ objektId, nurHausgeld }: { objektId: number; nurHausge
                 <td className="small nowrap">{!bew && !rl ? '–' : z === 'getrennt' && rl > 0 ? <>2 Überweisungen: {eur(bew)} Hausgeld + {eur(rl)} Rücklage</> : <>1 Überweisung: {eur(bew + rl)}</>}</td>
               </tr>);
           })}</tbody>
-          <tfoot><tr><td colSpan={3}>Summe</td>
+          <tfoot><tr><td colSpan={4}>Summe</td>
             <td className="num">{eur(rows.reduce((a, r) => a + zahlIn(edit[r.einheit_id]?.bew ?? ''), 0))}</td>
             <td className="num">{eur(rows.reduce((a, r) => a + zahlIn(edit[r.einheit_id]?.rl ?? ''), 0))}</td>
             <td className="num">{eur(rows.reduce((a, r) => a + zahlIn(edit[r.einheit_id]?.bew ?? '') + zahlIn(edit[r.einheit_id]?.rl ?? ''), 0))}</td><td colSpan={2} /></tr></tfoot>
         </table></div>
         <div className="row end" style={{ marginTop: 12 }}>
-          <span className="muted small">Gilt ab {datum(ab)}</span>
+          <span className="muted small">Gilt ab {[...new Set(Object.values(edit).map((x) => x.ab))].sort().map(datum).join(', ') || datum(ab)}</span>
           <button className="primary" onClick={speichern}>Änderungen speichern</button>
         </div>
         <p className="muted small">Die Tabelle zeigt die Beträge, die am gewählten Datum gelten. Neue Beträge werden ab diesem Datum als neuer Hausgeldsatz gespeichert (frühere Sätze bleiben erhalten). Offene, noch nicht bezahlte Hausgeld-Posten ab diesem Monat werden automatisch neu gestellt.</p>

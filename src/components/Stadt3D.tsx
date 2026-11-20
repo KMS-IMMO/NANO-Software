@@ -55,7 +55,7 @@ const ABEND: Stil = {
 };
 const ART_FARBE: Record<string, string> = { WEG: '#5f89d8', Mietverwaltung: '#5bb06f' };
 
-const SCHILD_CSS = `.stadt-schild{font:600 12.5px/1 Montserrat,system-ui,sans-serif;padding:6px 10px 6px 8px;border-radius:7px;white-space:nowrap;display:flex;align-items:center;gap:7px;
+const SCHILD_CSS = `.stadt-schild{font:700 12.5px/1 Arial,Helvetica,sans-serif;padding:6px 10px 6px 8px;border-radius:7px;white-space:nowrap;display:flex;align-items:center;gap:7px;
  transform:translateY(-50%);box-shadow:0 4px 14px rgba(0,0,0,.28);border:1px solid rgba(200,149,90,.7);pointer-events:none;letter-spacing:.1px;transition:background .25s,color .25s,border-color .25s}
 .stadt-schild{background:rgba(20,22,25,.9);color:#ece9e3}
 .stadt-schild i{width:8px;height:8px;border-radius:50%;background:var(--punkt,#c8955a);box-shadow:0 0 0 3px rgba(255,255,255,.12)}

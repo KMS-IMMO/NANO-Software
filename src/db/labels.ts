@@ -40,14 +40,14 @@ export const objektPersonenSql = (objektId: number) => {
   const o = Math.trunc(Number(objektId));
   return `SELECT p.id AS value, ${personLabel('p')} || COALESCE(' · ' || GROUP_CONCAT(DISTINCT x.einheit), '') AS label, x.gruppe, MAX(x.aktiv) AS aktiv
   FROM (
-    SELECT ei.person_id AS pid, 'Eigentümer' AS gruppe, e.nummer AS einheit, CASE WHEN ei.bis IS NULL OR ei.bis >= date('now') THEN 1 ELSE 0 END AS aktiv
+    SELECT ei.person_id AS pid, 'Eigentümer' AS gruppe, e.nummer AS einheit, CASE WHEN ei.bis IS NULL OR ei.bis >= date('now') THEN 1 ELSE 0 END AS aktiv, e.lfd_nr AS lfd
       FROM eigentum ei JOIN einheiten e ON e.id = ei.einheit_id WHERE e.objekt_id = ${o}
     UNION ALL
-    SELECT v.mieter_id, 'Mieter', e.nummer, CASE WHEN v.ende IS NULL OR v.ende >= date('now') THEN 1 ELSE 0 END
+    SELECT v.mieter_id, 'Mieter', e.nummer, CASE WHEN v.ende IS NULL OR v.ende >= date('now') THEN 1 ELSE 0 END, e.lfd_nr
       FROM mietvertraege v JOIN einheiten e ON e.id = v.einheit_id WHERE e.objekt_id = ${o}
     UNION ALL
-    SELECT s.person_id, CASE WHEN s.vertrag_id IS NULL THEN 'Eigentümer' ELSE 'Mieter' END, e.nummer, 0
+    SELECT s.person_id, CASE WHEN s.vertrag_id IS NULL THEN 'Eigentümer' ELSE 'Mieter' END, e.nummer, 0, e.lfd_nr
       FROM sollstellungen s JOIN einheiten e ON e.id = s.einheit_id WHERE e.objekt_id = ${o} AND s.person_id IS NOT NULL
   ) x JOIN personen p ON p.id = x.pid
-  GROUP BY p.id, x.gruppe ORDER BY x.gruppe, MAX(x.aktiv) DESC, label`;
+  GROUP BY p.id, x.gruppe ORDER BY x.gruppe, MAX(x.aktiv) DESC, MIN(COALESCE(x.lfd, 9999)), MIN(x.einheit), label`;
 };

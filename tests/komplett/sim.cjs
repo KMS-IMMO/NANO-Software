@@ -40,7 +40,7 @@ fs.writeFileSync(AUS + '/state.json',JSON.stringify(await ctx.storageState()));
 // Seiten prüfen
 const seite=async(pfad,name)=>{await p.goto('http://localhost:5179/#'+pfad);await p.waitForTimeout(2500);
  const sel=p.locator('select').first(); try{ if(await sel.count()){ await sel.selectOption({label:'WEG Testhaus'}).catch(()=>{});} }catch{}
- const j=p.locator('input[type=number]').first(); if(await j.count()){await j.fill('2025');}
+ const j=p.locator('select.jahr-wahl').first(); if(await j.count()){await j.selectOption('2025');}
  await p.waitForTimeout(2500); await p.screenshot({path:AUS+`/${name}.png`,fullPage:true}); fs.writeFileSync(AUS+`/${name}.txt`,await p.locator('main').innerText().catch(()=>p.innerText('body')));};
 await seite('/weg-abrechnung','weg');
 if(process.env.UI) console.log("UI",JSON.stringify(await require("./ui.cjs")(p,fs)));

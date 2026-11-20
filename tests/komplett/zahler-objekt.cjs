@@ -51,7 +51,7 @@ const { chromium } = require('playwright');
   ok('Auswahl „Eigentümer …“ zeigt nur Eigentümer der Liegenschaft', opts.length === 4 && opts[0] === 'Eigentümer …' && !opts.some((x) => /Max/.test(x)) && opts.some((x) => /Zahlmann, Familie · WE 1/.test(x)), opts.join(' | '));
   // WEG-Jahresabrechnung: Forderung trotz Zahlung wird erkannt und lässt sich reparieren
   await p.goto('http://localhost:5179/#/weg-abrechnung'); await p.waitForTimeout(2500);
-  await p.locator('select').first().selectOption({ label: 'WEG Zahlertest' }); await p.locator('input[type=number]').first().fill('2025'); await p.waitForTimeout(3500);
+  await p.locator('select').first().selectOption({ label: 'WEG Zahlertest' }); await p.locator('select.jahr-wahl').first().selectOption('2025'); await p.waitForTimeout(3500);
   const karte = p.locator('section:has(h2:has-text("Zahlungen ohne offenen Posten"))');
   const t1 = (await p.locator('main').innerText()).replace(/\u00a0/g, ' ');
   ok('Karte „Zahlungen ohne offenen Posten“ erscheint', await karte.count() === 1);

@@ -8,6 +8,7 @@ import { db, insert, type Row } from '../db';
 import { einheitLabel, einheitPerson } from '../db/labels';
 import { eur } from './EntityTable';
 import { gesperrt, sperrText } from '../logic/abschluss';
+import { DatumFeld } from './DatumFeld';
 
 const zahl = (s: string) => betragZahl(s) ?? 0;
 const r2 = (n: number) => Math.round(n * 100) / 100;
@@ -320,7 +321,7 @@ export function BuchenDialog({ vorlage, onClose, onSaved }: { vorlage: BuchenVor
         </div>
         {u ? <p className="muted small bf-umsatz">{new Date(u.datum).toLocaleDateString('de-DE')} · {u.gegenpartei} · {u.verwendungszweck}</p>
           : <div className="bf-kopf">
-              <label><span>Datum</span><input type="date" value={datum} onChange={(e) => { setDatum(e.target.value); const j = Number(e.target.value.slice(0, 4)); if (j) setJahr(j); }} /></label>
+              <label><span>Datum</span><DatumFeld value={datum} onChange={(e) => { setDatum(e.target.value); const j = Number(e.target.value.slice(0, 4)); if (j) setJahr(j); }} /></label>
               <label><span>Betrag</span><BetragFeld autoFocus value={betrag} onChange={(e) => { setBetrag(e.target.value); setAnteile({}); setWahl([]); }} /></label>
               <label className="grow"><span>Buchungstext</span><input value={text} onChange={(e) => setText(e.target.value)} /></label>
             </div>}

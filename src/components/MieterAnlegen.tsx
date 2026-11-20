@@ -9,6 +9,7 @@ import { db, insert, type Row } from '../db';
 import { sollStellen } from '../logic/soll';
 import { eur } from './EntityTable';
 import { ibanFehler, kautionHinweis, ortZurPlz, plzFehler } from '../lib/pruefen';
+import { DatumFeld } from './DatumFeld';
 
 const zahl = (s: string) => betragZahl(s) ?? 0;
 const heute = () => new Date().toISOString().slice(0, 10);
@@ -124,7 +125,7 @@ export function MieterAnlegen({ einheit, objekt, onClose, onSaved }: { einheit: 
               <label><span>Vorname</span><input value={d.vorname} onChange={s('vorname')} autoFocus /></label>
               <label><span>Nachname *</span><input value={d.nachname} onChange={s('nachname')} /></label>
               <label className="breit2"><span>Firma (bei Gewerbe)</span><input value={d.firma} onChange={s('firma')} /></label>
-              <label><span>Geburtsdatum</span><input type="date" value={d.geburtsdatum} onChange={s('geburtsdatum')} /></label>
+              <label><span>Geburtsdatum</span><DatumFeld value={d.geburtsdatum} onChange={s('geburtsdatum')} /></label>
             </div>
             {vorhanden && <div className="tab-hinweis mieter-vorhanden">
               {neuerKontakt ? <>Es wird ein <b>neuer, eigener Kontakt</b> mit diesem Namen angelegt.</>
@@ -147,7 +148,7 @@ export function MieterAnlegen({ einheit, objekt, onClose, onSaved }: { einheit: 
             <label className="breit2"><span>Ort</span><input value={d.ort} onChange={s('ort')} /></label>
           </div> })}
           {Abschnitt({ n: 3, titel: 'Mietvertrag', children: <div className="mieter-raster">
-            <label><span>Mietbeginn *</span><input type="date" value={d.beginn} onChange={s('beginn')} /></label>
+            <label><span>Mietbeginn *</span><DatumFeld value={d.beginn} onChange={s('beginn')} /></label>
             <label><span>Kaltmiete / Monat{weg ? '' : ' *'}</span><BetragFeld value={d.kalt} onChange={s('kalt')} /></label>
             <label><span>NK-Vorauszahlung</span><BetragFeld value={d.nk} onChange={s('nk')} /></label>
             <label><span>HK-Vorauszahlung</span><BetragFeld value={d.hk} onChange={s('hk')} /></label>

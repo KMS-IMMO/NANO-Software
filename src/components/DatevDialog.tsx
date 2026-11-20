@@ -4,6 +4,7 @@ import { Download } from 'lucide-react';
 import { db, type Row } from '../db';
 import { datevExport, datevSpeichern } from '../logic/datev';
 import { oeffnen } from '../lib/dateien';
+import { DatumFeld } from './DatumFeld';
 
 const letzterTag = (j: number, m: number) => new Date(j, m, 0).getDate();
 
@@ -48,8 +49,8 @@ export function DatevDialog({ objekte, objekt, fest, jahr, monat, onClose }: { o
           <label className="wide"><span>Liegenschaft *</span>
             <select value={o} disabled={fest} onChange={(e) => setO(e.target.value ? Number(e.target.value) : '')}>
               {!fest && <option value="">Bitte wählen</option>}{objekte.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select></label>
-          <label><span>Von</span><input type="date" value={von} onChange={(e) => setVon(e.target.value)} /></label>
-          <label><span>Bis</span><input type="date" value={bis} onChange={(e) => setBis(e.target.value)} /></label>
+          <label><span>Von</span><DatumFeld value={von} onChange={(e) => setVon(e.target.value)} /></label>
+          <label><span>Bis</span><DatumFeld value={bis} onChange={(e) => setBis(e.target.value)} /></label>
           <label><span>Mandantennummer</span><input value={mandant} onChange={(e) => setMandant(e.target.value)} placeholder="z. B. 10001" /></label>
           <label><span>Beraternummer</span><input value={berater} disabled placeholder="in den Einstellungen" /></label>
         </div>

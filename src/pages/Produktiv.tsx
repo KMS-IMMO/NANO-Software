@@ -9,6 +9,7 @@ import { datum } from '../components/EntityTable';
 import { FirmenPage, PersonenPage } from './Personen';
 import { TERMINARTEN, terminKlasse } from '../logic/termine';
 import { SchadensberichtDialog } from '../components/SchadensberichtDialog';
+import { DatumFeld } from '../components/DatumFeld';
 
 const heute = () => new Date().toISOString().slice(0, 10);
 const OBJEKTE_SQL = 'SELECT id, name FROM objekte ORDER BY name';
@@ -135,7 +136,7 @@ export function KalenderPage() {
       {edit && <Modal titel={edit.id ? 'Termin bearbeiten' : 'Termin anlegen'} onClose={() => setEdit(null)}>
         <div className="form">
           <label className="wide"><span>Titel *</span><input autoFocus value={edit.titel ?? ''} onChange={(e) => setEdit({ ...edit, titel: e.target.value })} /></label>
-          <label><span>Datum *</span><input type="date" value={edit.datum ?? ''} onChange={(e) => setEdit({ ...edit, datum: e.target.value })} /></label>
+          <label><span>Datum *</span><DatumFeld value={edit.datum ?? ''} onChange={(e) => setEdit({ ...edit, datum: e.target.value })} /></label>
           <label><span>Uhrzeit</span><input type="time" value={edit.uhrzeit ?? ''} onChange={(e) => setEdit({ ...edit, uhrzeit: e.target.value })} /></label>
           <TerminartWahl value={edit.art} onChange={(art) => setEdit({ ...edit, art })} />
           <label className="wide"><span>Liegenschaft</span><ObjektWahl value={edit.objekt_id} objekte={objekte} onChange={(v) => setEdit({ ...edit, objekt_id: v })} /></label>
@@ -218,7 +219,7 @@ function ErinnerungFenster({ objekte, start, onClose, onSaved }: { objekte: Row[
         {Schritt({ n: 2, titel: 'Erstellt am', children: <div className="erin-auto">{datum(h)} <span className="muted small">wird automatisch eingetragen</span></div> })}
         {Schritt({ n: 3, titel: 'Betreff', children: <input autoFocus placeholder="Woran soll erinnert werden?" value={e.titel ?? ''} onChange={(x) => setE({ ...e, titel: x.target.value })} /> })}
         {Schritt({ n: 4, titel: 'Grenztermin', children: <div className="erin-termin">
-          <input type="date" value={e.faellig ?? ''} min={h} onChange={(x) => setE({ ...e, faellig: x.target.value })} />
+          <DatumFeld value={e.faellig ?? ''} min={h} onChange={(x) => setE({ ...e, faellig: x.target.value })} />
           <input type="time" value={e.uhrzeit ?? ''} onChange={(x) => setE({ ...e, uhrzeit: x.target.value })} title="Uhrzeit (optional)" />
           <div className="erin-schnell">{[['Morgen', 1], ['1 Woche', 7], ['2 Wochen', 14], ['1 Monat', 30]].map(([t, d]) => <button key={t} type="button" className={e.faellig === schnell(Number(d)) ? 'on' : ''} onClick={() => setE({ ...e, faellig: schnell(Number(d)) })}>{t}</button>)}</div></div> })}
         {Schritt({ n: 5, titel: 'Notiz', children: <textarea rows={3} placeholder="Details, Ansprechpartner, was zu tun ist …" value={e.notiz ?? ''} onChange={(x) => setE({ ...e, notiz: x.target.value })} /> })}
@@ -311,7 +312,7 @@ export function TicketBoardsPage() {
           <label className="wide"><span>Titel *</span><input autoFocus value={edit.titel ?? ''} onChange={(e) => setEdit({ ...edit, titel: e.target.value })} /></label>
           <label><span>Status</span><select value={edit.status} onChange={(e) => setEdit({ ...edit, status: e.target.value })}>{SPALTEN.map((x) => <option key={x}>{x}</option>)}</select></label>
           <label><span>Priorität</span><select value={edit.prioritaet} onChange={(e) => setEdit({ ...edit, prioritaet: e.target.value })}>{['Niedrig', 'Mittel', 'Hoch'].map((x) => <option key={x}>{x}</option>)}</select></label>
-          <label><span>{edit.terminart ? 'Termin am' : 'Fällig'}</span><input type="date" value={edit.faellig ?? ''} onChange={(e) => setEdit({ ...edit, faellig: e.target.value })} /></label>
+          <label><span>{edit.terminart ? 'Termin am' : 'Fällig'}</span><DatumFeld value={edit.faellig ?? ''} onChange={(e) => setEdit({ ...edit, faellig: e.target.value })} /></label>
           {!instand && <label><span>Uhrzeit</span><input type="time" value={edit.uhrzeit ?? ''} onChange={(e) => setEdit({ ...edit, uhrzeit: e.target.value })} /></label>}
           {!instand && <TerminartWahl value={edit.terminart} onChange={(terminart) => setEdit({ ...edit, terminart })} />}
           <label><span>Liegenschaft{instand ? ' *' : ''}</span><ObjektWahl value={edit.objekt_id} objekte={objekte} onChange={(v) => setEdit({ ...edit, objekt_id: v })} /></label>
@@ -375,7 +376,7 @@ export function TodoPage({ objektId }: { objektId?: number } = {}) {
         <p className="muted">{objektId ? 'Aufgaben, Erinnerungen und Tickets dieser Liegenschaft.' : 'Deine Aufgaben: eintippen, Enter, erledigt abhaken. Mit der Liegenschaft ordnest du sie einer Immobilie zu.'}</p></div>
       <section className={'card aufgabe-neu' + (objektId ? ' ohne-objekt' : '')}>
         <input placeholder="Neue Aufgabe …" value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && anlegen()} />
-        <input type="date" value={faellig} onChange={(e) => setFaellig(e.target.value)} title="Fällig bis" />
+        <DatumFeld value={faellig} onChange={(e) => setFaellig(e.target.value)} title="Fällig bis" />
         {!objektId && <ObjektWahl value={objekt} objekte={objekte} onChange={setObjekt} />}
         <button className="primary" onClick={anlegen}><Plus size={16} />Hinzufügen</button>
       </section>
@@ -406,7 +407,7 @@ export function TodoPage({ objektId }: { objektId?: number } = {}) {
       {edit && <Modal titel="Aufgabe bearbeiten" onClose={() => setEdit(null)}>
         <div className="form">
           <label className="wide"><span>Aufgabe</span><input value={edit.text ?? ''} onChange={(e) => setEdit({ ...edit, text: e.target.value })} autoFocus /></label>
-          <label><span>Fällig bis</span><input type="date" value={edit.faellig ?? ''} onChange={(e) => setEdit({ ...edit, faellig: e.target.value })} /></label>
+          <label><span>Fällig bis</span><DatumFeld value={edit.faellig ?? ''} onChange={(e) => setEdit({ ...edit, faellig: e.target.value })} /></label>
           <label><span>Liegenschaft</span><ObjektWahl value={edit.objekt_id} objekte={objekte} onChange={(v) => setEdit({ ...edit, objekt_id: v })} /></label>
         </div>
         <div className="row end"><span className="grow" /><button onClick={() => setEdit(null)}>Abbrechen</button><button className="primary" onClick={speichern}>Speichern</button></div>

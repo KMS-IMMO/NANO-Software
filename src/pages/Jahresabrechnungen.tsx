@@ -20,6 +20,7 @@ import { oeffnen, speichern } from '../lib/dateien';
 import { WerteJeEinheit } from '../components/WerteJeEinheit';
 import { ruecklageJahr } from '../logic/ruecklage';
 import { HEIZ_HINWEIS, heizkostenOhneMessung, nkBerechnen } from '../logic/nebenkosten';
+import { JahrWahl } from '../components/DatumFeld';
 
 const RUECKLAGE = ['1260', '1261', '1262'];
 // Nachzahlungen und Erstattungen aus der Abrechnung des Vorjahres sind keine Kosten des Jahres und werden nicht verteilt
@@ -47,7 +48,7 @@ function Kopf({ titel, text, objekte, objekt, setObjekt, jahr, setJahr, children
         {!fix && <select style={{ width: 300 }} value={objekt} onChange={(e) => setObjekt(Number(e.target.value))}>
           {objekte.map((o: Row) => <option key={o.id} value={o.id}>{o.name}</option>)}
         </select>}
-        <label className="inline">Jahr <input type="number" style={{ width: 90 }} value={jahr} onChange={(e) => setJahr(Number(e.target.value))} /></label>
+        <label className="inline">Jahr <JahrWahl value={jahr} onChange={setJahr} /></label>
         <span className="grow" />
         {children}
       </section>
