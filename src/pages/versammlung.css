@@ -181,3 +181,22 @@ html[data-theme="dunkel"] .ev-tablet { background: linear-gradient(145deg, #2a2f
 @media (max-width: 640px) { .ev-form { grid-template-columns: 1fr; } .ev-stepper { grid-template-columns: 1fr; } .ev-ergeb { grid-template-columns: 1fr; } .ev-sigs { grid-template-columns: 1fr; } }
 @media (prefers-reduced-motion: reduce) { .ev-anim, .ev-live::before { animation: none; } }
 .ev-top .t select.ev-mehrheit { margin: 4px 0 0 6px; font-size: 12px; padding: 3px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--text); max-width: 100%; }
+
+/* Live-Versammlung: oben Text zum Vorlesen, darunter das Beschlussfeld */
+.ev-topnr { font-size: 12px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: #a07d42; }
+.ev-vorlesen { margin-top: 8px; padding: 18px 20px; border-radius: 16px; background: linear-gradient(135deg, rgba(212,168,92,.13), rgba(212,168,92,.04)); border: 1px solid rgba(176,138,74,.35); }
+.ev-vorlesen h2 { margin: 6px 0 10px; font-size: 24px; line-height: 1.3; }
+.ev-vorlesen p { margin: 0; font-size: 19px; line-height: 1.6; white-space: pre-wrap; }
+.ev-vorlesen p.leer { font-size: 14px; color: var(--muted); }
+.ev-vorlesen textarea { width: 100%; font-size: 16px; line-height: 1.5; box-sizing: border-box; }
+.ev-vorlesen .kopf, .ev-bfeld .kopf { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.ev-vorlesen .lbl, .ev-bfeld .lbl { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: #a07d42; }
+.ev-bfeld { margin-top: 14px; padding: 14px 16px 16px; border-radius: 16px; background: var(--panel); border: 2px solid rgba(47,116,208,.35); }
+.ev-bfeld .lbl { color: var(--ev-blau); }
+.ev-bfeld textarea { width: 100%; box-sizing: border-box; margin-top: 8px; min-height: 120px; font-size: 16px; line-height: 1.55; border-radius: 12px; resize: vertical; }
+.ev-bfeld textarea:focus { outline: none; border-color: var(--ev-blau); box-shadow: 0 0 0 3px rgba(47,116,208,.15); }
+.ev-ghost.klein { padding: 5px 10px; font-size: 12px; }
+.ev-verlauf { margin-top: 10px; font-size: 13px; }
+.ev-verlauf summary { cursor: pointer; color: var(--muted); padding: 4px 0; }
+.ev-verlauf .ev-notiz { margin-top: 6px; }
+html[data-theme="dunkel"] .ev-vorlesen { background: linear-gradient(135deg, rgba(212,168,92,.12), rgba(212,168,92,.03)); }

@@ -4,12 +4,13 @@ import './versammlung.css';
 import { loeschen as inPapierkorb } from '../db/papierkorb';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { ArrowDown, ArrowUp, CalendarDays, Check, Eye, FileDown, Mail, Pencil, Play, Plus, Printer, Trash2, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, BookOpen, CalendarDays, Check, Eye, FileDown, Mail, Pencil, PenLine, Play, Plus, Printer, Trash2, X } from 'lucide-react';
 import { db, type Row } from '../db';
 import { EntityTable, datum as fDatum } from '../components/EntityTable';
 import { dDatum } from '../lib/pdf';
 import { freistellen } from '../lib/unterschrift';
 import { oeffnen, speichern as dateiSpeichern } from '../lib/dateien';
+import { PdfVorschau } from '../components/PdfVorschau';
 import { einladungPdf, niederschriftPdf, vollmachtPdf } from '../lib/versammlungPdf';
 import {
   ARTEN, abschliessen, beschlussFesthalten, einladenBis, ergebnis, nummerieren, plusMonate, stimmeSetzen, tagesordnungVorschlag,
@@ -24,18 +25,7 @@ const nameKurz = (t: Row) => [t.vorname, t.nachname].filter(Boolean).join(' ') |
 const zahl = (n: number, s = 0) => n.toLocaleString('de-DE', { minimumFractionDigits: s, maximumFractionDigits: s });
 const STATUS_PILL: Record<string, string> = { Geplant: 'künftig', Eingeladen: 'teil', 'Läuft': 'offen', 'Durchgeführt': 'bezahlt' };
 
-function PdfFenster({ pdf, titel, onClose }: { pdf: { url: string } | null; titel: string; onClose: () => void }) {
-  if (!pdf) return null;
-  return (
-    <div className="modal-bg" onClick={onClose}>
-      <div className="modal pdf-vorschau" onClick={(e) => e.stopPropagation()}>
-        <div className="card-head"><h3>{titel}</h3><div className="row"><button className="icon-btn" title="Schließen" onClick={onClose}><X size={18} /></button></div></div>
-        <iframe id="abschluss-pdf" title="PDF-Vorschau" src={pdf.url} />
-      </div>
-    </div>
-  );
-}
-const pdfUrl = (bytes: Uint8Array) => ({ url: URL.createObjectURL(new Blob([bytes as BlobPart], { type: 'application/pdf' })) });
+const pdfUrl = (bytes: Uint8Array) => ({ bytes });
 
 /* ===================== Einstieg je Menüpunkt ===================== */
 export function VersammlungenBereich({ objektId, rest }: { objektId: number; rest: string[] }) {
@@ -107,7 +97,7 @@ function Einberufen({ objektId, id }: { objektId: number; id?: number }) {
   const [geladen, setGeladen] = useState(!id);
   const [vid, setVid] = useState<number | undefined>(id);
   const [vs, setVs] = useState<Versammlung | null>(null);
-  const [pdf, setPdf] = useState<{ url: string } | null>(null);
+  const [pdf, setPdf] = useState<{ bytes: Uint8Array } | null>(null);
   const [info, setInfo] = useState('');
   const [busy, setBusy] = useState(false);
   const [vorlageArt, setVorlageArt] = useState('');
@@ -262,7 +252,7 @@ function Einberufen({ objektId, id }: { objektId: number; id?: number }) {
         </section>
         <div className="ev-mini"><h3>Termin</h3>{w.art}<br />{dDatum(w.datum)}{w.uhrzeit ? `, ${w.uhrzeit} Uhr` : ''}<br />{w.ort}{w.online ? ' · online möglich' : ''}<br /><br /><b>{vs.tops.length} TOPs</b>, davon {vs.tops.filter((t) => t.beschluss).length} mit Beschluss</div>
       </div>}
-      <PdfFenster pdf={pdf} titel="Einladung (Vorschau)" onClose={() => setPdf(null)} />
+      <PdfVorschau bytes={pdf?.bytes ?? null} titel="Einladung (Vorschau)" onClose={() => setPdf(null)} />
     </div>
   );
 }
@@ -277,7 +267,7 @@ function VersammlungLive({ objektId, id }: { objektId: number; id: number }) {
   const [vs, setVs] = useState<Versammlung | null>(null);
   const [schritt, setSchritt] = useState(0);
   const [topId, setTopId] = useState<number | null>(null);
-  const [pdf, setPdf] = useState<{ url: string; titel: string } | null>(null);
+  const [pdf, setPdf] = useState<{ bytes: Uint8Array; titel: string } | null>(null);
   const [info, setInfo] = useState('');
   const [busy, setBusy] = useState(false);
   const [uhr, setUhr] = useState(Date.now());
@@ -319,9 +309,10 @@ function VersammlungLive({ objektId, id }: { objektId: number; id: number }) {
       const l = await laden();
       if (l) {
         const name = `Protokoll ${l.v.art} ${dDatum(l.v.datum)} ${l.v.objekt}.pdf`;
-        const pfad = await dateiSpeichern(await niederschriftPdf(l), name, { bezug: 'Objekt', bezugId: objektId, ordner: [l.v.objekt, 'Eigentümerversammlung', l.v.datum] });
+        const bytes = await niederschriftPdf(l);
+        await dateiSpeichern(bytes, name, { bezug: 'Objekt', bezugId: objektId, ordner: [l.v.objekt, 'Eigentümerversammlung', l.v.datum] });
         setInfo(`Versammlung abgeschlossen. Protokoll mit allen Niederschriften abgelegt unter ${l.v.objekt}/Eigentümerversammlung/${l.v.datum}. Anfechtungsfrist bis ${dDatum(plusMonate(l.v.datum, 1))} steht unter „Fristen“.`);
-        oeffnen(pfad);
+        setPdf({ bytes, titel: 'Protokoll und Beschluss-Niederschrift' });
       }
     } catch (e: any) { setInfo('Fehler: ' + (e?.message ?? e)); }
     setBusy(false);
@@ -355,7 +346,7 @@ function VersammlungLive({ objektId, id }: { objektId: number; id: number }) {
       {schritt === 3 && <Niederschrift vs={vs} neu={laden} busy={busy} onAlle={niederschriftAlle} onAbschliessen={abschliessenKlick}
         onEinzeln={async (pid) => setPdf({ ...pdfUrl(await niederschriftPdf(vs, [pid])), titel: 'Niederschrift' })} />}
       {info && <p className="ev-hinweis">{info}</p>}
-      <PdfFenster pdf={pdf} titel={pdf?.titel ?? ''} onClose={() => { if (pdf) URL.revokeObjectURL(pdf.url); setPdf(null); }} />
+      <PdfVorschau bytes={pdf?.bytes ?? null} titel={pdf?.titel ?? ''} dateiname={pdf ? `${pdf.titel} ${dDatum(v.datum)} ${v.objekt}.pdf` : undefined} onClose={() => setPdf(null)} />
     </div>
   );
 }
@@ -446,14 +437,19 @@ function Abstimmung({ vs, neu, topId, setTopId, weiter }: { vs: Versammlung; neu
   const fertig = vs.v.status === 'Durchgeführt';
   const [antrag, setAntrag] = useState('');
   const [notiz, setNotiz] = useState('');
-  useEffect(() => { setAntrag(top?.antrag ?? ''); setNotiz(top?.notiz ?? ''); }, [topId, top?.antrag, top?.notiz]);
+  const [btext, setBtext] = useState('');
+  const [aendern, setAendern] = useState(false);
+  useEffect(() => { setAntrag(top?.antrag ?? ''); setNotiz(top?.notiz ?? ''); setBtext(top?.beschluss_text ?? ''); }, [topId, top?.antrag, top?.notiz, top?.beschluss_text]);
+  useEffect(() => { setAendern(false); }, [topId]);
   const stimmb = vs.teilnehmer.filter((t) => t.status === 'Anwesend' || t.status === 'Vertreten');
   const e = top ? ergebnis(top.id, vs) : null;
   const mea = vs.v.zaehlung === 'MEA';
   const bs = top ? vs.beschluesse.find((b) => b.id === top.beschluss_id) : undefined;
   async function textSpeichern() {
     if (!top) return;
-    if ((top.antrag ?? '') !== antrag || (top.notiz ?? '') !== notiz) { await db.execute('UPDATE versammlung_tops SET antrag = $1, notiz = $2 WHERE id = $3', [antrag || null, notiz || null, top.id]); neu(); }
+    if ((top.antrag ?? '') !== antrag || (top.notiz ?? '') !== notiz || (top.beschluss_text ?? '') !== btext) {
+      await db.execute('UPDATE versammlung_tops SET antrag = $1, notiz = $2, beschluss_text = $3 WHERE id = $4', [antrag || null, notiz || null, btext || null, top.id]); neu();
+    }
   }
   async function stimme(t: Row, s: Stimme) {
     if (!top || fertig) return;
@@ -464,6 +460,8 @@ function Abstimmung({ vs, neu, topId, setTopId, weiter }: { vs: Versammlung; neu
   async function festhalten() {
     if (!top) return;
     await textSpeichern();
+    // Steht nichts im Beschlussfeld, gilt der Antrag unverändert als Wortlaut des Beschlusses
+    if (top.beschluss && !btext.trim() && antrag.trim()) { await db.execute('UPDATE versammlung_tops SET beschluss_text = $1 WHERE id = $2', [antrag, top.id]); setBtext(antrag); }
     const l = await versammlungLaden(vs.v.id);
     if (!l) return;
     const t = l.tops.find((x) => x.id === top.id)!;
@@ -490,11 +488,28 @@ function Abstimmung({ vs, neu, topId, setTopId, weiter }: { vs: Versammlung; neu
           <button className="ev-cta voll" style={{ marginTop: 6 }} onClick={() => { textSpeichern(); weiter(); }}>Weiter zur Niederschrift →</button>
         </div>
         {top && <section className="ev-glas ev-anim" key={top.id}>
-          <div className="card-head"><h2 style={{ fontSize: 19 }}>TOP {top.nr} · {top.titel}</h2>
+          <div className="card-head"><span className="ev-topnr">TOP {top.nr} von {vs.tops.length}{top.beschluss && top.mehrheit && top.mehrheit !== 'einfach' ? ` · ${MEHRHEITEN[top.mehrheit as Mehrheit]}` : ''}</span>
             {top.beschluss ? <button className="ev-ghost" title="Zählweise umschalten" onClick={zaehlungUmschalten} disabled={fertig}>Zählung: {mea ? 'nach MEA' : 'nach Köpfen'}</button> : <span className="ev-tag i">Information</span>}</div>
-          {top.beschluss ? <div className="ev-antrag"><span className="lbl">Beschlussantrag</span>
-            <textarea value={antrag} disabled={fertig} onChange={(x) => setAntrag(x.target.value)} onBlur={textSpeichern} placeholder="Wortlaut des Beschlusses" /></div> : null}
-          <textarea className="ev-notiz" value={notiz} disabled={fertig} placeholder="Notiz fürs Protokoll (Verlauf, Wortmeldungen) …" onChange={(x) => setNotiz(x.target.value)} onBlur={textSpeichern} />
+          {/* Oben: Text des TOP zum Vorlesen */}
+          <div className="ev-vorlesen">
+            <div className="kopf"><span className="lbl"><BookOpen size={15} />Zum Vorlesen</span>
+              {!fertig && <button className="link" onClick={() => { if (aendern) textSpeichern(); setAendern(!aendern); }}>{aendern ? 'Fertig' : 'Text ändern'}</button>}</div>
+            <h2>{top.titel}</h2>
+            {aendern ? <textarea value={antrag} rows={4} onChange={(x) => setAntrag(x.target.value)} onBlur={textSpeichern} placeholder={top.beschluss ? 'Beschlussantrag (Wortlaut aus der Einladung)' : 'Text zum Vorlesen'} />
+              : antrag ? <p>{top.beschluss && <b>Beschlussantrag: </b>}{antrag}</p>
+                : <p className="leer">{top.beschluss ? 'Für diesen TOP ist kein Beschlussantrag hinterlegt. Mit „Text ändern“ eintragen.' : 'Bericht bzw. Information, keine Beschlussfassung.'}</p>}
+          </div>
+          {/* Darunter: Beschlussfeld zum Niederschreiben */}
+          <div className="ev-bfeld">
+            <div className="kopf"><span className="lbl"><PenLine size={15} />{top.beschluss ? 'Beschlussfeld · Wortlaut des Beschlusses' : 'Protokoll zu diesem TOP'}</span>
+              {top.beschluss && !fertig && antrag && btext !== antrag && <button className="ev-ghost klein" onClick={() => setBtext(antrag)}>Antrag übernehmen</button>}</div>
+            {top.beschluss
+              ? <textarea rows={5} value={btext} disabled={fertig} onChange={(x) => setBtext(x.target.value)} onBlur={textSpeichern}
+                placeholder={antrag ? 'Hier den Beschluss so niederschreiben, wie er gefasst wird. Bleibt das Feld leer, gilt der Antrag unverändert.' : 'Hier den Beschluss so niederschreiben, wie er gefasst wird …'} />
+              : <textarea rows={5} value={notiz} disabled={fertig} onChange={(x) => setNotiz(x.target.value)} onBlur={textSpeichern} placeholder="Was wurde berichtet oder besprochen? …" />}
+          </div>
+          {top.beschluss ? <details className="ev-verlauf" open={!!notiz}><summary>Verlauf und Wortmeldungen (optional)</summary>
+            <textarea className="ev-notiz" value={notiz} disabled={fertig} placeholder="Notiz fürs Protokoll (Verlauf, Wortmeldungen) …" onChange={(x) => setNotiz(x.target.value)} onBlur={textSpeichern} /></details> : null}
           {top.beschluss ? <>
             <div className="ev-vgrid">
               {vs.teilnehmer.map((t) => {
@@ -583,7 +598,7 @@ function Niederschrift({ vs, neu, busy, onAlle, onAbschliessen, onEinzeln }: { v
               <span className={'ev-av s ' + (x.status === 'Vertreten' ? 'b' : x.status === 'Anwesend' ? 'g' : 'x')}>{kuerzel(x)}</span>
               <div>{nameKurz(x)}<small>{x.unterschrift ? `unterschrieben ${String(x.unterschrieben_am ?? '').slice(11, 16)}` : x.status === 'Abwesend' || !x.status ? 'per Post / E-Mail' : 'noch nicht unterschrieben'}</small></div>
               <span className="s" style={{ color: x.unterschrift ? 'var(--ev-gruen)' : 'var(--muted)' }}>{x.unterschrift ? '✓' : x.status === 'Abwesend' || !x.status ? '✉' : '✎'}</span></button>))}
-          <button className="ev-ghost" onClick={onAlle}><Printer size={15} />Alle Niederschriften (PDF)</button>
+          <button className={fertig ? 'ev-cta voll' : 'ev-ghost'} onClick={onAlle}><Printer size={15} />Protokoll ansehen und drucken</button>
           {!fertig && <button className="ev-cta voll" disabled={busy} onClick={onAbschliessen}>Versammlung abschließen</button>}
           {!fertig && offeneBeschluesse > 0 && <small className="ev-hinweis">{offeneBeschluesse} Beschluss-TOP{offeneBeschluesse > 1 ? 's sind' : ' ist'} noch nicht festgehalten.</small>}
           <small className="muted">Abschließen legt das Protokoll mit allen Niederschriften in die Dokumente und trägt die Anfechtungsfrist (§ 45 WEG) unter „Fristen“ ein. Die Beschlüsse stehen schon in der Beschluss-Sammlung.</small>
@@ -597,7 +612,7 @@ function Niederschrift({ vs, neu, busy, onAlle, onAbschliessen, onEinzeln }: { v
             const meine = vs.stimmen.find((s) => s.top_id === top.id && s.teilnehmer_id === t.id)?.stimme;
             return <div key={top.id} style={{ marginTop: 10 }}><b>TOP {top.nr} · {top.titel}</b>
               {top.notiz && <div className="grau">{top.notiz}</div>}
-              {bs ? <div className={'bt' + (bs.ergebnis === 'Angenommen' ? '' : ' ab')}><b>Beschluss {bs.nummer}:</b> {top.antrag || top.titel}<br />
+              {bs ? <div className={'bt' + (bs.ergebnis === 'Angenommen' ? '' : ' ab')}><b>Beschluss {bs.nummer}:</b> {top.beschluss_text || top.antrag || top.titel}<br />
                 <span className={'pp ' + (bs.ergebnis === 'Angenommen' ? 'j' : 'n')}>{bs.ergebnis} {bs.ja ?? 0} : {bs.nein ?? 0} : {bs.enthaltung ?? 0}</span>
                 {meine && <span className={'pp ' + (meine === 'Ja' ? 'j' : meine === 'Nein' ? 'n' : '')}>Ihre Stimme: {meine} {meine === 'Ja' ? '👍' : meine === 'Nein' ? '👎' : ''}</span>}</div>
                 : top.beschluss ? <div className="grau">Noch nicht abgestimmt.</div> : !top.notiz && <div className="grau">Keine Beschlussfassung.</div>}

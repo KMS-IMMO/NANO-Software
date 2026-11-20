@@ -1,4 +1,5 @@
 // WEG-Module: Beschlüsse und Versammlungen, Erhaltungsrücklage, Wirtschaftsplan; Instandhaltung (WEG und Miete).
+import { PdfVorschau } from '../components/PdfVorschau';
 import { BetragFeld, MengeFeld } from '../components/BetragFeld';
 import { betragZahl } from '../lib/betrag';
 import { einheitLabel } from '../db/labels';
@@ -10,7 +11,7 @@ import { kostenErmitteln, tageImJahr, verteilen, type Ergebnis, type Nutzer, typ
 import { Brief, absender, geld } from '../lib/pdf';
 import { oeffnen, speichern as dateiSpeichern } from '../lib/dateien';
 import { personLabel } from '../db/labels';
-import { Eye, FileDown, Percent, X } from 'lucide-react';
+import { Eye, FileDown, Percent } from 'lucide-react';
 import { OsaPlanVorschlag } from '../components/OsaPlanVorschlag';
 import { ruecklageJahr, ruecklageStand } from '../logic/ruecklage';
 import { DatumFeld, JahrWahl } from '../components/DatumFeld';
@@ -257,7 +258,7 @@ export function WirtschaftsplanTab({ objektId }: { objektId: number }) {
   const [einheiten, setEinheiten] = useState<Row[]>([]);
   const [verteilung, setVerteilung] = useState<Record<number, { kosten: number; ruecklage: number }>>({});
   const [details, setDetails] = useState<{ k: Ergebnis[]; r: Ergebnis[] }>({ k: [], r: [] });
-  const [pdf, setPdf] = useState<{ url: string; bytes: Uint8Array } | null>(null);
+  const [pdf, setPdf] = useState<{ bytes: Uint8Array } | null>(null);
   const [busy, setBusy] = useState('');
   const [objName, setObjName] = useState('');
   const [info, setInfo] = useState('');
@@ -394,7 +395,7 @@ export function WirtschaftsplanTab({ objektId }: { objektId: number }) {
 
   async function vorschau() {
     setBusy('vorschau');
-    try { await speichern(); const bytes = await planPdf(true); setPdf({ url: URL.createObjectURL(new Blob([bytes as BlobPart], { type: 'application/pdf' })), bytes }); }
+    try { await speichern(); const bytes = await planPdf(true); setPdf({ bytes }); }
     catch (e: any) { setInfo('Fehler: ' + (e?.message ?? e)); }
     setBusy('');
   }
@@ -501,15 +502,8 @@ export function WirtschaftsplanTab({ objektId }: { objektId: number }) {
         <p className="muted small">Die PDF enthält den Gesamtwirtschaftsplan und für jeden Eigentümer einen Einzelwirtschaftsplan mit seinem Anteil je Kostenart und dem neuen Hausgeld.</p>
         {info && <p className="info">{info}</p>}
       </section>
-      {pdf && (
-        <div className="modal-bg" onClick={() => { URL.revokeObjectURL(pdf.url); setPdf(null); }}>
-          <div className="modal pdf-vorschau" onClick={(e) => e.stopPropagation()}>
-            <div className="card-head"><h3>Entwurf: Wirtschaftsplan {jahr}</h3>
-              <div className="row"><button onClick={ablegen}><FileDown size={16} />PDFs ablegen</button>
-                <button className="icon-btn" title="Schließen" onClick={() => { URL.revokeObjectURL(pdf.url); setPdf(null); }}><X size={18} /></button></div></div>
-            <iframe id="abschluss-pdf" title="PDF-Vorschau" src={pdf.url} />
-          </div>
-        </div>)}
+      <PdfVorschau bytes={pdf?.bytes ?? null} titel={`Entwurf: Wirtschaftsplan ${jahr}`} onClose={() => setPdf(null)}
+        aktionen={<button onClick={ablegen}><FileDown size={16} />PDFs ablegen</button>} />
     </div>
     </>
   );

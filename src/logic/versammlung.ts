@@ -170,7 +170,7 @@ export async function beschlussFesthalten(vs: Versammlung, top: Row) {
   const ergebnisText = e.angenommen ? 'Angenommen' : 'Abgelehnt';
   const summe = e.ja + e.nein;
   const zust = summe ? Math.round(e.ja / summe * 1000) / 10 : null;
-  const werte = [top.titel, top.antrag || null, ergebnisText, zust, e.ja, e.nein, e.enthaltung, plusMonate(v.datum, 1)];
+  const werte = [top.titel, top.beschluss_text || top.antrag || null, ergebnisText, zust, e.ja, e.nein, e.enthaltung, plusMonate(v.datum, 1)];
   if (top.beschluss_id) {
     await db.execute(`UPDATE beschluesse SET betreff = $1, notiz = $2, ergebnis = $3, zustimmung = $4, ja = $5, nein = $6, enthaltung = $7, anfechtung_bis = $8 WHERE id = $9`, [...werte, top.beschluss_id]);
   } else {

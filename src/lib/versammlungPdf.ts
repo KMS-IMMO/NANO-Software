@@ -122,7 +122,7 @@ export async function niederschriftPdf(vs: Versammlung, nurPersonen?: number[]):
         const mea = v.zaehlung === 'MEA';
         const f = (n: number, k: number) => mea ? `${zahl(n)} MEA` : String(k);
         kasten(b, [
-          { text: `Beschluss ${bs.nummer ?? ''}: ${top.antrag || top.titel}`, fett: false },
+          { text: `Beschluss ${bs.nummer ?? ''}: ${top.beschluss_text || top.antrag || top.titel}`, fett: false },
           ...(e.mehrheit !== 'einfach' ? [{ text: e.begruendung, fett: false, klein: true }] : []),
           { text: `${bs.ergebnis} · Ja ${f(e.ja, e.jaN)} · Nein ${f(e.nein, e.neinN)} · Enthaltung ${f(e.enthaltung, e.enthN)}${t.status === 'Anwesend' || t.status === 'Vertreten' ? ` · Ihre Stimme: ${meine ?? 'keine'}` : ''}`, fett: true,
             farbe: bs.ergebnis === 'Angenommen' ? [30, 122, 60] : [180, 35, 24], klein: true },
