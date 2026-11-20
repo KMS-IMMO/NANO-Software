@@ -1,13 +1,20 @@
-import { useEffect, useMemo, useState } from 'react';
+import { BetragFeld } from '../components/BetragFeld';
+import { betragZahl, betragText } from '../lib/betrag';
+import { MieterAnlegen } from '../components/MieterAnlegen';
+import { EigentuemerAnschrift } from '../components/EigentuemerAnschrift';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { BJ } from '../logic/buchung';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, BarChart3, CalendarClock, CalendarRange, BookOpen, Building2, ClipboardList, Coins, DoorOpen, FileSignature, FileText, FolderOpen, Gavel, Home, Landmark, Layers, ListChecks, Mail,
-  Maximize2, PiggyBank, Scale, Trash2, User, Users, Wallet, Wrench } from 'lucide-react';
+import { ArrowLeft, Pencil, BarChart3, CalendarDays, CircleCheck, FileDown, CalendarClock, CalendarRange, BookOpen, Building2, ClipboardList, Coins, DoorOpen, FileSignature, FileText, FolderOpen, Gavel, Home, Landmark, Layers, ListChecks, Mail,
+  KeyRound, Maximize2, PiggyBank, Plus, Scale, Trash2, User, Users, Wallet, Wrench } from 'lucide-react';
 import { BeschluesseTab, RuecklagenTab, VorgaengeTab, WirtschaftsplanTab } from './Weg';
+import { VersammlungenBereich, VersammlungListe, VollmachtenListe } from './Versammlungen';
 import { EntityTable, datum, eur, num, type Field } from '../components/EntityTable';
 import { ObjektKontext } from '../logic/objektKontext';
 import { ObjektLoeschen } from '../components/ObjektLoeschen';
 import { OP_SQL, hausgeldNeuStellen, mieteImMonat } from '../logic/soll';
 import { VertragDetailPage, VertraegePage } from './Vertraege';
+import { EigentumDetailPage } from './EigentumDetail';
 import { JournalPage, AuswertungPage } from './Buchhaltung';
 import { BankPage } from './Bank';
 import { OffenePostenPage } from './OffenePosten';
@@ -17,7 +24,10 @@ import { NebenkostenPage } from './Nebenkosten';
 import { EigentuemerAbrechnungPage, WegAbrechnungPage } from './Jahresabrechnungen';
 import { DokumentePage } from './Dokumente';
 import { FristenPage } from './Fristen';
+import { TodoPage } from './Produktiv';
 import { db, type Row } from '../db';
+import { stammblattPdf } from '../lib/pdf';
+import { oeffnen, speichern as dateiSpeichern } from '../lib/dateien';
 import { AKTIV, EINHEIT_TYPEN, einheitLabel, SCHLUESSEL, WARMWASSER, personLabel, personOptions, widSql } from '../db/labels';
 
 const adresse = (o: Row) => [o.strasse, [o.plz, o.ort].filter(Boolean).join(' ')].filter(Boolean).join(', ');
@@ -38,7 +48,9 @@ const objektFields: Field[] = [
   { key: 'heizungsart', label: 'Heizungsart', type: 'select', hideInTable: true,
     options: ['Gas-Zentralheizung', 'Öl-Zentralheizung', 'Fernwärme', 'Wärmepumpe', 'Pellets', 'Gasetagenheizung', 'Nachtspeicher', 'Sonstige'] },
   { key: 'warmwasser', label: 'Warmwasserversorgung', type: 'select', hideInTable: true, options: WARMWASSER },
-  { key: 'eigentuemer_id', label: 'Eigentümer (nur Mietverwaltung)', type: 'select', optionsSql: personOptions('Eigentümer'), hideInTable: true, wide: true },
+  { key: 'miete_zahlweise', label: 'Mieter zahlen Miete und Nebenkosten (Standard, je Mietvertrag änderbar)', type: 'select', hideInTable: true, wide: true,
+    options: [{ value: 'zusammen', label: 'zusammen in einer Überweisung' }, { value: 'getrennt', label: 'getrennt in einzelnen Überweisungen' }] },
+  { key: 'eigentuemer_id', label: 'Eigentümer (nur Mietverwaltung)', type: 'select', optionsSql: personOptions('Eigentümer'), hideInTable: true, wide: true, neuePerson: 'Eigentümer' },
   { key: 'notiz', label: 'Notiz', type: 'textarea', hideInTable: true },
 ];
 
@@ -94,9 +106,14 @@ const ebenen = (weg: boolean): Ebene[] => [
     weg && { slug: 'hausgeldabrechnung', label: 'Hausgeldabrechnung', icon: FileText },
     { slug: 'nebenkosten', label: 'Nebenkostenabrechnung', icon: FileText },
     !weg && { slug: 'eigentuemerabrechnung', label: 'Eigentümerabrechnung', icon: FileText }] },
+  ...(weg ? [{ titel: 'Eigentümerversammlung', punkte: [
+    { slug: 'versammlungen', label: 'Versammlungen', icon: CalendarDays },
+    { slug: 'beschluesse', label: 'Beschluss-Sammlung', icon: FileSignature },
+    { slug: 'umlaufbeschluesse', label: 'Umlaufbeschlüsse', icon: Mail },
+    { slug: 'vollmachten', label: 'Vollmachten', icon: Gavel }] }] : []),
   { titel: 'Verwaltung', punkte: [
-    weg && { slug: 'beschluesse', label: 'Beschlüsse', icon: FileSignature },
     { slug: 'instandhaltung', label: 'Instandhaltung', icon: Wrench },
+    { slug: 'aufgaben', label: 'Aufgaben', icon: CircleCheck },
     { slug: 'fristen', label: 'Fristen', icon: CalendarClock },
     weg && { slug: 'beirat', label: 'Verwaltungsbeirat', icon: Gavel },
     { slug: 'schluessel', label: 'Umlageschlüssel', icon: Scale },
@@ -170,6 +187,7 @@ function Bereich({ slug, rest, o, sum, weg, reload }: { slug: string; rest: stri
     case 'eigentuemer': return <EigentuemerTab objektId={id} />;
     case 'mieter': return <VertraegePage />;
     case 'vertrag': return <VertragDetailPage vertragId={Number(rest[1])} />;
+    case 'eigentum': return <EigentumDetailPage objektId={id} eigentumId={Number(rest[1])} />;
     case 'buchungen': return <JournalPage />;
     case 'bank': return <BankPage />;
     case 'offene-posten': return <OffenePostenPage />;
@@ -177,21 +195,44 @@ function Bereich({ slug, rest, o, sum, weg, reload }: { slug: string; rest: stri
     case 'rechnungen': return <JournalPage />;
     case 'mahnungen': return <MahnungenPage />;
     case 'auswertung': return <AuswertungPage />;
-    case 'hausgeld': return <HausgeldTab objektId={id} />;
+    case 'hausgeld': return <EigentuemerTab objektId={id} nurHausgeld />;
     case 'vorauszahlungen': return <VorauszahlungenTab objektId={id} weg={weg} />;
     case 'wirtschaftsplan': return <WirtschaftsplanTab objektId={id} />;
     case 'ruecklagen': return <RuecklagenTab objektId={id} />;
     case 'hausgeldabrechnung': return <WegAbrechnungPage />;
     case 'nebenkosten': return <NebenkostenPage />;
     case 'eigentuemerabrechnung': return <EigentuemerAbrechnungPage />;
-    case 'beschluesse': return <BeschluesseTab objektId={id} />;
+    case 'beschluesse': return <BeschluesseTab objektId={id} nurBeschluesse />;
+    case 'versammlungen': return <VersammlungenBereich objektId={id} rest={rest} />;
+    case 'umlaufbeschluesse': return <VersammlungListe objektId={id} umlauf />;
+    case 'vollmachten': return <VollmachtenListe objektId={id} />;
     case 'instandhaltung': return <VorgaengeTab objektId={id} />;
     case 'beirat': return <BeiratTab objektId={id} />;
     case 'schluessel': return <SchluesselTab objektId={id} weg={weg} />;
     case 'dokumente': return <DokumentePage />;
     case 'fristen': return <FristenPage />;
+    case 'aufgaben': return <TodoPage objektId={id} />;
     default: return <p className="muted">Diese Seite gibt es nicht.</p>;
   }
+}
+
+/** Stammblatt der Liegenschaft mit allen Einheiten, Eigentümern und Mietern auf dem Briefpapier */
+async function objektStammblatt(o: Row, sum: Row, weg: boolean) {
+  const e = await db.select(`SELECT e.*, ${widSql('e', 'o')} AS wid,
+      (SELECT GROUP_CONCAT(${personLabel('p')}, '; ') FROM eigentum ei JOIN personen p ON p.id = ei.person_id WHERE ei.einheit_id = e.id AND (ei.bis IS NULL OR ei.bis >= date('now'))) AS eigentuemer,
+      (SELECT ${personLabel('p')} FROM mietvertraege v JOIN personen p ON p.id = v.mieter_id WHERE v.einheit_id = e.id AND ${AKTIV()} LIMIT 1) AS mieter
+    FROM einheiten e JOIN objekte o ON o.id = e.objekt_id WHERE e.objekt_id = $1 ORDER BY e.lfd_nr, e.nummer`, [o.id]);
+  const bank = await db.select('SELECT name, bank, iban FROM bankkonten WHERE objekt_id = $1 ORDER BY id', [o.id]);
+  const felder: [string, string][] = [['Bezeichnung', o.name], ['Anschrift', adresse(o) || '–'], ['Verwaltungsart', weg ? 'WEG (Wohnungseigentum)' : 'Mietverwaltung'], ['H-ID', String(o.objekt_nr ?? '–')],
+    ['Baujahr', o.baujahr ? String(o.baujahr) : '–'], ['Heizung', o.heizungsart || '–'], ['Einheiten', String(sum.n ?? 0)], ['Gesamtfläche', `${num(sum.fl)} m²`],
+    ['Gesamt-MEA', num(o.gesamt_mea ?? sum.mea, 0)], ['Personen', num(sum.pers, 0)]];
+  if (!weg && o.eigentuemer) felder.push(['Eigentümer', o.eigentuemer], ['Kontakt', [o.telefon, o.email].filter(Boolean).join(' · ') || '–']);
+  const head = ['W-ID', 'Nr.', 'Art', 'Lage', 'm²', ...(weg ? ['MEA', 'Eigentümer'] : []), 'Mieter'];
+  const body = e.map((x) => [x.wid, x.nummer, x.typ, x.lage ?? '', x.flaeche != null ? num(x.flaeche) : '', ...(weg ? [x.mea != null ? num(x.mea, 0) : '', x.eigentuemer ?? '–'] : []), x.mieter ?? (weg ? '–' : 'Leerstand')]);
+  const bytes = await stammblattPdf('Stammblatt Liegenschaft', [o.name, adresse(o)], [{ titel: 'Liegenschaft', felder },
+    ...(bank.length ? [{ titel: 'Bankkonten', felder: bank.map((b) => [b.name, [b.bank, b.iban].filter(Boolean).join(' · ') || '–'] as [string, string]) }] : [])],
+    [{ titel: 'Einheiten', head, body }]);
+  oeffnen(await dateiSpeichern(bytes, `Stammblatt ${o.name}.pdf`, { bezug: 'Objekt', bezugId: o.id, ordner: ['Berichte'] }));
 }
 
 function ObjektKopf({ o, sum, weg }: { o: Row; sum: Row; weg: boolean }) {
@@ -199,6 +240,7 @@ function ObjektKopf({ o, sum, weg }: { o: Row; sum: Row; weg: boolean }) {
   return (
     <>
       <section className="card objhead">
+        <button className="objhead-pdf" title="Stammblatt der Liegenschaft als PDF auf dem Briefpapier" onClick={() => objektStammblatt(o, sum, weg)}><FileDown size={16} />Stammblatt</button>
         <div className="thumb"><Building2 size={44} /></div>
         <div>
           <h2 style={{ fontSize: 22 }}>{o.name}</h2>
@@ -229,7 +271,8 @@ function Kennzahlen({ objektId, weg }: { objektId: number; weg: boolean }) {
   useEffect(() => {
     (async () => {
       const b = (await db.select(`SELECT COALESCE(SUM(CASE WHEN betrag > 0 THEN betrag END), 0) AS ein, COALESCE(-SUM(CASE WHEN betrag < 0 THEN betrag END), 0) AS aus
-        FROM buchungen WHERE objekt_id = $1 AND substr(datum, 1, 4) = $2`, [objektId, jahr]))[0] ?? {};
+        FROM buchungen WHERE objekt_id = $1 AND ${BJ('')} = CAST($2 AS INTEGER)
+          AND COALESCE((SELECT art FROM buchungskonten WHERE id = buchungskonto_id), '') <> 'Eigentümer'`, [objektId, jahr]))[0] ?? {};
       const op = (await db.select(`SELECT COALESCE(SUM(betrag - bezahlt), 0) AS offen, COUNT(*) AS n FROM (${OP_SQL}) WHERE objekt_id = $1 AND betrag - bezahlt > 0.005 AND faellig < date('now')`, [objektId]))[0] ?? {};
       const bank = (await db.select(`SELECT COALESCE(SUM(b.anfangssaldo + COALESCE((SELECT SUM(u.betrag) FROM bankumsaetze u WHERE u.bankkonto_id = b.id
         AND (b.saldo_datum IS NULL OR u.datum > b.saldo_datum)), 0)), 0) AS saldo, COUNT(*) AS n FROM bankkonten b WHERE b.objekt_id = $1`, [objektId]))[0] ?? {};
@@ -251,7 +294,7 @@ function Kennzahlen({ objektId, weg }: { objektId: number; weg: boolean }) {
           <div className="card-head"><h2 className="title-ico"><BookOpen size={20} />Letzte Buchungen</h2><Link to={`/objekte/${objektId}/buchungen`}>Alle Einnahmen & Ausgaben →</Link></div>
           <table className="list"><tbody>{letzte.map((r) => (
             <tr key={r.id}><td>{datum(r.datum)}</td><td>{r.nummer ? `${r.nummer} ${r.konto}` : '–'}<div className="muted small">{r.einheit ?? (r.betrag < 0 ? 'alle Einheiten' : '')}</div></td>
-              <td className="small">{r.text}</td><td className={'num ' + (r.betrag < 0 ? 'neg' : '')}>{eur(r.betrag)}</td></tr>))}</tbody></table>
+              <td className="small">{r.text}</td><td className={'num ' + (r.betrag < 0 ? 'neg' : 'pos')}>{eur(r.betrag)}</td></tr>))}</tbody></table>
         </section>)}
     </>
   );
@@ -264,7 +307,7 @@ function VorauszahlungenTab({ objektId, weg }: { objektId: number; weg: boolean 
   useEffect(() => {
     (async () => {
       const v = await db.select(`SELECT v.*, e.nummer AS einheit, ${personLabel('p')} AS mieter FROM mietvertraege v JOIN einheiten e ON e.id = v.einheit_id
-        JOIN personen p ON p.id = v.mieter_id WHERE e.objekt_id = $1 AND ${AKTIV()} ORDER BY e.nummer`, [objektId]);
+        JOIN personen p ON p.id = v.mieter_id WHERE e.objekt_id = $1 AND ${AKTIV()} ORDER BY e.lfd_nr, e.nummer`, [objektId]);
       const a = await db.select(`SELECT a.* FROM mietanpassungen a JOIN mietvertraege v ON v.id = a.vertrag_id JOIN einheiten e ON e.id = v.einheit_id WHERE e.objekt_id = $1`, [objektId]);
       const m = new Date().toISOString().slice(0, 7);
       setRows(v.map((x) => ({ ...x, jetzt: mieteImMonat(x, a.filter((y) => y.vertrag_id === x.id), m) })));
@@ -292,9 +335,56 @@ function VorauszahlungenTab({ objektId, weg }: { objektId: number; weg: boolean 
 
 function EinheitenTab({ objektId, weg, onChange }: { objektId: number; weg: boolean; onChange: () => void }) {
   const jahr = new Date().getFullYear();
+  const nav = useNavigate();
+  const [objekt, setObjekt] = useState<Row | null>(null);
+  const [neuFuer, setNeuFuer] = useState<Row | null>(null);
+  const [version, setVersion] = useState(0);
+  const [hinweis, setHinweis] = useState<{ text: string; vertrag: number } | null>(null);
+  const [anschriftFuer, setAnschriftFuer] = useState<Row | null>(null);
+  useEffect(() => { db.select('SELECT * FROM objekte WHERE id = $1', [objektId]).then((r) => setObjekt(r[0] ?? null)); }, [objektId]);
+  // Anschrift des Eigentümers: bei vermieteten Wohnungen Pflicht, sonst geht die Post an die Wohnung
+  const anschrift = (v: any, r: Row) => {
+    if (!Number(r.eig_n)) return <span className="muted">–</span>;
+    const knopf = (inhalt: ReactNode, klasse: string, titel: string) => (
+      <button type="button" className={'link anschrift-knopf ' + klasse} title={titel} onClick={(e) => { e.stopPropagation(); setAnschriftFuer(r); }}>{inhalt}<Pencil size={13} /></button>);
+    if (!Number(r.eig_ohne)) return <span className="anschrift-zelle">{v}{knopf(null, 'muted', 'Anschrift ändern')}</span>;
+    return <span className="anschrift-zelle">{v ? <>{v}<br /></> : null}{r.nutzung === 'Miete'
+      ? knopf('fehlt', 'neg', 'Wohnung ist vermietet: Anschrift des Eigentümers eintragen')
+      : knopf('wie Wohnung', 'muted', 'Post geht an die Wohnung. Wohnt der Eigentümer woanders: Anschrift eintragen')}</span>;
+  };
+  // Klick auf die Einheit: ohne laufenden Mietvertrag das Fenster „Mieter anlegen“, sonst den Mietvertrag öffnen. Der Stift bearbeitet die Wohnungsdaten.
+  const oeffnen = async (r: Row) => {
+    const v = (await db.select(`SELECT id FROM mietvertraege WHERE einheit_id = $1 AND (ende IS NULL OR ende >= date('now')) ORDER BY beginn DESC LIMIT 1`, [r.id]))[0];
+    if (v) nav(`/objekte/${objektId}/vertrag/${v.id}`); else setNeuFuer(r);
+  };
+  // WEG: Woraus besteht das Hausgeld? Rücklage, NK-Vorauszahlung des Mieters (laut Mietvertrag) und der Rest für den Eigentümer
+  const hausgeldZelle = (v: any, r: Row) => {
+    const hg = Number(v) || 0, rl = Number(r.hg_ruecklage) || 0, nk = r.nutzung === 'Miete' && r.nk_vz != null ? Number(r.nk_vz) || 0 : 0;
+    if (!hg || (!rl && !nk)) return eur(v);
+    const rest = Math.round((hg - rl - nk) * 100) / 100;
+    const teile = [rl ? `Rücklage ${eur(rl)}` : '', nk ? `NK Mieter ${eur(nk)}` : '', nk ? `Eigentümer ${eur(rest)}` : ''].filter(Boolean);
+    return <span className="hg-zelle">{eur(v)}<span className={'hg-teile' + (rest < -0.005 ? ' neg' : '')}
+      title={rest < -0.005 ? 'Die NK-Vorauszahlung des Mieters ist höher als das Hausgeld ohne Rücklage. Bitte Hausgeld oder Mietvertrag prüfen.' : 'Aufteilung des Hausgelds'}>
+      {teile.join(' · ')}</span></span>;
+  };
+  // WEG: Klick auf den Eigentümer öffnet seine Seite (Daten, Hausgeld anpassen, Zahlungen). Mehrere Eigentümer: je ein Chip.
+  const eigentuemerZelle = (_: any, r: Row) => {
+    const liste = String(r.eig_liste ?? '').split('\u001e').filter(Boolean).map((x) => x.split('\u001f'));
+    if (!liste.length) return <button type="button" className="link klick-neu" onClick={(e) => { e.stopPropagation(); nav(`/objekte/${objektId}/eigentuemer`); }}>
+      <Plus size={13} />Eigentümer eintragen</button>;
+    return <span className="chip-reihe">{liste.map(([id, name]) => (
+      <button key={id} type="button" className="rolle-chip eigentuemer klick" title="Eigentümer öffnen: Daten, Hausgeld anpassen, Zahlungen"
+        onClick={(e) => { e.stopPropagation(); nav(`/objekte/${objektId}/eigentum/${id}`); }}>{name}</button>))}</span>;
+  };
+  // Klick auf den Mieter öffnet den Mietvertrag. Nicht vermietet: „Vermieten“ öffnet das Fenster mit allen Angaben zur Vermietung.
+  const mieterZelle = (v: any, r: Row) => v
+    ? <button type="button" className="rolle-chip mieter klick" title="Mietvertrag öffnen" onClick={(e) => { e.stopPropagation(); oeffnen(r); }}>{v}</button>
+    : <button type="button" className="link klick-neu" title={r.nutzung === 'Miete' ? 'Vermietet, aber der Mieter ist noch nicht erfasst' : 'Wohnung vermieten: Mieter, Mietbeginn, Miete und Vorauszahlungen eintragen'}
+        onClick={(e) => { e.stopPropagation(); setNeuFuer(r); }}><KeyRound size={13} />{r.nutzung === 'Miete' ? 'Mieter eintragen' : 'Vermieten'}</button>;
   const status = (_: any, r: Row) => (Number(r.soll) || 0) === 0 ? <span className="muted">–</span>
     : r.saldo > 0.005 ? <span className={'pill ' + (r.ist > 0.005 ? 'teil' : 'offen')}>{r.ist > 0.005 ? 'Teilweise' : 'Offen'}</span> : <span className="pill bezahlt">Bezahlt</span>;
   return (
+    <>
     <EntityTable
       title={`Einheiten (${weg ? 'WEG' : 'Miete'}) · Zahlungen ${jahr}`}
       icon={<DoorOpen size={22} />}
@@ -304,7 +394,7 @@ function EinheitenTab({ objektId, weg, onChange }: { objektId: number; weg: bool
         { key: 'wid', label: 'W-ID', computed: true, format: (v: any) => <b className="nowrap">{v}</b> },
         { key: 'nummer', label: 'Nr.', required: true, format: (v) => <b>{v}</b> },
         { key: 'typ', label: 'Bezeichnung', type: 'select', options: EINHEIT_TYPEN, required: true },
-        { key: 'nutzung', label: 'Nutzung', computed: true, format: (v: any) => v === 'Miete' ? <span className="pill künftig">Miete</span>
+        { key: 'nutzung', label: 'Nutzung', computed: true, format: (v: any) => v === 'Miete' ? <span className="pill künftig">{weg ? 'Vermietet' : 'Miete'}</span>
             : v === 'Leerstand' ? <span className="pill offen">Leerstand</span> : <span className="badge">Eigentum</span> },
         { key: 'lage', label: 'Etage / Lage' },
         { key: 'flaeche', label: 'Fläche (m²)', type: 'number', sum: true },
@@ -312,13 +402,16 @@ function EinheitenTab({ objektId, weg, onChange }: { objektId: number; weg: bool
         { key: 'personenzahl', label: 'Personenzahl (ohne Mietvertrag)', type: 'number', hideInTable: true },
         { key: 'personen', label: 'Personen', type: 'number', computed: true, format: (v) => num(v, 0), sum: true },
         { key: 'notiz', label: 'Notiz', type: 'textarea', hideInTable: true },
-        ...(weg ? [{ key: 'eigentuemer', label: 'Eigentümer', computed: true, format: (v: any) => v ?? '–' },
+        ...(weg ? [{ key: 'eigentuemer', label: 'Eigentümer', computed: true, format: eigentuemerZelle },
           { key: 'eig_telefon', label: 'Telefon', computed: true, format: (v: any) => v || '–' },
-          { key: 'eig_email', label: 'E-Mail', computed: true, format: (v: any) => v ? <a href={`mailto:${v}`}>{v}</a> : '–' }] : []),
-        { key: 'mieter', label: 'Mieter (aktuell)', computed: true, format: (v: any) => v ?? <span className="muted">–</span> },
-        { key: 'monat', label: weg ? 'Hausgeld (Soll) / Monat' : 'Miete warm / Monat', type: 'number', computed: true, format: eur, sum: true },
-        ...(weg ? [{ key: 'nk_vz', label: 'NK-VZ Mieter / Monat', type: 'number', computed: true, format: (v: any) => v != null ? eur(v) : '–', sum: true }] : []),
-        { key: 'ist', label: `Zahlungseingang ${jahr}`, type: 'number', computed: true, format: eur, sum: true },
+          { key: 'eig_email', label: 'E-Mail', computed: true, format: (v: any) => v ? <a href={`mailto:${v}`}>{v}</a> : '–' },
+          { key: 'eig_anschrift', label: 'Anschrift Eigentümer', computed: true, format: anschrift },
+          { key: 'vermietet', label: 'Vom Eigentümer vermietet (auch wenn der Mieter hier nicht erfasst ist)', type: 'checkbox', hideInTable: true, wide: true,
+            hinweis: (w: Row) => (w.vermietet ? 'Bitte die Anschrift des Eigentümers eintragen (Spalte „Anschrift Eigentümer“), damit die Post nicht an die Wohnung geht.' : null) }] : []),
+        { key: 'mieter', label: 'Mieter (aktuell)', computed: true, format: mieterZelle },
+        { key: 'monat', label: weg ? 'Hausgeld (Soll) / Monat' : 'Miete warm / Monat', type: 'number', geld: true, computed: true, format: weg ? hausgeldZelle : eur, sum: true },
+        ...(weg ? [{ key: 'nk_vz', label: 'NK-VZ Mieter / Monat', type: 'number', geld: true, computed: true, format: (v: any) => v != null ? eur(v) : '–', sum: true }] : []),
+        { key: 'ist', label: `Zahlungseingang ${jahr}`, type: 'number', geld: true, computed: true, format: eur, sum: true },
         { key: 'saldo', label: 'Offener Saldo', type: 'number', computed: true, sum: true,
           format: (v: any) => <span className={v > 0.005 ? 'neg' : ''}>{eur(v ?? 0)}</span> },
         { key: 'status', label: 'Status', computed: true, format: status },
@@ -327,13 +420,22 @@ function EinheitenTab({ objektId, weg, onChange }: { objektId: number; weg: bool
           ((SELECT o.objekt_nr FROM objekte o WHERE o.id = e.objekt_id) || '-' || substr('00' || COALESCE(e.lfd_nr, 0), -2, 2)) AS wid,
           (SELECT GROUP_CONCAT(${personLabel('p')}, '; ') FROM eigentum ei JOIN personen p ON p.id = ei.person_id
              WHERE ei.einheit_id = e.id AND (ei.bis IS NULL OR ei.bis >= date('now'))) AS eigentuemer,
+          (SELECT GROUP_CONCAT(x, char(30)) FROM (SELECT ei.id || char(31) || ${personLabel('p')} AS x FROM eigentum ei JOIN personen p ON p.id = ei.person_id
+             WHERE ei.einheit_id = e.id AND (ei.bis IS NULL OR ei.bis >= date('now')) ORDER BY COALESCE(ei.anteil, 100) DESC, ei.id)) AS eig_liste,
           (SELECT GROUP_CONCAT(p.telefon, '; ') FROM eigentum ei JOIN personen p ON p.id = ei.person_id
              WHERE ei.einheit_id = e.id AND (ei.bis IS NULL OR ei.bis >= date('now')) AND p.telefon IS NOT NULL) AS eig_telefon,
           (SELECT GROUP_CONCAT(p.email, '; ') FROM eigentum ei JOIN personen p ON p.id = ei.person_id
              WHERE ei.einheit_id = e.id AND (ei.bis IS NULL OR ei.bis >= date('now')) AND p.email IS NOT NULL) AS eig_email,
+          (SELECT GROUP_CONCAT(a, '; ') FROM (SELECT DISTINCT TRIM(p.strasse) || ', ' || TRIM(p.plz) || ' ' || TRIM(p.ort) AS a FROM eigentum ei JOIN personen p ON p.id = ei.person_id
+             WHERE ei.einheit_id = e.id AND (ei.bis IS NULL OR ei.bis >= date('now')) AND TRIM(COALESCE(p.strasse, '')) <> '' AND TRIM(COALESCE(p.plz, '')) <> '' AND TRIM(COALESCE(p.ort, '')) <> '')) AS eig_anschrift,
+          (SELECT COUNT(DISTINCT ei.person_id) FROM eigentum ei WHERE ei.einheit_id = e.id AND (ei.bis IS NULL OR ei.bis >= date('now'))) AS eig_n,
+          (SELECT COUNT(DISTINCT ei.person_id) FROM eigentum ei JOIN personen p ON p.id = ei.person_id WHERE ei.einheit_id = e.id AND (ei.bis IS NULL OR ei.bis >= date('now'))
+             AND (TRIM(COALESCE(p.strasse, '')) = '' OR TRIM(COALESCE(p.plz, '')) = '' OR TRIM(COALESCE(p.ort, '')) = '')) AS eig_ohne,
           (SELECT ${personLabel('p')} FROM mietvertraege v JOIN personen p ON p.id = v.mieter_id WHERE v.einheit_id = e.id AND ${AKTIV()} LIMIT 1) AS mieter,
           (SELECT v.nk_vorauszahlung + v.hk_vorauszahlung FROM mietvertraege v WHERE v.einheit_id = e.id AND ${AKTIV()} LIMIT 1) AS nk_vz,
+          (SELECT h.davon_ruecklage FROM hausgeld h WHERE h.einheit_id = e.id AND h.gueltig_ab <= date('now') ORDER BY h.gueltig_ab DESC LIMIT 1) AS hg_ruecklage,
           CASE WHEN EXISTS (SELECT 1 FROM mietvertraege v WHERE v.einheit_id = e.id AND ${AKTIV()}) THEN 'Miete'
+               WHEN ${weg ? 1 : 0} = 1 AND COALESCE(e.vermietet, 0) = 1 THEN 'Miete'
                WHEN ${weg ? 1 : 0} = 1 THEN 'Eigentum' ELSE 'Leerstand' END AS nutzung,
           COALESCE((SELECT v.personenzahl FROM mietvertraege v WHERE v.einheit_id = e.id AND ${AKTIV()} LIMIT 1), e.personenzahl) AS personen,
           ${weg
@@ -347,18 +449,28 @@ function EinheitenTab({ objektId, weg, onChange }: { objektId: number; weg: bool
       listParams={[objektId]}
       fixed={{ objekt_id: objektId }}
       onChange={onChange}
+      onOpen={oeffnen}
+      version={version}
     />
+    <p className="muted small">{weg ? 'Klick auf den Eigentümer öffnet seine Daten mit Hausgeld und Zahlungen. ' : ''}Klick auf den Mieter öffnet den Mietvertrag, „Vermieten“ legt einen neuen Mieter an. Mit dem Stift rechts änderst du die Daten der Wohnung.</p>
+    {hinweis && <p className="tab-hinweis">{hinweis.text} <button className="link" onClick={() => nav(`/objekte/${objektId}/vertrag/${hinweis.vertrag}`)}>Mietvertrag öffnen (PDF hinterlegen)</button></p>}
+    {neuFuer && objekt && <MieterAnlegen einheit={neuFuer} objekt={objekt} onClose={() => setNeuFuer(null)}
+      onSaved={(vid, text) => { setNeuFuer(null); setHinweis({ text, vertrag: vid }); setVersion((x) => x + 1); onChange(); }} />}
+    {anschriftFuer && <EigentuemerAnschrift einheit={anschriftFuer} vermietet={anschriftFuer.nutzung === 'Miete'} onClose={() => setAnschriftFuer(null)}
+      onSaved={() => { setAnschriftFuer(null); setVersion((x) => x + 1); }} />}
+    </>
   );
 }
 
-const einheitOptions = (objektId: number) => `SELECT e.id AS value, ${einheitLabel('e')} AS label FROM einheiten e WHERE e.objekt_id = ${objektId} ORDER BY e.nummer`;
+const einheitOptions = (objektId: number) => `SELECT e.id AS value, ${einheitLabel('e')} AS label FROM einheiten e WHERE e.objekt_id = ${objektId} ORDER BY e.lfd_nr, e.nummer`;
 
 const ZAHLWEISE: Record<string, string> = { zusammen: 'Hausgeld und Rücklage in einer Summe', getrennt: 'Hausgeld und Rücklage getrennt' };
-const zahlStr = (n: number) => (n ? n.toFixed(2).replace('.', ',') : '');
-const zahlIn = (s: string) => Number(String(s).replace(/\./g, '').replace(',', '.')) || 0;
+const zahlStr = (n: number) => (n ? betragText(n) : '');
+const zahlIn = (s: string) => betragZahl(s) ?? 0;
 
 /** Eigentümer je Einheit mit Hausgeld, Erhaltungsrücklage und Zahlweise (eine Überweisung oder zwei getrennte) */
-function EigentuemerTab({ objektId }: { objektId: number }) {
+function EigentuemerTab({ objektId, nurHausgeld }: { objektId: number; nurHausgeld?: boolean }) {
+  const nav = useNavigate();
   const [standard, setStandard] = useState('zusammen');
   const [rows, setRows] = useState<Row[]>([]);
   const [edit, setEdit] = useState<Record<number, { bew: string; rl: string; zw: string }>>({});
@@ -423,15 +535,15 @@ function EigentuemerTab({ objektId }: { objektId: number }) {
         </div>
         {info && <p className="info">{info}</p>}
         <div className="tablewrap"><table className="list">
-          <thead><tr><th>W-ID</th><th>Einheit</th><th>Eigentümer</th><th className="num">Hausgeld ohne Rücklage €</th><th className="num">Erhaltungsrücklage €</th><th className="num">Hausgeld gesamt</th><th>Zahlweise</th><th>Überweisung</th></tr></thead>
+          <thead><tr><th>W-ID</th><th>Einheit</th><th>Eigentümer</th><th className="num">Hausgeld ohne Rücklage</th><th className="num">Erhaltungsrücklage</th><th className="num">Hausgeld gesamt</th><th>Zahlweise</th><th>Überweisung</th></tr></thead>
           <tbody>{rows.map((r) => {
             const e = edit[r.einheit_id] ?? { bew: '', rl: '', zw: '' };
             const bew = zahlIn(e.bew), rl = zahlIn(e.rl), z = effektiv(e.zw);
             return (
               <tr key={r.einheit_id}>
                 <td className="nowrap"><b>{r.wid}</b></td><td>{r.nummer}</td><td>{r.eigentuemer ?? <span className="muted">kein Eigentümer</span>}</td>
-                <td className="num"><input className="cell" inputMode="decimal" value={e.bew} onChange={(x) => setEdit({ ...edit, [r.einheit_id]: { ...e, bew: x.target.value } })} /></td>
-                <td className="num"><input className="cell" inputMode="decimal" value={e.rl} onChange={(x) => setEdit({ ...edit, [r.einheit_id]: { ...e, rl: x.target.value } })} /></td>
+                <td className="num"><BetragFeld zelle className="cell" value={e.bew} onChange={(x) => setEdit({ ...edit, [r.einheit_id]: { ...e, bew: x.target.value } })} /></td>
+                <td className="num"><BetragFeld zelle className="cell" value={e.rl} onChange={(x) => setEdit({ ...edit, [r.einheit_id]: { ...e, rl: x.target.value } })} /></td>
                 <td className="num"><b>{eur(bew + rl)}</b></td>
                 <td><select className="cell" value={e.zw} disabled={!r.eigentum_id} onChange={(x) => setEdit({ ...edit, [r.einheit_id]: { ...e, zw: x.target.value } })}>
                   <option value="">wie Liegenschaft ({standard === 'getrennt' ? 'getrennt' : 'eine Summe'})</option>
@@ -450,8 +562,9 @@ function EigentuemerTab({ objektId }: { objektId: number }) {
         </div>
         <p className="muted small">Die Tabelle zeigt die Beträge, die am gewählten Datum gelten. Neue Beträge werden ab diesem Datum als neuer Hausgeldsatz gespeichert (frühere Sätze bleiben erhalten). Offene, noch nicht bezahlte Hausgeld-Posten ab diesem Monat werden automatisch neu gestellt.</p>
       </section>
-      <EntityTable
+      {nurHausgeld ? <HausgeldTab objektId={objektId} version={version} onChange={async () => { await hausgeldNeuStellen(objektId, '0000-00'); load(); }} /> : <EntityTable
         title="Eigentümer je Einheit"
+        rowClass={() => 'zeile-eig'}
         icon={<Users size={22} />}
         newLabel="Eigentümer zuordnen"
         table="eigentum"
@@ -459,7 +572,7 @@ function EigentuemerTab({ objektId }: { objektId: number }) {
         fields={[
           { key: 'wid', label: 'W-ID', computed: true, format: (v: any) => <b className="nowrap">{v}</b> },
           { key: 'einheit_id', label: 'Einheit', type: 'select', required: true, optionsSql: einheitOptions(objektId) },
-          { key: 'person_id', label: 'Eigentümer', type: 'select', required: true, optionsSql: personOptions('Eigentümer') },
+          { key: 'person_id', label: 'Eigentümer', type: 'select', required: true, optionsSql: personOptions('Eigentümer'), neuePerson: 'Eigentümer' },
           { key: 'anteil', label: 'Anteil %', type: 'number' },
           { key: 'von', label: 'Eigentümer seit', type: 'date' },
           { key: 'bis', label: 'bis (Verkauf)', type: 'date' },
@@ -473,29 +586,33 @@ function EigentuemerTab({ objektId }: { objektId: number }) {
           WHERE e.objekt_id = $1 ORDER BY e.lfd_nr, e.nummer, ei.von DESC`}
         listParams={[objektId]}
         onChange={load}
+        onOpen={(r) => nav(`/objekte/${objektId}/eigentum/${r.id}`)}
         emptyText="Noch keine Eigentümer zugeordnet. Eigentümer legst du zuerst unter „Personen“ an."
-      />
+      />}
     </>
   );
 }
 
-function HausgeldTab({ objektId }: { objektId: number }) {
+/** Verlauf aller Hausgeldsätze je Einheit. Änderungen hier stellen offene Hausgeld-Posten neu. */
+function HausgeldTab({ objektId, version, onChange }: { objektId: number; version: number; onChange: () => void }) {
   return (
     <EntityTable
-      title="Hausgeldplan je Einheit"
+      title="Verlauf der Hausgeldsätze je Einheit"
+      version={version}
+      onChange={onChange}
       icon={<Wallet size={22} />}
       newLabel="Hausgeld eintragen"
       table="hausgeld"
       fields={[
         { key: 'einheit_id', label: 'Einheit', type: 'select', required: true, optionsSql: einheitOptions(objektId) },
         { key: 'gueltig_ab', label: 'Gültig ab', type: 'date', required: true },
-        { key: 'betrag', label: 'Hausgeld gesamt / Monat (inkl. Rücklage)', type: 'number', required: true, format: eur },
-        { key: 'davon_ruecklage', label: 'davon Erhaltungsrücklage', type: 'number', format: eur },
+        { key: 'betrag', label: 'Hausgeld gesamt / Monat (inkl. Rücklage)', type: 'number', geld: true, required: true, format: eur },
+        { key: 'davon_ruecklage', label: 'davon Erhaltungsrücklage', type: 'number', geld: true, format: eur },
       ]}
       listSql={`SELECT h.*, e.nummer AS einheit_id_label FROM hausgeld h JOIN einheiten e ON e.id = h.einheit_id
-        WHERE e.objekt_id = $1 ORDER BY e.nummer, h.gueltig_ab DESC`}
+        WHERE e.objekt_id = $1 ORDER BY e.lfd_nr, e.nummer, h.gueltig_ab DESC`}
       listParams={[objektId]}
-      emptyText="Noch kein Hausgeld eingetragen. Bei einer Änderung trägst du einfach einen neuen Betrag mit neuem Datum ein."
+      emptyText="Noch kein Hausgeld eingetragen. Trage die Beträge oben mit „Beträge gültig ab“ ein."
     />
   );
 }

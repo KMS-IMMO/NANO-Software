@@ -5,9 +5,17 @@ import { useObjektKontext } from '../logic/objektKontext';
 import { datum, eur } from '../components/EntityTable';
 import { OP_SQL } from '../logic/soll';
 import { Brief, absender, dDatum, geld } from '../lib/pdf';
-import { oeffnen, speichern } from '../lib/dateien';
+import { lesen, oeffnen, speichern } from '../lib/dateien';
+import { Mail } from 'lucide-react';
+import { MailFenster, personWerte, type MailStart } from '../components/MailFenster';
 
 export const STUFEN = ['', 'Zahlungserinnerung', '1. Mahnung', '2. Mahnung'];
+/** Mietrecht: ersatzfähig sind nur die tatsächlichen Kosten eines Mahnschreibens (Porto, Material), keine Pauschale für Arbeitszeit.
+ *  Die Rechtsprechung erkennt meist 1 bis 2,50 € an. Höhere Gebühren werden bei Mietern auf diesen Betrag begrenzt. */
+export const MIETE_GEBUEHR_MAX = 2.5;
+export const GEBUEHR_HINWEIS = 'Mieter: Verlangt werden darf nur der tatsächliche Aufwand eines Mahnschreibens (Porto, Material), keine Pauschale für Arbeitszeit. '
+  + 'Gerichte erkennen meist 1 bis 2,50 € an, NEOSS setzt bei Mietern deshalb höchstens 2,50 € je Mahnung an. '
+  + 'Eigentümer (WEG): Mahngebühren dürfen nur verlangt werden, wenn die Gemeinschaft sie beschlossen hat.';
 const heute = () => new Date().toISOString().slice(0, 10);
 const plusTage = (n: number) => { const d = new Date(); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); };
 
@@ -23,6 +31,21 @@ export function MahnungenPage() {
 
   const [verlauf, setVerlauf] = useState<Row[]>([]);
   const [vFilter, setVFilter] = useState<'alle' | 'offen' | 'beglichen'>('alle');
+  const [mail, setMail] = useState<MailStart | null>(null);
+
+  /** Mahnung als E-Mail über Outlook senden, das PDF hängt an */
+  async function alsMail(v: Row) {
+    setInfo('');
+    const p = await personWerte(v.person_id);
+    const bytes = v.pfad ? await lesen(v.pfad) : null;
+    const name = String(v.pfad ?? '').split(/[\\/]/).pop() || `${STUFEN[v.stufe]}.pdf`;
+    setMail({
+      an: p.an, vorlage: 'Mahnung', dateien: bytes ? [{ name, bytes }] : [],
+      werte: { ...p.werte, Name: p.name || v.schuldner, Mahnstufe: STUFEN[v.stufe], Objekt: v.objekt ?? '', Einheit: v.einheit ?? '', Betrag: eur(v.betrag + (Number(v.gebuehr) || 0)), Frist: datum(v.frist) },
+      akte: v.person_id ? { person_id: v.person_id, objekt_id: v.objekt_id, name: p.name || v.schuldner } : null,
+    });
+    if (!p.an) setInfo(`Für ${v.schuldner} ist keine E-Mail-Adresse hinterlegt. Bitte im Fenster eintragen oder in den Stammdaten ergänzen.`);
+  }
   const load = async () => {
     // Alle erstellten Mahnungen; beglichen, sobald alle gemahnten Posten bezahlt sind
     const mv = await db.select(`SELECT m.*, o.name AS objekt, e.nummer AS einheit FROM mahnungen m LEFT JOIN objekte o ON o.id = m.objekt_id LEFT JOIN einheiten e ON e.id = m.einheit_id
@@ -49,7 +72,7 @@ export function MahnungenPage() {
     try {
       const stufe = Math.min(f.stufe + 1, 3);
       const e = Object.fromEntries((await db.select('SELECT * FROM einstellungen')).map((r) => [r.schluessel, r.wert ?? '']));
-      const gebuehr = Number(String(e[`mahnung_gebuehr_${stufe}`] ?? '0').replace(',', '.')) || 0;
+      const gebuehrRoh = Number(String(e[`mahnung_gebuehr_${stufe}`] ?? '0').replace(',', '.')) || 0;
       const frist = plusTage(Number(e.mahnung_frist_tage) || 14);
       const p = (await db.select('SELECT * FROM personen WHERE id = $1', [f.person_id]))[0] ?? {};
       const bank = (await db.select('SELECT * FROM bankkonten WHERE objekt_id = $1 LIMIT 1', [f.objekt_id]))[0];
@@ -59,6 +82,7 @@ export function MahnungenPage() {
       const name = [p.anrede === 'Firma' ? '' : p.anrede, p.titel, p.vorname, p.nachname].filter(Boolean).join(' ');
       brief.kopf([p.firma, name, p.strasse, [p.plz, p.ort].filter(Boolean).join(' ')], heute());
       const was = f.verwaltungsart === 'WEG' && f.posten.every((x) => x.art === 'Hausgeld' || x.art === 'Rücklage') ? 'Hausgeld' : 'Miete';
+      const gebuehr = was === 'Miete' ? Math.min(gebuehrRoh, MIETE_GEBUEHR_MAX) : gebuehrRoh;
       brief.betreff(`${STUFEN[stufe]}: ${o.name}, Einheit ${f.einheit}`);
       const anrede = p.anrede === 'Frau' ? `Sehr geehrte Frau ${p.nachname},` : p.anrede === 'Herr' ? `Sehr geehrter Herr ${p.nachname},` : 'Sehr geehrte Damen und Herren,';
       brief.absatz(anrede);
@@ -110,6 +134,7 @@ export function MahnungenPage() {
           <label className="inline">Überfällig seit mehr als <input type="number" min={0} style={{ width: 70 }} value={tage} onChange={(e) => setTage(Number(e.target.value) || 0)} /> Tagen</label>
           <span className="muted small">Gebühren und Zahlungsfrist stellst du unter Einstellungen ein.</span>
         </div>
+        <p className="muted small" style={{ marginTop: 8 }}>{GEBUEHR_HINWEIS}</p>
         {info && <p className="info">{info}</p>}
       </section>
       <section className="card">
@@ -148,9 +173,11 @@ export function MahnungenPage() {
                 <td className="num">{eur(v.betrag + (Number(v.gebuehr) || 0))}{v.gebuehr ? <div className="muted small">inkl. {eur(v.gebuehr)} Gebühr</div> : null}</td>
                 <td className={'num ' + (v.beglichen ? '' : 'neg')}>{eur(v.rest)}</td>
                 <td><span className={'pill st-' + (v.beglichen ? 'beglichen' : 'offen')}>{v.beglichen ? 'beglichen' : 'offen'}</span></td>
-                <td className="actions">{v.pfad && <button className="link" onClick={() => oeffnen(v.pfad)}>PDF öffnen</button>}</td>
+                <td className="actions nowrap">{v.pfad && <button className="link" onClick={() => oeffnen(v.pfad)}>PDF öffnen</button>}
+                  {' '}<button className="link" title="Über Outlook als E-Mail senden" onClick={() => alsMail(v)}><Mail size={14} />Als E-Mail</button></td>
               </tr>))}</tbody>
           </table>)}
+        {mail && <MailFenster start={mail} onClose={() => setMail(null)} onGesendet={setInfo} />}
         <p className="muted small">Der Status springt automatisch auf „beglichen“, sobald die gemahnten Posten bezahlt sind, egal ob per Bankzuordnung oder von Hand.</p>
       </section>
     </>

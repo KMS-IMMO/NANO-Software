@@ -1,4 +1,4 @@
-//! Verbindung zum NANO-Server (Mehrplatz). Die Anfragen laufen über Rust, damit http:// im Büronetz
+//! Verbindung zum NEOSS-Server (Mehrplatz). Die Anfragen laufen über Rust, damit http:// im Büronetz
 //! auch unter macOS funktioniert (WebView blockiert sonst gemischte Inhalte).
 use std::time::Duration;
 

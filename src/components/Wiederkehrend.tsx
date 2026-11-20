@@ -28,7 +28,7 @@ export function Wiederkehrend({ objektId, onChange }: { objektId?: number; onCha
           { key: 'text', label: 'Bezeichnung', required: true, wide: true },
           { key: 'firma_id', label: 'Unternehmen', type: 'select', optionsSql: 'SELECT id AS value, name AS label FROM firmen ORDER BY name' },
           { key: 'buchungskonto_id', label: 'Buchungskonto', type: 'select', required: true, optionsSql: kontoOptions("art = 'Aufwand'") },
-          { key: 'betrag', label: 'Betrag brutto', type: 'number', required: true, format: (x) => eur(Number(x)) },
+          { key: 'betrag', label: 'Betrag brutto', type: 'number', geld: true, required: true, format: (x) => eur(Number(x)) },
           { key: 'intervall', label: 'Rhythmus', type: 'select', required: true, options: INTERVALLE, format: (x) => INTERVALLE.find((i) => i.value === Number(x))?.label ?? x },
           { key: 'naechste', label: 'Nächste Rechnung am', type: 'date', required: true, format: (x) => datum(x) },
           { key: 'zahlungsziel', label: 'Zahlungsziel in Tagen (leer = 14)', type: 'number', hideInTable: true },
@@ -42,7 +42,7 @@ export function Wiederkehrend({ objektId, onChange }: { objektId?: number; onCha
         newLabel="Neue wiederkehrende Ausgabe"
       />
       <div className="row"><button onClick={jetzt}><Repeat size={16} />Fällige jetzt anlegen</button>{info && <span className="info" style={{ margin: 0 }}>{info}</span>}
-        <span className="muted small">NANO legt fällige Rechnungen auch bei jedem Start automatisch an.</span></div>
+        <span className="muted small">NEOSS legt fällige Rechnungen auch bei jedem Start automatisch an.</span></div>
     </>
   );
 }

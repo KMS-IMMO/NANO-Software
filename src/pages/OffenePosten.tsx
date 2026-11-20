@@ -21,10 +21,10 @@ export function OffenePostenPage() {
   const [objekt, setObjekt] = useState(fix ? String(fix.id) : '');
   const [gruppe, setGruppe] = useState<Gruppierung>(fix ? 'Schuldner' : 'Objekt');
 
-  const load = async () => setRows(await db.select(`${OP_SQL} ORDER BY s.faellig DESC, o.name, e.nummer`));
+  const load = async () => setRows(await db.select(`${OP_SQL} ORDER BY s.faellig DESC, o.name, e.lfd_nr, e.nummer`));
   useEffect(() => { load(); }, []);
 
-  async function zahlung(r: Row) { await zahlungBuchen(r); load(); }
+  async function zahlung(r: Row) { try { await zahlungBuchen(r); } catch (e) { window.alert(String((e as Error)?.message ?? e)); } load(); }
   const basisPfad = fix ? `/objekte/${fix.id}` : '';
 
   const objekte = useMemo(() => [...new Map(rows.map((r) => [r.objekt_id, r.objekt])).entries()], [rows]);
