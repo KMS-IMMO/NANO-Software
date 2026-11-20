@@ -54,7 +54,7 @@ export function VersammlungListe({ objektId, umlauf }: { objektId: number; umlau
   };
   useEffect(() => { laden(); }, [objektId, umlauf]);
   async function loeschen(r: Row) {
-    if (!confirm(`${r.art} vom ${dDatum(r.datum)} löschen? Beschlüsse in der Beschluss-Sammlung bleiben erhalten.`)) return;
+    if (!confirm(`${r.art} vom ${dDatum(r.datum)} löschen?${r.status === 'Durchgeführt' ? ' Die Versammlung ist bereits durchgeführt.' : ''} Beschlüsse in der Beschluss-Sammlung bleiben erhalten. Die Versammlung liegt danach im Papierkorb.`)) return;
     await inPapierkorb('versammlungen', r.id, 'Eigentümerversammlung', `${r.art} vom ${dDatum(r.datum)}`); laden();
   }
   return (
@@ -74,13 +74,16 @@ export function VersammlungListe({ objektId, umlauf }: { objektId: number; umlau
         <div className="card-head"><h2 className="title-ico"><CalendarDays size={22} />{umlauf ? 'Umlaufbeschlüsse' : 'Versammlungen'}</h2><span className="muted small">Klick öffnet die Versammlung</span></div>
         {rows.length === 0 ? <p className="muted">Noch nichts angelegt. Mit „{umlauf ? 'Umlaufbeschluss starten' : 'Versammlung einberufen'}“ geht es los.</p> : (
           <div className="tablewrap"><table className="list">
-            <thead><tr><th>Datum</th><th>Art</th><th>Ort</th><th className="num">TOPs</th><th className="num">Beschlüsse</th><th>Stand</th><th /></tr></thead>
+            <thead><tr><th>Datum</th><th>Art</th><th>Ort</th><th className="num">TOPs</th><th className="num">Beschlüsse</th><th>Stand</th><th className="num">Aktionen</th></tr></thead>
             <tbody>{rows.map((r) => (
               <tr key={r.id} className="clickable" onClick={() => nav(`/objekte/${objektId}/versammlungen/${r.id}`)}>
                 <td><b>{fDatum(r.datum)}</b>{r.uhrzeit ? ` ${r.uhrzeit}` : ''}</td><td>{r.art}</td><td>{[r.ort, r.online ? 'online' : ''].filter(Boolean).join(' + ') || '–'}</td>
                 <td className="num">{r.tops}</td><td className="num">{r.beschl || '–'}</td>
                 <td><span className={'pill ' + (STATUS_PILL[r.status] ?? '')}>{r.status}</span></td>
-                <td className="num" onClick={(e) => e.stopPropagation()}>{r.status !== 'Durchgeführt' && <button className="icon-btn" title="Löschen" onClick={() => loeschen(r)}><Trash2 size={15} /></button>}</td>
+                <td className="num ev-aktionen" onClick={(e) => e.stopPropagation()}>
+                  <button className="icon-btn" title={r.status === 'Durchgeführt' ? 'Öffnen (durchgeführt, Termin und TOPs sind fest)' : 'Bearbeiten: Termin, Ort und TOPs'}
+                    onClick={() => nav(`/objekte/${objektId}/versammlungen/${r.id}${r.status === 'Durchgeführt' ? '' : '/bearbeiten'}`)}><Pencil size={15} /></button>
+                  <button className="icon-btn" title="Löschen" onClick={() => loeschen(r)}><Trash2 size={15} /></button></td>
               </tr>))}</tbody></table></div>)}
       </section>
     </div>

@@ -200,3 +200,4 @@ html[data-theme="dunkel"] .ev-tablet { background: linear-gradient(145deg, #2a2f
 .ev-verlauf summary { cursor: pointer; color: var(--muted); padding: 4px 0; }
 .ev-verlauf .ev-notiz { margin-top: 6px; }
 html[data-theme="dunkel"] .ev-vorlesen { background: linear-gradient(135deg, rgba(212,168,92,.12), rgba(212,168,92,.03)); }
+.ev-aktionen { white-space: nowrap; } .ev-aktionen .icon-btn + .icon-btn { margin-left: 4px; }
