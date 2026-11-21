@@ -160,6 +160,7 @@ export function BuchenDialog({ vorlage, onClose, onSaved }: { vorlage: BuchenVor
   const [teile, setTeile] = useState<Teil[]>([]);              // leer = ein Konto, sonst Splittbuchung
   const [aktiv, setAktiv] = useState(0);                       // Teil, dessen Konto das Rad gerade setzt
   const [merken, setMerken] = useState(false);
+  const [bar, setBar] = useState(false);                       // ohne Bankumsatz: bar bezahlt bzw. ohne Bankkonto
   const [vorgeschlagen, setVorgeschlagen] = useState('');
   const rgRef = useRef<HTMLInputElement>(null);
 
@@ -276,7 +277,7 @@ export function BuchenDialog({ vorlage, onClose, onSaved }: { vorlage: BuchenVor
     try {
       const vz = u ? Math.sign(u.betrag) || -1 : richtung === 'Einnahme' ? 1 : -1;
       const basis = { datum, objekt_id: Number(objekt), buchungskonto_id: konto, text: text.trim() || null, jahr: jahr === jahrNr ? null : jahr,
-        rechnungsnr: rechnungsnr.trim() || null, bankumsatz_id: u?.id ?? null };
+        rechnungsnr: rechnungsnr.trim() || null, bankumsatz_id: u?.id ?? null, zahlweg: !u && bar ? 'bar' : null };
       if (split) {
         // Jeder Teil auf sein Konto; bei mehreren Einheiten wird jeder Teil im Verhältnis der Einheiten-Beträge verteilt
         const gew = wahl.length > 1 ? wahl.map((id) => zahl(anteile[id] ?? '')) : [1];
@@ -324,6 +325,9 @@ export function BuchenDialog({ vorlage, onClose, onSaved }: { vorlage: BuchenVor
               <label><span>Datum</span><DatumFeld value={datum} onChange={(e) => { setDatum(e.target.value); const j = Number(e.target.value.slice(0, 4)); if (j) setJahr(j); }} /></label>
               <label><span>Betrag</span><BetragFeld autoFocus value={betrag} onChange={(e) => { setBetrag(e.target.value); setAnteile({}); setWahl([]); }} /></label>
               <label className="grow"><span>Buchungstext</span><input value={text} onChange={(e) => setText(e.target.value)} /></label>
+              <label><span>Bezahlt über</span><div className="seg bf-zahlweg">
+                <button className={!bar ? 'on' : ''} onClick={() => setBar(false)} title="Der Betrag läuft über das Bankkonto der Liegenschaft. Bis der Kontoumsatz da ist, steht die Buchung rot als „ohne Kontoumsatz“.">Bankkonto</button>
+                <button className={bar ? 'on' : ''} onClick={() => setBar(true)} title="Barzahlung, Umbuchung oder Verrechnung: zählt nicht im Kontostand und wird nicht als fehlender Kontoumsatz gemeldet">Bar / ohne Bank</button></div></label>
             </div>}
 
         <div className="bf-schritt" style={{ animationDelay: '.05s' }}>

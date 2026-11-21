@@ -911,4 +911,8 @@ CREATE TABLE kontoabgleich (
   `
 ALTER TABLE versammlung_tops ADD COLUMN beschluss_text TEXT;
 `,
+  // 36: Einnahmen & Ausgaben mit Kontostand – Buchung bewusst ohne Bankkonto (bar, Umbuchung, Verrechnung): zählt nicht als „ohne Kontoumsatz“
+  `
+ALTER TABLE buchungen ADD COLUMN zahlweg TEXT;
+`,
 ];

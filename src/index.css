@@ -1521,3 +1521,35 @@ a.person-chip.klick:hover { border-color: var(--accent); color: var(--accent-dar
 @media (max-width: 760px) { .et-abschnitte { grid-template-columns: 1fr; } .et-abschnitt:first-child .form { grid-template-columns: 1fr 1fr; } }
 .datum-feld input.datum-eingabe { text-align: left; }
 td .datum-feld { min-width: 0; } td .datum-feld input.cell { width: 140px; }
+
+/* ===== Einnahmen & Ausgaben: Kontostand-Leiste, Bankstatus, Kontoumsätze ===== */
+.ks-leiste { position: sticky; top: 76px; z-index: 4; display: grid; grid-template-columns: repeat(3, minmax(150px, auto)) 1fr; gap: 6px 26px; align-items: center;
+  background: rgba(255,255,255,.94); backdrop-filter: blur(10px); border: 1px solid var(--line); border-radius: 16px; padding: 12px 18px; margin: 0 0 16px;
+  box-shadow: var(--shadow); transition: box-shadow .3s var(--weich), border-color .3s; }
+.ks-leiste.frisch { border-color: #e2c48d; box-shadow: 0 0 0 4px rgba(176,138,74,.16), var(--shadow); }
+.ks-leiste.ks-leer { display: flex; gap: 10px; position: static; }
+.ks-wert span { display: block; font-size: 12px; color: var(--muted); }
+.ks-wert b { display: block; font-size: 20px; letter-spacing: -.3px; margin: 2px 0; }
+.ks-wert small { font-size: 11.5px; color: var(--muted); }
+.ks-diff.ok b { color: var(--pos); } .ks-diff.nein b { color: var(--neg); }
+.ks-gruende { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+.ks-chip { font-size: 12px; border-radius: 10px; padding: 4px 10px; border: 1px solid transparent; cursor: pointer; white-space: nowrap; font-weight: 500; }
+.ks-chip.rot { background: #fdecea; color: #c0392b; } .ks-chip.gelb { background: #fff4dc; color: #a66a00; }
+.ks-chip.grau { background: #eef0f3; color: #6b6f76; } .ks-chip.gruen { background: #e7f3e8; color: #2e7d32; cursor: default; }
+.ks-chip.an { border-color: currentColor; box-shadow: 0 0 0 3px rgba(176,138,74,.14); }
+.ks-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-top: 4px; }
+.ks-dot.gruen { background: #2e7d32; box-shadow: 0 0 0 3px #e7f3e8; } .ks-dot.rot { background: #c0392b; box-shadow: 0 0 0 3px #fdecea; }
+.ks-dot.gelb { background: #e0a21b; box-shadow: 0 0 0 3px #fff4dc; } .ks-dot.grau { background: #c9c4ba; } .ks-dot.leer { background: transparent; border: 1px solid #d9d3c8; }
+th.ks-dot-sp { width: 26px; }
+tr.ks-rot > td { background: #fff8f7; } tr.ks-gelb > td { background: #fffcf3; }
+.ks-hinweis { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; background: #fff4dc; border: 1px solid #f0d9a6; border-radius: 12px; padding: 10px 12px; color: #8a5a00; font-size: 13px; }
+.ks-hinweis b { color: #6e4800; }
+.pill.ks-pill-gruen { background: #e7f3e8; color: #2e7d32; } .pill.ks-pill-rot { background: #fdecea; color: #c0392b; }
+.pill.ks-pill-gelb { background: #fff4dc; color: #a66a00; } button.pill.ks-pill-grau { background: #eef0f3; color: #6b6f76; border: 0; padding: 2px 9px; cursor: pointer; }
+.ks-filterinfo { font-size: 12.5px; color: var(--accent-dark); }
+.ku-start td { background: var(--head); }
+.ku-summe { display: flex; gap: 30px; flex-wrap: wrap; margin-top: 12px; padding: 12px 16px; border-radius: 12px; background: #fbfaf8; border: 1px solid var(--line); }
+.ku-summe span { display: block; font-size: 12px; color: var(--muted); } .ku-summe b { font-size: 16px; }
+.zuordnen .hinweis-schon { background: #fff4dc; border: 1px solid #f0d9a6; border-radius: 10px; padding: 8px 10px; color: #8a5a00; font-size: 12.5px; }
+.bf-zahlweg button { padding: 6px 10px; font-size: 12.5px; }
+@media (max-width: 1100px) { .ks-leiste { grid-template-columns: repeat(3, 1fr); } .ks-gruende { grid-column: 1 / -1; justify-content: flex-start; } }

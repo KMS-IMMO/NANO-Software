@@ -8,7 +8,7 @@ import { objektPersonenSql, personOptions } from '../db/labels';
 import { datum, eur } from './EntityTable';
 import { BuchenDialog } from './BuchenDialog';
 import { MehrfachZuordnen } from './MehrfachZuordnen';
-import { umsaetzeLoeschen, vorschlag, zuordnenKonto, zuordnenPerson, zuordnenRechnung, type Vorschlag } from '../logic/bank';
+import { umsaetzeLoeschen, vorschlag, zuordnenPerson, zuordnenVorschlag, type Vorschlag } from '../logic/bank';
 
 type Opt = { value: number; label: string; gruppe?: string; aktiv?: number };
 
@@ -60,7 +60,7 @@ export function OffeneUmsaetze({ objektId, version, onChange }: { objektId: numb
       const v = vorschlaege[u.id] ?? await vorschlag(u);
       if (!v) continue;
       try {
-        if (v.art === 'person') await zuordnenPerson(u, v.id); else if (v.art === 'konto') await zuordnenKonto(u, v.id); else await zuordnenRechnung(u, v.id);
+        await zuordnenVorschlag(u, v);
         n++;
       } catch { gesperrt++; }   // Jahr abgeschlossen: Umsatz bleibt offen
     }
@@ -134,10 +134,16 @@ export function Zuordnen({ u, v, done, buchen }: { u: Row; v?: Vorschlag | null;
   }
   return (
     <div className="zuordnen">
-      {v && (
+      {v?.art === 'buchung' && (
+        <div className="row hinweis-schon">
+          <span><b>Diese Zahlung ist schon gebucht:</b> {v.label.replace(/ verbinden$/, '')}, aber noch ohne Kontoumsatz. Verbinden statt ein zweites Mal buchen.</span>
+          <button className="primary small-btn" onClick={() => ausfuehren(() => zuordnenVorschlag(u, v))}>Verbinden</button>
+        </div>
+      )}
+      {v && v.art !== 'buchung' && (
         <div className="row">
           <span className="vorschlag">Vorschlag: <b>{v.label}</b> <span className="muted small">({v.grund})</span></span>
-          <button className="primary small-btn" onClick={() => ausfuehren(async () => { if (v.art === 'person') await zuordnenPerson(u, v.id); else if (v.art === 'konto') await zuordnenKonto(u, v.id); else await zuordnenRechnung(u, v.id); })}>Übernehmen</button>
+          <button className="primary small-btn" onClick={() => ausfuehren(() => zuordnenVorschlag(u, v))}>Übernehmen</button>
         </div>
       )}
       <div className="row">
