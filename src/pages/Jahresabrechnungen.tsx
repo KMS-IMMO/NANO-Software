@@ -8,6 +8,7 @@ import { wid } from '../db/labels';
 import { AbrechnungsUebersicht } from '../components/AbrechnungsUebersicht';
 import { SchluesselWahl, schluesselText } from '../components/SchluesselWahl';
 import { AbschlussKarte } from '../components/AbschlussKarte';
+import { AbschlussListe } from '../components/AbschlussListe';
 import { KontoabgleichKarte } from '../components/KontoabgleichKarte';
 import { ZahlungenOhnePostenKarte } from '../components/ZahlungenOhnePostenKarte';
 import { zahlungenOhnePosten, type ZahlungOhnePosten } from '../logic/zahlungenOhnePosten';
@@ -330,6 +331,8 @@ export function WegAbrechnungPage() {
         <div className="kpi"><span>Erhaltungsrücklage 31.12.</span><b>{eur(verm.ruecklage ?? 0)}</b><small>Ist {eur(verm.ruecklageIst ?? 0)} · Zuführung {eur(verm.zufJahr ?? 0)}</small></div>
         <div className="kpi"><span>Summe Abrechnungsspitzen</span><b className={farbe(erg.reduce((a, r) => a + r.spitze, 0))}>{eur(erg.reduce((a, r) => a + r.spitze, 0))}</b></div>
       </div>
+      {objekt !== '' && <AbschlussListe objekt={Number(objekt)} art="WEG" jahr={jahr} stand={stand} onJahr={setJahr}
+        onGeloescht={(j, t) => { setJahr(j); setInfo(t); setStand((x) => x + 1); }} />}
       {objekt !== '' && o && <AbschlussKarte objekt={Number(objekt)} jahr={jahr} art="WEG" stand={stand} ordner={[o.name, 'WEG-Jahresabrechnung', String(jahr)]}
         extra={[
           { ok: erg.length > 0, sperrt: true, text: 'Eigentümer und Einheiten für das Jahr vorhanden' },
