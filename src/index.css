@@ -1599,3 +1599,8 @@ tr.rl-aktiv > td { background: var(--accent-soft); }
 .rl-vorschlag { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; margin-top: 10px; }
 @media (max-width: 1100px) { .ks-leiste.rl-leiste { grid-template-columns: repeat(2, 1fr); } .rl-grid { grid-template-columns: 1fr; } }
 @media (max-width: 640px) { .rl-felder { grid-template-columns: 1fr; } }
+
+/* Offene Bankumsätze: Reiter „Noch zu buchen“ / „Ignoriert“ */
+.ou-reiter { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin: 0 0 12px; }
+.ou-reiter .seg button { display: inline-flex; align-items: center; gap: 6px; }
+tr.ou-ignoriert td:nth-child(n+2):not(:last-child) { color: var(--muted, #8a8580); }
