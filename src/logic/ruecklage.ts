@@ -69,3 +69,100 @@ export async function ruecklageZeitraum(objektId: number, von: string, bis: stri
   // Sonderzuführungen (Konto 1260) gehören wie im Vermögensbericht zum Bestand
   return { vorTag, anfangsbestand, uebernahme, ...b, bestand: anfangsbestand + uebernahme + b.zufuehrung + b.sonder - b.entnahme + b.zinsen };
 }
+
+/* ---------- Rücklagenkonto laut Kontoauszug (Anfangs- und Endbestand von Hand je Jahr) ----------
+   Anfangsbestand 01.01. und Endbestand (zum Datum des letzten Auszugs, am Jahresende 31.12.) werden von Hand vom Kontoauszug des Rücklagenkontos
+   übernommen. Verglichen wird mit dem Stand laut Buchungen: tatsächlich eingezahlte Zuführungen + Sonderzuführungen − Entnahmen + Zinsen.
+   Ist ein Anfangsbestand eingegeben, beginnt der Stand laut Buchungen damit (wie der Stand 01.01. bei Einnahmen & Ausgaben); die Differenz
+   am Ende zeigt dann nur, was im Jahr auf dem Auszug steht, aber nicht gebucht ist (oder umgekehrt). */
+
+const r2 = (n: number) => Math.round(n * 100) / 100;
+
+export interface RuecklageAuszug { anfang: number | null; anfangAuszug: string; ende: number | null; endeDatum: string; endeAuszug: string }
+
+export async function auszugLesen(objektId: number, jahr: number): Promise<RuecklageAuszug> {
+  const r = (await db.select('SELECT * FROM ruecklage_auszug WHERE objekt_id = $1 AND jahr = $2', [objektId, jahr]))[0];
+  return {
+    anfang: r?.anfang == null ? null : r2(Number(r.anfang)), anfangAuszug: r?.anfang_auszug ?? '',
+    ende: r?.ende == null ? null : r2(Number(r.ende)), endeDatum: r?.ende_datum ?? '', endeAuszug: r?.ende_auszug ?? '',
+  };
+}
+
+export async function auszugSpeichern(objektId: number, jahr: number, a: RuecklageAuszug) {
+  if (a.ende !== null && !a.endeDatum) throw new Error('Bitte das Datum des Endbestands angeben.');
+  if (a.endeDatum && !a.endeDatum.startsWith(String(jahr))) throw new Error(`Das Datum des Endbestands muss im Jahr ${jahr} liegen.`);
+  if ([a.anfang, a.ende].some((n) => n !== null && !Number.isFinite(n))) throw new Error('Ein Betrag ist keine Zahl.');
+  if (a.anfang === null && a.ende === null) { await db.execute('DELETE FROM ruecklage_auszug WHERE objekt_id = $1 AND jahr = $2', [objektId, jahr]); return; }
+  await db.execute(`INSERT INTO ruecklage_auszug (objekt_id, jahr, anfang, anfang_auszug, ende, ende_datum, ende_auszug, erfasst_am)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, datetime('now', 'localtime'))
+    ON CONFLICT (objekt_id, jahr) DO UPDATE SET anfang = excluded.anfang, anfang_auszug = excluded.anfang_auszug, ende = excluded.ende,
+      ende_datum = excluded.ende_datum, ende_auszug = excluded.ende_auszug, erfasst_am = excluded.erfasst_am`,
+  [objektId, jahr, a.anfang === null ? null : r2(a.anfang), a.anfangAuszug || null, a.ende === null ? null : r2(a.ende), a.ende === null ? null : a.endeDatum, a.endeAuszug || null]);
+}
+
+/** Tatsächlicher Stand der Rücklage (gezahlte Zuführungen) am Stichtag bis, ohne Eingaben laut Kontoauszug */
+export async function ruecklageIstStand(objektId: number, bis: string): Promise<number> {
+  const { anfang, stichtag } = await basis(objektId);
+  if (bis < stichtag) return 0;
+  const b = await bewegungen(objektId, stichtag, bis);
+  return r2(anfang + b.zufuehrungIst + b.sonder - b.entnahme + b.zinsen);
+}
+
+/** Bankkonto der Liegenschaft, das nach Rücklagenkonto heißt (für Vorschläge aus den Kontoumsätzen und offene Umsätze) */
+export async function ruecklagenBankkonto(objektId: number) {
+  const k = await db.select('SELECT * FROM bankkonten WHERE objekt_id = $1 ORDER BY id', [objektId]);
+  return k.find((x) => /r(ü|ue)cklage|erhaltungsr/i.test(`${x.name ?? ''}`)) ?? null;
+}
+
+/** Abgleich eines Jahres: Buchungen gegen Kontoauszug */
+export async function ruecklageAbgleich(objektId: number, jahr: number) {
+  const a = await auszugLesen(objektId, jahr);
+  const { anfang: ueb, stichtag } = await basis(objektId);
+  const start = `${jahr - 1}-12-31`;
+  const bis = a.ende !== null && a.endeDatum ? a.endeDatum : `${jahr}-12-31`;
+  const anfangBuchungen = await ruecklageIstStand(objektId, start);   // Endstand Vorjahr laut Buchungen
+  const uebernahme = a.anfang === null && stichtag > start && stichtag <= bis ? ueb : 0;
+  const ab = a.anfang === null && stichtag > start ? stichtag : start;
+  const b = bis < stichtag ? { zufuehrung: 0, zufuehrungIst: 0, sonder: 0, entnahme: 0, zinsen: 0 } : await bewegungen(objektId, ab, bis);
+  const startWert = a.anfang ?? anfangBuchungen;
+  const endeBuchungen = r2(startWert + uebernahme + b.zufuehrungIst + b.sonder - b.entnahme + b.zinsen);
+  const bank = await ruecklagenBankkonto(objektId);
+  let offen = 0, offenSumme = 0;
+  if (bank) {
+    const r = (await db.select(`SELECT COUNT(*) AS n, COALESCE(SUM(betrag), 0) AS s FROM bankumsaetze WHERE bankkonto_id = $1 AND status = 'offen' AND datum >= $2 AND datum <= $3`,
+      [bank.id, `${jahr}-01-01`, bis]))[0];
+    offen = Number(r?.n) || 0; offenSumme = r2(Number(r?.s) || 0);
+  }
+  return {
+    auszug: a, bis, anfangBuchungen, startWert, uebernahme, ...b, endeBuchungen,
+    anfangDiff: a.anfang === null ? null : r2(a.anfang - anfangBuchungen),
+    endeDiff: a.ende === null ? null : r2(a.ende - endeBuchungen),
+    bank, offen, offenSumme,
+  };
+}
+
+/** Übersicht je Jahr: Anfang und Ende laut Kontoauszug, Differenz zu den Buchungen */
+export async function ruecklageJahre(objektId: number, bisJahr: number, anzahl = 5) {
+  const r = [];
+  for (let y = bisJahr - anzahl + 1; y <= bisJahr; y++) {
+    const g = await ruecklageAbgleich(objektId, y);
+    r.push({ jahr: y, anfang: g.auszug.anfang, ende: g.auszug.ende, endeDatum: g.auszug.endeDatum, endeDiff: g.endeDiff, buchungen: g.endeBuchungen });
+  }
+  return r;
+}
+
+/** Differenz am Endbestand nachbuchen: fehlt Geld auf den Buchungen → Entnahme/Kosten (1261), ist mehr auf dem Konto → Zinsen/Zugang (1262) */
+export async function differenzBuchen(objektId: number, jahr: number, text?: string) {
+  const g = await ruecklageAbgleich(objektId, jahr);
+  if (g.endeDiff === null || Math.abs(g.endeDiff) < 0.005) throw new Error('Es gibt keine Differenz zum Nachbuchen.');
+  const { gesperrt, sperrText } = await import('./abschluss');
+  const sp = await gesperrt(objektId, g.bis);
+  if (sp) throw new Error(sperrText(sp));
+  const nr = g.endeDiff < 0 ? '1261' : '1262';
+  const k = (await db.select('SELECT id FROM buchungskonten WHERE nummer = $1', [nr]))[0];
+  if (!k) throw new Error(`Das Buchungskonto ${nr} fehlt im Kontenplan.`);
+  const { insert } = await import('../db');
+  await insert('buchungen', { datum: g.bis, betrag: g.endeDiff, buchungskonto_id: k.id, objekt_id: objektId, zahlweg: 'bar',
+    text: text || `Ausgleich Rücklagenkonto laut Kontoauszug${g.auszug.endeAuszug ? ' Nr. ' + g.auszug.endeAuszug : ''}` });
+  return { konto: nr, betrag: g.endeDiff };
+}
