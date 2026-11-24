@@ -925,4 +925,15 @@ CREATE TABLE kontostart (
   PRIMARY KEY (bankkonto_id, jahr)
 );
 `,
+  // 38: Rücklagen – Anfangs- und Endbestand des Rücklagenkontos laut Kontoauszug je Liegenschaft und Jahr (von Hand)
+  `
+CREATE TABLE ruecklage_auszug (
+  objekt_id INTEGER NOT NULL REFERENCES objekte(id) ON DELETE CASCADE,
+  jahr INTEGER NOT NULL,
+  anfang REAL, anfang_auszug TEXT,
+  ende REAL, ende_datum TEXT, ende_auszug TEXT,
+  erfasst_am TEXT,
+  PRIMARY KEY (objekt_id, jahr)
+);
+`,
 ];

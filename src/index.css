@@ -1577,3 +1577,25 @@ tr.ks-rot > td { background: #fff8f7; } tr.ks-gelb > td { background: #fffcf3; }
 .zuordnen .hinweis-schon { background: #fff4dc; border: 1px solid #f0d9a6; border-radius: 10px; padding: 8px 10px; color: #8a5a00; font-size: 12.5px; }
 .bf-zahlweg button { padding: 6px 10px; font-size: 12.5px; }
 @media (max-width: 1100px) { .ks-leiste { grid-template-columns: repeat(3, 1fr); } .ks-gruende { grid-column: 1 / -1; justify-content: flex-start; } }
+
+/* Rücklagen mit Anfangs- und Endbestand laut Kontoauszug */
+.rl-kopf { gap: 14px; }
+.ks-leiste.rl-leiste { position: static; grid-template-columns: repeat(4, minmax(150px, auto)) 1fr; margin-bottom: 18px; }
+.rl-grid { grid-template-columns: minmax(460px, 5fr) minmax(360px, 4fr); align-items: start; }
+.rl-tabelle tr.rl-auszug-zeile > td { background: #fbfaf8; }
+.rl-hand { font-size: 11px; color: var(--accent-dark); background: var(--accent-soft); border-radius: 8px; padding: 1px 6px; margin-left: 6px; }
+.rl-hinweis { margin-top: 14px; justify-content: space-between; line-height: 1.45; }
+.rl-ok { background: #e7f3e8; border: 1px solid #bfe0c2; color: #2e7d32; border-radius: 12px; padding: 10px 12px; margin-top: 14px; font-size: 13px; }
+tr.rl-aktiv > td { background: var(--accent-soft); }
+.rl-uebernahme { margin-top: 14px; }
+.rl-uebernahme summary { cursor: pointer; }
+.modal.rl-auszug { width: 760px; }
+.rl-box { border: 1px solid var(--line); background: #fcfbf8; border-radius: 12px; padding: 14px 16px; margin-top: 12px; }
+.rl-box-kopf { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+.rl-felder { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px 14px; }
+.rl-felder label span { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+.rl-felder input { width: 100%; }
+.rl-felder input.num { text-align: right; font-variant-numeric: tabular-nums; }
+.rl-vorschlag { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; margin-top: 10px; }
+@media (max-width: 1100px) { .ks-leiste.rl-leiste { grid-template-columns: repeat(2, 1fr); } .rl-grid { grid-template-columns: 1fr; } }
+@media (max-width: 640px) { .rl-felder { grid-template-columns: 1fr; } }
