@@ -99,7 +99,7 @@ function Anmeldung({ neu, alteDaten, vorschau, onOk }: { neu: boolean; alteDaten
   );
 }
 
-/** Anmeldung am NANO-Server (Mehrplatz) mit Benutzername und Passwort */
+/** Anmeldung am NEOSS-Server (Mehrplatz) mit Benutzername und Passwort */
 function ServerAnmeldung({ onOk, onLokal }: { onOk: () => void; onLokal: () => void }) {
   const [login, setLogin] = useState(() => { try { return localStorage.getItem('nano-login') ?? ''; } catch { return ''; } });
   const [pw, setPw] = useState('');
@@ -123,7 +123,7 @@ function ServerAnmeldung({ onOk, onLokal }: { onOk: () => void; onLokal: () => v
       <form className="sperre-karte" onSubmit={(e) => { e.preventDefault(); los(); }}>
         <Logo />
         <h2 className="title-ico"><Server size={22} />Anmelden</h2>
-        <p className="muted">Mit deinem NANO-Zugang am Server {aendern ? '' : <b>{mehrplatz.adresse()}</b>} anmelden.</p>
+        <p className="muted">Mit deinem NEOSS-Zugang am Server {aendern ? '' : <b>{mehrplatz.adresse()}</b>} anmelden.</p>
         {aendern && <label><span>Serveradresse</span><input value={adresse} onChange={(e) => setAdresse(e.target.value)} placeholder="z. B. 192.168.178.20" /></label>}
         <label><span>Benutzername</span><input value={login} autoFocus={!login} autoComplete="username" onChange={(e) => setLogin(e.target.value)} /></label>
         <label><span>Passwort</span>

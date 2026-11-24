@@ -1,4 +1,4 @@
-// Einstellungen → Mehrplatz: NANO-Server verbinden, Daten übertragen, Benutzer und Protokoll verwalten.
+// Einstellungen → Mehrplatz: NEOSS-Server verbinden, Daten übertragen, Benutzer und Protokoll verwalten.
 import { useEffect, useState } from 'react';
 import { DatabaseBackup, History, LogOut, Server, UserPlus, Users } from 'lucide-react';
 import { mehrplatz, type Row } from '../db';
@@ -19,24 +19,24 @@ function Verbinden() {
   const [fehler, setFehler] = useState('');
   async function testen() {
     setFehler(''); setGeprueft('');
-    try { const r = await mehrplatz.testen(url); setGeprueft(`NANO-Server ${r.version} gefunden.`); } catch (e: any) { setFehler(e?.message ?? String(e)); }
+    try { const r = await mehrplatz.testen(url); setGeprueft(`NEOSS-Server ${r.version} gefunden.`); } catch (e: any) { setFehler(e?.message ?? String(e)); }
   }
   async function uebertragen() {
     if (!confirm('Alle Daten dieses Rechners auf den Server übertragen? Was dort schon gespeichert ist, wird ersetzt (der Server sichert sich vorher).')) return;
     setFehler(''); setLaeuft('Starte …');
-    try { await mehrplatz.datenUebertragen(url, login.trim(), pw, setLaeuft); setLaeuft('Übertragen. NANO startet neu …'); setTimeout(() => location.reload(), 1200); }
+    try { await mehrplatz.datenUebertragen(url, login.trim(), pw, setLaeuft); setLaeuft('Übertragen. NEOSS startet neu …'); setTimeout(() => location.reload(), 1200); }
     catch (e: any) { setFehler(e?.message ?? String(e)); setLaeuft(''); }
   }
   function nurVerbinden() {
-    if (!confirm('Diesen Rechner mit dem Server verbinden? NANO zeigt danach die Daten vom Server, die Daten auf diesem Rechner bleiben unverändert liegen.')) return;
+    if (!confirm('Diesen Rechner mit dem Server verbinden? NEOSS zeigt danach die Daten vom Server, die Daten auf diesem Rechner bleiben unverändert liegen.')) return;
     mehrplatz.einstellen(url); location.reload();
   }
   return (
     <section className="card">
-      <div className="card-head"><h2 className="title-ico"><Server size={22} />Mehrplatz (NANO-Server)</h2></div>
-      <p className="muted small" style={{ marginTop: 0 }}>Mehrere Mitarbeiter arbeiten gleichzeitig auf denselben Daten. Die Datenbank liegt dann auf dem NANO-Server (z. B. auf der Synology-NAS im Büro), jeder meldet sich mit eigenem Zugang an. Zurzeit arbeitet dieser Rechner <b>ohne Server</b>.</p>
+      <div className="card-head"><h2 className="title-ico"><Server size={22} />Mehrplatz (NEOSS-Server)</h2></div>
+      <p className="muted small" style={{ marginTop: 0 }}>Mehrere Mitarbeiter arbeiten gleichzeitig auf denselben Daten. Die Datenbank liegt dann auf dem NEOSS-Server (z. B. auf der Synology-NAS im Büro), jeder meldet sich mit eigenem Zugang an. Zurzeit arbeitet dieser Rechner <b>ohne Server</b>.</p>
       <div className="form">
-        <label className="wide"><span>Adresse des NANO-Servers</span><input value={url} onChange={(e) => { setUrl(e.target.value); setGeprueft(''); }} placeholder="z. B. 192.168.178.20 oder nas.fritz.box" /></label>
+        <label className="wide"><span>Adresse des NEOSS-Servers</span><input value={url} onChange={(e) => { setUrl(e.target.value); setGeprueft(''); }} placeholder="z. B. 192.168.178.20 oder nas.fritz.box" /></label>
       </div>
       <div className="row"><button onClick={testen} disabled={!url.trim()}>Verbindung testen</button>{geprueft && <span className="pos">{geprueft}</span>}</div>
       {geprueft && <>
@@ -81,13 +81,13 @@ function Verbunden() {
     try { await mehrplatz.benutzerSpeichern(edit); setEdit(null); melde(edit.id ? 'Zugang gespeichert.' : `Zugang „${edit.login}“ angelegt.`); laden(); } catch (e: any) { melde('', e.message); }
   }
   async function trennen() {
-    if (!confirm('Verbindung zum Server trennen? NANO arbeitet dann wieder mit den Daten auf diesem Rechner (Stand vor der Verbindung).')) return;
+    if (!confirm('Verbindung zum Server trennen? NEOSS arbeitet dann wieder mit den Daten auf diesem Rechner (Stand vor der Verbindung).')) return;
     await mehrplatz.abmelden(); mehrplatz.einstellen(null); location.reload();
   }
 
   return (
     <section className="card">
-      <div className="card-head"><h2 className="title-ico"><Server size={22} />Mehrplatz (NANO-Server)</h2>
+      <div className="card-head"><h2 className="title-ico"><Server size={22} />Mehrplatz (NEOSS-Server)</h2>
         <button onClick={() => window.dispatchEvent(new Event(SPERREN))}><LogOut size={16} />Abmelden</button></div>
       <p className="muted small" style={{ marginTop: 0 }}>Verbunden mit <b>{mehrplatz.adresse()}</b> als <b>{ich?.name}</b> ({ROLLEN[ich?.rolle ?? ''] ?? ich?.rolle}). Alle Änderungen landen sofort auf dem Server und im Protokoll.</p>
 

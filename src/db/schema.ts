@@ -1,4 +1,4 @@
-// Datenbankschema der NANO-Software (KMS Immobilien).
+// Datenbankschema der NEOSS-Software (KMS Immobilien).
 // Jede Migration läuft genau einmal; Änderungen immer als neue Migration anhängen.
 // Fachliche Grundlage: /mnt/project-files/kms-verwaltung/planung.md
 
@@ -635,5 +635,284 @@ CREATE TABLE fristen (
   notiz TEXT,
   erledigt_am TEXT                -- nur bei einmaligen Fristen
 );
+`,
+  // Migration 20: Buchen-Fenster – Rechnungsnummer-Pflicht je Konto, Buchungsjahr und Rechnungsnummer an der Buchung
+  `
+ALTER TABLE buchungskonten ADD COLUMN rechnung_pflicht INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE buchungen ADD COLUMN jahr INTEGER;
+ALTER TABLE buchungen ADD COLUMN rechnungsnr TEXT;
+UPDATE buchungskonten SET rechnung_pflicht = 1 WHERE art = 'Aufwand' AND (hdl = 1 OR hwl = 1);  -- § 35a verlangt eine Rechnung; weitere Konten im Kontenrahmen anhaken
+`,
+  // Migration 21: Erinnerungen mit Erstellungsdatum
+  `
+ALTER TABLE erinnerungen ADD COLUMN erstellt TEXT;
+`,
+  // Migration 22: Zahlweise der Mieter (Miete und Nebenkosten in einer Überweisung oder getrennt)
+  `
+ALTER TABLE objekte ADD COLUMN miete_zahlweise TEXT NOT NULL DEFAULT 'zusammen';  -- zusammen | getrennt
+`,
+  // Migration 23: Zahlweise je Mietvertrag (leer = wie Liegenschaft)
+  `
+ALTER TABLE mietvertraege ADD COLUMN zahlweise TEXT;  -- zusammen | getrennt | leer
+`,
+  // Migration 24: Mietverwaltung – Auszahlungen an den Eigentümer und Einzahlungen des Eigentümers. Kontoart „Eigentümer“:
+  // keine Einnahme und keine Ausgabe, ändert nur den Kontostand. Erscheint in der Abrechnung getrennt unter dem Ergebnis.
+  `
+INSERT OR IGNORE INTO buchungskonten (nummer, name, gruppe, art, euer, mwst, umlagefaehig) VALUES
+ ('1700', 'Auszahlung an Eigentümer', 'Eigentümer-Verrechnung', 'Eigentümer', 0, 0, 0),
+ ('1701', 'Einzahlung des Eigentümers', 'Eigentümer-Verrechnung', 'Eigentümer', 0, 0, 0);
+`,
+  // Migration 25: § 35a Abs. 1 EStG – Konten für geringfügige Beschäftigung im Haushalt (Minijob) getrennt ausweisen
+  `
+ALTER TABLE buchungskonten ADD COLUMN hbg INTEGER NOT NULL DEFAULT 0;
+`,
+  // Migration 26: Eigentümerversammlung digital – Tagesordnung (TOPs), Anwesenheit mit Vertretung, Stimmen je Eigentümer,
+  // Unterschrift zur Kenntnisnahme und Vorlagen mit Standard-TOPs. Platzhalter in Vorlagen: {jahr} = Jahr der Versammlung, {vorjahr}.
+  `
+ALTER TABLE versammlungen ADD COLUMN online INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE versammlungen ADD COLUMN leitung TEXT;
+ALTER TABLE versammlungen ADD COLUMN eingeladen_am TEXT;
+ALTER TABLE versammlungen ADD COLUMN beginn TEXT;
+ALTER TABLE versammlungen ADD COLUMN ende TEXT;
+ALTER TABLE versammlungen ADD COLUMN zaehlung TEXT NOT NULL DEFAULT 'Kopf';   -- Kopf (§ 25 Abs. 2 WEG) oder MEA
+ALTER TABLE beschluesse ADD COLUMN ja REAL;
+ALTER TABLE beschluesse ADD COLUMN nein REAL;
+ALTER TABLE beschluesse ADD COLUMN enthaltung REAL;
+ALTER TABLE beschluesse ADD COLUMN anfechtung_bis TEXT;
+CREATE TABLE versammlung_tops (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  versammlung_id INTEGER NOT NULL REFERENCES versammlungen(id) ON DELETE CASCADE,
+  nr INTEGER NOT NULL,
+  titel TEXT NOT NULL,
+  antrag TEXT,                         -- Beschlussantrag (Wortlaut)
+  beschluss INTEGER NOT NULL DEFAULT 0, -- 1 = Abstimmung, 0 = nur Information
+  notiz TEXT,                          -- Verlauf / Anmerkungen fürs Protokoll
+  erledigt INTEGER NOT NULL DEFAULT 0,
+  beschluss_id INTEGER REFERENCES beschluesse(id) ON DELETE SET NULL
+);
+CREATE TABLE versammlung_teilnehmer (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  versammlung_id INTEGER NOT NULL REFERENCES versammlungen(id) ON DELETE CASCADE,
+  person_id INTEGER NOT NULL REFERENCES personen(id),
+  einheiten TEXT,                      -- z. B. „WE 1, Stellplatz 3“
+  mea REAL,
+  status TEXT,                         -- Anwesend, Abwesend, Vertreten (leer = noch offen)
+  vertreter TEXT,
+  unterschrift TEXT,                   -- PNG (data:) der Kenntnisnahme
+  unterschrieben_am TEXT,
+  UNIQUE (versammlung_id, person_id)
+);
+CREATE TABLE versammlung_stimmen (
+  top_id INTEGER NOT NULL REFERENCES versammlung_tops(id) ON DELETE CASCADE,
+  teilnehmer_id INTEGER NOT NULL REFERENCES versammlung_teilnehmer(id) ON DELETE CASCADE,
+  stimme TEXT NOT NULL,                -- Ja, Nein, Enthaltung
+  PRIMARY KEY (top_id, teilnehmer_id)
+);
+CREATE TABLE top_vorlagen (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  art TEXT NOT NULL,                   -- Ordentliche Versammlung, Außerordentliche Versammlung, Umlaufbeschluss
+  nr INTEGER NOT NULL,
+  titel TEXT NOT NULL,
+  antrag TEXT,
+  beschluss INTEGER NOT NULL DEFAULT 0,
+  bedingung TEXT                       -- beirat = nur wenn die Amtszeit des Beirats endet
+);
+INSERT INTO top_vorlagen (art, nr, titel, antrag, beschluss, bedingung) VALUES
+ ('Ordentliche Versammlung', 1, 'Begrüßung, Feststellung der ordnungsgemäßen Einladung', NULL, 0, NULL),
+ ('Ordentliche Versammlung', 2, 'Bericht der Verwaltung', NULL, 0, NULL),
+ ('Ordentliche Versammlung', 3, 'Bericht des Verwaltungsbeirats', NULL, 0, NULL),
+ ('Ordentliche Versammlung', 4, 'Nachschüsse und Anpassungen aus der Jahresabrechnung {vorjahr}', 'Die Eigentümer beschließen die Nachschüsse und die Anpassung der Vorschüsse gemäß den Einzelabrechnungen {vorjahr} (§ 28 Abs. 2 WEG).', 1, NULL),
+ ('Ordentliche Versammlung', 5, 'Entlastung der Verwaltung für {vorjahr}', 'Der Verwaltung wird für das Wirtschaftsjahr {vorjahr} Entlastung erteilt.', 1, NULL),
+ ('Ordentliche Versammlung', 6, 'Entlastung des Verwaltungsbeirats für {vorjahr}', 'Dem Verwaltungsbeirat wird für das Wirtschaftsjahr {vorjahr} Entlastung erteilt.', 1, NULL),
+ ('Ordentliche Versammlung', 7, 'Vorschüsse nach dem Wirtschaftsplan {jahr}', 'Die Vorschüsse (Hausgeld) gemäß Wirtschaftsplan {jahr} werden beschlossen und gelten bis zur nächsten Beschlussfassung fort (§ 28 Abs. 1 WEG).', 1, NULL),
+ ('Ordentliche Versammlung', 8, 'Wahl des Verwaltungsbeirats', 'Zu Mitgliedern des Verwaltungsbeirats werden gewählt: …', 1, 'beirat'),
+ ('Ordentliche Versammlung', 9, 'Verschiedenes', NULL, 0, NULL),
+ ('Außerordentliche Versammlung', 1, 'Begrüßung, Feststellung der ordnungsgemäßen Einladung', NULL, 0, NULL),
+ ('Außerordentliche Versammlung', 2, 'Verschiedenes', NULL, 0, NULL),
+ ('Umlaufbeschluss', 1, 'Beschluss im Umlaufverfahren', 'Die Eigentümer beschließen in Textform (§ 23 Abs. 3 WEG): …', 1, NULL);
+`,
+  // 27: Papierkorb – gelöschte Datensätze 30 Tage wiederherstellbar
+  `
+CREATE TABLE papierkorb (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  art TEXT NOT NULL,                   -- z. B. Mietvertrag, Kontakt, Liegenschaft
+  bezeichnung TEXT,
+  geloescht_am TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+  daten TEXT NOT NULL                  -- JSON: gelöschte Zeilen je Tabelle und geleerte Verweise
+);
+`,
+  // 28: Zählerstände je Einheit und Jahr (alt/neu), daraus wird der Verbrauch berechnet
+  `
+CREATE TABLE zaehlerstaende (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  einheit_id INTEGER NOT NULL REFERENCES einheiten(id) ON DELETE CASCADE,
+  buchungskonto_id INTEGER NOT NULL REFERENCES buchungskonten(id),
+  jahr INTEGER NOT NULL,
+  zaehlernr TEXT,
+  alt REAL,
+  neu REAL,
+  UNIQUE (einheit_id, jahr, buchungskonto_id)
+);
+`,
+  // 29: WEG – Wohnung vom Eigentümer vermietet (auch ohne bei uns erfassten Mieter); dann braucht es die Anschrift des Eigentümers
+  `
+ALTER TABLE einheiten ADD COLUMN vermietet INTEGER NOT NULL DEFAULT 0;
+`,
+  // 30: Kommunikation mit Microsoft 365 – Mails in der Akte, Textvorlagen, Termine im Outlook-Kalender
+  `
+CREATE TABLE mails (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  postfach TEXT,                   -- 'me' oder Adresse des freigegebenen Postfachs
+  graph_id TEXT,                   -- Kennung der Mail bei Microsoft
+  conversation_id TEXT,            -- Unterhaltung: Antworten werden darüber erkannt
+  richtung TEXT NOT NULL,          -- 'aus' (gesendet) oder 'ein' (empfangen)
+  von TEXT, an TEXT, betreff TEXT,
+  datum TEXT NOT NULL,
+  text TEXT,
+  anhaenge TEXT,                   -- Dateinamen, durch „; “ getrennt
+  person_id INTEGER REFERENCES personen(id) ON DELETE SET NULL,
+  firma_id INTEGER REFERENCES firmen(id) ON DELETE SET NULL,
+  objekt_id INTEGER REFERENCES objekte(id) ON DELETE SET NULL,
+  abgelegt TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+);
+CREATE INDEX mails_person ON mails(person_id);
+CREATE INDEX mails_unterhaltung ON mails(conversation_id);
+CREATE TABLE mail_vorlagen (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  betreff TEXT,
+  text TEXT
+);
+INSERT INTO mail_vorlagen (name, betreff, text) VALUES
+ ('Mahnung', '{Mahnstufe}: {Objekt}, {Einheit}', '{Briefanrede},
+
+für {Einheit} in {Objekt} sind noch {Betrag} offen. Die {Mahnstufe} finden Sie im Anhang.
+
+Bitte überweisen Sie den Betrag bis zum {Frist}.
+
+Mit freundlichen Grüßen
+{Sachbearbeiter}
+KMS Immobilienverwaltung'),
+ ('Nebenkostenabrechnung', 'Nebenkostenabrechnung {Jahr}: {Objekt}, {Einheit}', '{Briefanrede},
+
+anbei erhalten Sie Ihre Nebenkostenabrechnung für {Jahr}.
+
+Bei Fragen melden Sie sich gern.
+
+Mit freundlichen Grüßen
+{Sachbearbeiter}
+KMS Immobilienverwaltung'),
+ ('Hausgeldabrechnung', 'Hausgeldabrechnung {Jahr}: {Objekt}', '{Briefanrede},
+
+anbei erhalten Sie die Hausgeldabrechnung {Jahr} für {Objekt}.
+
+Mit freundlichen Grüßen
+{Sachbearbeiter}
+KMS Immobilienverwaltung'),
+ ('Einladung Eigentümerversammlung', 'Einladung zur Eigentümerversammlung: {Objekt}', '{Briefanrede},
+
+anbei erhalten Sie die Einladung zur Eigentümerversammlung mit Tagesordnung und Vollmacht.
+
+Mit freundlichen Grüßen
+{Sachbearbeiter}
+KMS Immobilienverwaltung'),
+ ('Niederschrift', 'Niederschrift der Eigentümerversammlung: {Objekt}', '{Briefanrede},
+
+anbei erhalten Sie die Niederschrift der Eigentümerversammlung.
+
+Mit freundlichen Grüßen
+{Sachbearbeiter}
+KMS Immobilienverwaltung'),
+ ('Allgemeiner Brief', '{Dokument}', '{Briefanrede},
+
+anbei erhalten Sie {Dokument}.
+
+Mit freundlichen Grüßen
+{Sachbearbeiter}
+KMS Immobilienverwaltung');
+CREATE TABLE outlook_termine (
+  quelle TEXT NOT NULL,            -- termin, versammlung, frist
+  quelle_id INTEGER NOT NULL,
+  event_id TEXT NOT NULL,
+  stand TEXT,
+  PRIMARY KEY (quelle, quelle_id)
+);
+INSERT OR IGNORE INTO einstellungen (schluessel, wert) VALUES
+ ('ms_postfaecher', '["Info@kms.koeln","Kontakt@kms.koeln","Service@kms.koeln","Payment@kms.koeln","Ablesung@kms.koeln"]'),
+ ('ms_kalender', '1'), ('ms_akte_auto', '1');
+`,
+  // 31: Splittbuchung – ein Betrag (z. B. Abschlag Strom und Wasser) auf mehrere Konten; Teile tragen die Nummer der Aufteilung.
+  //     Gemerkte Aufteilungen je Zahlungspartner werden beim nächsten Umsatz vorgeschlagen.
+  `
+ALTER TABLE buchungen ADD COLUMN aufteilung INTEGER;
+CREATE INDEX buchungen_aufteilung ON buchungen(aufteilung);
+CREATE TABLE aufteilung_vorlagen (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  schluessel TEXT NOT NULL UNIQUE,  -- IBAN oder Name des Zahlungspartners (klein geschrieben)
+  name TEXT,
+  teile TEXT NOT NULL               -- JSON: [{ konto_id, anteil, text }]
+);
+`,
+  // 32: Gesamtkosten eines Kontos nur für die Abrechnung anpassen (z. B. Heizkosten laut Messdienst statt Abschläge).
+  //     Die Buchhaltung bleibt unverändert; die Abrechnung zeigt gebucht und angepasst.
+  `
+CREATE TABLE abrechnung_betraege (
+  objekt_id INTEGER NOT NULL REFERENCES objekte(id) ON DELETE CASCADE,
+  jahr INTEGER NOT NULL,
+  buchungskonto_id INTEGER NOT NULL REFERENCES buchungskonten(id) ON DELETE CASCADE,
+  betrag REAL NOT NULL,
+  grund TEXT,
+  ausgeschlossen INTEGER NOT NULL DEFAULT 0,   -- 1 = Kostenposition ganz aus der Abrechnung genommen
+  PRIMARY KEY (objekt_id, jahr, buchungskonto_id)
+);
+`,
+  // 33: Schutz der fest genutzten Kontonummern und Änderungsprotokoll (wer nicht, aber was und wann) für Buchungen, Rechnungen,
+  //     offene Posten, Abschlüsse und gelöschte Bankumsätze. Abschluss aufheben nur mit Begründung.
+  `
+CREATE TRIGGER systemkonto_nummer BEFORE UPDATE OF nummer ON buchungskonten
+WHEN OLD.nummer IN ('1000','1001','1002','1003','1010','1011','1200','1260','1261','1262','1405','1601','1602','1701') AND NEW.nummer IS NOT OLD.nummer
+BEGIN SELECT RAISE(ABORT, 'Diese Kontonummer nutzt NEOSS fest (z. B. Rücklage, Hausgeld, Mieten, Heizkosten) und lässt sich nicht ändern. Bezeichnung und Haken dürfen geändert werden.'); END;
+ALTER TABLE abrechnungen ADD COLUMN aufhebung_grund TEXT;
+ALTER TABLE abrechnungen ADD COLUMN aufgehoben_am TEXT;
+CREATE TABLE protokoll (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  zeit TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+  tabelle TEXT NOT NULL,
+  datensatz INTEGER,
+  aktion TEXT NOT NULL,        -- neu, geändert, gelöscht
+  inhalt TEXT                  -- Stand des Datensatzes als JSON (bei „gelöscht“ der letzte Stand)
+);
+CREATE INDEX protokoll_zeit ON protokoll(zeit);
+CREATE TRIGGER protokoll_buchungen_insert AFTER INSERT ON buchungen BEGIN INSERT INTO protokoll (tabelle, datensatz, aktion, inhalt) VALUES ('buchungen', NEW.id, 'neu', json_object('datum', NEW.datum, 'betrag', NEW.betrag, 'buchungskonto_id', NEW.buchungskonto_id, 'objekt_id', NEW.objekt_id, 'einheit_id', NEW.einheit_id, 'jahr', NEW.jahr, 'text', NEW.text, 'sollstellung_id', NEW.sollstellung_id, 'rechnung_id', NEW.rechnung_id, 'bankumsatz_id', NEW.bankumsatz_id)); END;
+CREATE TRIGGER protokoll_buchungen_update AFTER UPDATE ON buchungen BEGIN INSERT INTO protokoll (tabelle, datensatz, aktion, inhalt) VALUES ('buchungen', NEW.id, 'geändert', json_object('datum', NEW.datum, 'betrag', NEW.betrag, 'buchungskonto_id', NEW.buchungskonto_id, 'objekt_id', NEW.objekt_id, 'einheit_id', NEW.einheit_id, 'jahr', NEW.jahr, 'text', NEW.text, 'sollstellung_id', NEW.sollstellung_id, 'rechnung_id', NEW.rechnung_id, 'bankumsatz_id', NEW.bankumsatz_id)); END;
+CREATE TRIGGER protokoll_buchungen_delete AFTER DELETE ON buchungen BEGIN INSERT INTO protokoll (tabelle, datensatz, aktion, inhalt) VALUES ('buchungen', OLD.id, 'gelöscht', json_object('datum', OLD.datum, 'betrag', OLD.betrag, 'buchungskonto_id', OLD.buchungskonto_id, 'objekt_id', OLD.objekt_id, 'einheit_id', OLD.einheit_id, 'jahr', OLD.jahr, 'text', OLD.text, 'sollstellung_id', OLD.sollstellung_id, 'rechnung_id', OLD.rechnung_id, 'bankumsatz_id', OLD.bankumsatz_id)); END;
+CREATE TRIGGER protokoll_rechnungen_insert AFTER INSERT ON rechnungen BEGIN INSERT INTO protokoll (tabelle, datensatz, aktion, inhalt) VALUES ('rechnungen', NEW.id, 'neu', json_object('datum', NEW.datum, 'betrag', NEW.betrag, 'buchungskonto_id', NEW.buchungskonto_id, 'objekt_id', NEW.objekt_id, 'einheit_id', NEW.einheit_id, 'rechnungsnr', NEW.rechnungsnr, 'firma_id', NEW.firma_id, 'bezahlt_am', NEW.bezahlt_am)); END;
+CREATE TRIGGER protokoll_rechnungen_update AFTER UPDATE ON rechnungen BEGIN INSERT INTO protokoll (tabelle, datensatz, aktion, inhalt) VALUES ('rechnungen', NEW.id, 'geändert', json_object('datum', NEW.datum, 'betrag', NEW.betrag, 'buchungskonto_id', NEW.buchungskonto_id, 'objekt_id', NEW.objekt_id, 'einheit_id', NEW.einheit_id, 'rechnungsnr', NEW.rechnungsnr, 'firma_id', NEW.firma_id, 'bezahlt_am', NEW.bezahlt_am)); END;
+CREATE TRIGGER protokoll_rechnungen_delete AFTER DELETE ON rechnungen BEGIN INSERT INTO protokoll (tabelle, datensatz, aktion, inhalt) VALUES ('rechnungen', OLD.id, 'gelöscht', json_object('datum', OLD.datum, 'betrag', OLD.betrag, 'buchungskonto_id', OLD.buchungskonto_id, 'objekt_id', OLD.objekt_id, 'einheit_id', OLD.einheit_id, 'rechnungsnr', OLD.rechnungsnr, 'firma_id', OLD.firma_id, 'bezahlt_am', OLD.bezahlt_am)); END;
+CREATE TRIGGER protokoll_sollstellungen_update AFTER UPDATE ON sollstellungen BEGIN INSERT INTO protokoll (tabelle, datensatz, aktion, inhalt) VALUES ('sollstellungen', NEW.id, 'geändert', json_object('monat', NEW.monat, 'art', NEW.art, 'betrag', NEW.betrag, 'einheit_id', NEW.einheit_id, 'person_id', NEW.person_id, 'faellig', NEW.faellig)); END;
+CREATE TRIGGER protokoll_sollstellungen_delete AFTER DELETE ON sollstellungen BEGIN INSERT INTO protokoll (tabelle, datensatz, aktion, inhalt) VALUES ('sollstellungen', OLD.id, 'gelöscht', json_object('monat', OLD.monat, 'art', OLD.art, 'betrag', OLD.betrag, 'einheit_id', OLD.einheit_id, 'person_id', OLD.person_id, 'faellig', OLD.faellig)); END;
+CREATE TRIGGER protokoll_abrechnungen_insert AFTER INSERT ON abrechnungen BEGIN INSERT INTO protokoll (tabelle, datensatz, aktion, inhalt) VALUES ('abrechnungen', NEW.id, 'neu', json_object('objekt_id', NEW.objekt_id, 'art', NEW.art, 'jahr', NEW.jahr, 'status', NEW.status, 'abgeschlossen_am', NEW.abgeschlossen_am, 'aufhebung_grund', NEW.aufhebung_grund)); END;
+CREATE TRIGGER protokoll_abrechnungen_update AFTER UPDATE ON abrechnungen BEGIN INSERT INTO protokoll (tabelle, datensatz, aktion, inhalt) VALUES ('abrechnungen', NEW.id, 'geändert', json_object('objekt_id', NEW.objekt_id, 'art', NEW.art, 'jahr', NEW.jahr, 'status', NEW.status, 'abgeschlossen_am', NEW.abgeschlossen_am, 'aufhebung_grund', NEW.aufhebung_grund)); END;
+CREATE TRIGGER protokoll_bankumsaetze_delete AFTER DELETE ON bankumsaetze BEGIN INSERT INTO protokoll (tabelle, datensatz, aktion, inhalt) VALUES ('bankumsaetze', OLD.id, 'gelöscht', json_object('datum', OLD.datum, 'betrag', OLD.betrag, 'gegenpartei', OLD.gegenpartei, 'verwendungszweck', OLD.verwendungszweck, 'status', OLD.status, 'bankkonto_id', OLD.bankkonto_id)); END;
+ALTER TABLE versammlung_tops ADD COLUMN mehrheit TEXT DEFAULT 'einfach';
+`,
+  // 34: Kontoabgleich zur Jahresabrechnung – Kontostand laut echtem Kontoauszug zum 31.12. je Bankkonto und Jahr
+  `
+CREATE TABLE kontoabgleich (
+  bankkonto_id INTEGER NOT NULL REFERENCES bankkonten(id) ON DELETE CASCADE,
+  jahr INTEGER NOT NULL,
+  saldo_auszug REAL NOT NULL,
+  notiz TEXT,
+  erfasst_am TEXT,
+  PRIMARY KEY (bankkonto_id, jahr)
+);
+`,
+  // 35: Live-Versammlung – Beschlussfeld: der in der Versammlung niedergeschriebene Wortlaut des Beschlusses (der Antrag bleibt unverändert)
+  `
+ALTER TABLE versammlung_tops ADD COLUMN beschluss_text TEXT;
+`,
+  // 36: Einnahmen & Ausgaben mit Kontostand – Buchung bewusst ohne Bankkonto (bar, Umbuchung, Verrechnung): zählt nicht als „ohne Kontoumsatz“
+  `
+ALTER TABLE buchungen ADD COLUMN zahlweg TEXT;
 `,
 ];

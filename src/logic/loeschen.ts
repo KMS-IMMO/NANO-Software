@@ -1,5 +1,6 @@
 // Liegenschaft mit allen zugehörigen Daten löschen (Einheiten, Verträge, Buchungen, Bank, Rechnungen, Dokumenteinträge …).
 import { db, sicherheit } from '../db';
+import { ablegen, erfassen } from '../db/papierkorb';
 
 /** Was beim Löschen mit entfernt wird, für die Bestätigung */
 export async function loeschUmfang(id: number) {
@@ -37,6 +38,16 @@ export async function objektLoeschen(objektId: number, personenMit: boolean): Pr
     UNION SELECT mieter2_id FROM mietvertraege WHERE einheit_id IN ${E} UNION SELECT person_id FROM sollstellungen WHERE einheit_id IN ${E}`;
   const kandidaten = personenMit ? (await db.select(P)).map((r) => Number(r.p)).filter((x) => x > 0) : [];
   const K = kandidaten.length ? kandidaten.join(',') : 'NULL';
+  // Für den Papierkorb festhalten, was gleich verschwindet (die Datenbank löscht Einheiten, Verträge usw. mit)
+  const name = (await db.select('SELECT name FROM objekte WHERE id = $1', [id]))[0]?.name ?? '';
+  const inhalt = await erfassen([
+    { t: 'buchungen', where: `objekt_id = ${id} OR einheit_id IN ${E} OR sollstellung_id IN ${S} OR rechnung_id IN ${R} OR bankumsatz_id IN ${U}` },
+    { t: 'sollstellungen', where: `id IN ${S}` }, { t: 'rechnungen', where: `id IN ${R}` }, { t: 'bankumsaetze', where: `id IN ${U}` },
+    { t: 'bankkonten', where: `objekt_id = ${id}` }, { t: 'abrechnungen', where: `objekt_id = ${id}` },
+    { t: 'dokumente', where: `(bezug = 'Objekt' AND bezug_id = ${id}) OR (bezug = 'Einheit' AND bezug_id IN ${E}) OR (bezug = 'Mietvertrag' AND bezug_id IN ${V}) OR (bezug = 'Person' AND bezug_id IN (${K}))` },
+    { t: 'objekte', where: `id = ${id}` }, { t: 'personen', where: `id IN (${K})` }]);
+  inhalt.wieder = (await db.select(`SELECT id, einheit_id FROM vorgaenge WHERE einheit_id IN ${E} AND objekt_id <> ${id}`))
+    .map((v) => ({ sql: 'UPDATE vorgaenge SET einheit_id = $1 WHERE id = $2', params: [v.einheit_id, v.id] }));
   const sql = `BEGIN;
     DELETE FROM buchungen WHERE objekt_id = ${id} OR einheit_id IN ${E} OR sollstellung_id IN ${S} OR rechnung_id IN ${R} OR bankumsatz_id IN ${U};
     DELETE FROM sollstellungen WHERE id IN ${S};
@@ -56,5 +67,6 @@ export async function objektLoeschen(objektId: number, personenMit: boolean): Pr
     COMMIT;`;
   try { await db.execute(sql); }
   catch (e) { await db.execute('ROLLBACK').catch(() => {}); throw e; }
+  await ablegen('Liegenschaft', name, inhalt).catch(() => {});
   return sicherung;
 }

@@ -1,37 +1,63 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState, type ComponentType, type ReactNode } from 'react';
 import { HashRouter, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import {
   AlarmClock, Banknote, CalendarClock, Bell, Building2, Calendar, ChevronRight, CircleCheck, Columns3, Contact, CreditCard, FolderOpen, LayoutDashboard, Landmark, Lock,
-  Network, Receipt, Search, Settings, SquarePen, UserCog, Users,
+  Network, Receipt, Search, Settings, SquarePen, Trash2, FileSpreadsheet, KeyRound, UserCog, UserRound, Users, Mail, FileText, Unplug,
 } from 'lucide-react';
 import { db, mehrplatz, sicherheit, type Row } from './db';
 import { personLabel } from './db/labels';
 import { OP_SQL } from './logic/soll';
 import { Sperre, SPERREN } from './components/Sperre';
-import { Logo } from './components/Logo';
+import { KopfNetz, Logo } from './components/Logo';
 import { KiAssistent } from './components/KiAssistent';
 import { ModalHelfer } from './components/ModalHelfer';
 import { DashboardPage } from './pages/Dashboard';
-import { ObjektDetailPage, ObjektePage } from './pages/Objekte';
-import { FirmenPage, PersonenPage } from './pages/Personen';
-import { VertragDetailPage, VertraegePage } from './pages/Vertraege';
-import { OffenePostenPage } from './pages/OffenePosten';
-import { BankPage } from './pages/Bank';
-import { MahnungenPage } from './pages/Mahnungen';
-import { NebenkostenPage } from './pages/Nebenkosten';
-import { DokumentePage } from './pages/Dokumente';
-import { EigentuemerAbrechnungPage, WegAbrechnungPage } from './pages/Jahresabrechnungen';
-import { EinstellungenPage, KontenPage, RechnungenPage } from './pages/Konten';
-import { BeschluessePage, InstandhaltungPage } from './pages/Weg';
-import { AuswertungPage, BerichtePage, JournalPage, RegelnPage } from './pages/Buchhaltung';
-import { ObjektAssistentPage } from './pages/ObjektAssistent';
-import { SollstellungenPage } from './pages/Sollstellungen';
 import { autoAbruf, BANK_INFO } from './logic/bankAbruf';
 import { wiederkehrendErzeugen } from './logic/wiederkehrend';
-import { FristenPage } from './pages/Fristen';
-import { ErinnerungenPage, KalenderPage, KontaktePage, NotizenPage, TicketBoardsPage, TodoPage } from './pages/Produktiv';
+import { kalenderImHintergrund, MS_EVENT, ungelesen } from './logic/ms365';
 
-type Item = { to: string; label: string; icon?: ReactNode; sub?: string };
+// Seiten erst laden, wenn sie gebraucht werden: Die App startet schneller (Dashboard sofort, Rest bei Bedarf)
+function seite(laden: () => Promise<Record<string, unknown>>, name: string) {
+  return lazy(() => laden().then((m) => ({ default: m[name] as ComponentType<any> })));
+}
+const ObjektDetailPage = seite(() => import('./pages/Objekte'), 'ObjektDetailPage');
+const ObjektePage = seite(() => import('./pages/Objekte'), 'ObjektePage');
+const FirmenPage = seite(() => import('./pages/Personen'), 'FirmenPage');
+const PersonenPage = seite(() => import('./pages/Personen'), 'PersonenPage');
+const VertragDetailPage = seite(() => import('./pages/Vertraege'), 'VertragDetailPage');
+const VertraegePage = seite(() => import('./pages/Vertraege'), 'VertraegePage');
+const OffenePostenPage = seite(() => import('./pages/OffenePosten'), 'OffenePostenPage');
+const BankPage = seite(() => import('./pages/Bank'), 'BankPage');
+const MahnungenPage = seite(() => import('./pages/Mahnungen'), 'MahnungenPage');
+const NebenkostenPage = seite(() => import('./pages/Nebenkosten'), 'NebenkostenPage');
+const DokumentePage = seite(() => import('./pages/Dokumente'), 'DokumentePage');
+const EigentuemerAbrechnungPage = seite(() => import('./pages/Jahresabrechnungen'), 'EigentuemerAbrechnungPage');
+const WegAbrechnungPage = seite(() => import('./pages/Jahresabrechnungen'), 'WegAbrechnungPage');
+const EinstellungenPage = seite(() => import('./pages/Konten'), 'EinstellungenPage');
+const KontenPage = seite(() => import('./pages/Konten'), 'KontenPage');
+const RechnungenPage = seite(() => import('./pages/Konten'), 'RechnungenPage');
+const PapierkorbPage = seite(() => import('./pages/Papierkorb'), 'PapierkorbPage');
+const ProtokollPage = seite(() => import('./pages/Protokoll'), 'ProtokollPage');
+const BeschluessePage = seite(() => import('./pages/Weg'), 'BeschluessePage');
+const InstandhaltungPage = seite(() => import('./pages/Weg'), 'InstandhaltungPage');
+const AuswertungPage = seite(() => import('./pages/Buchhaltung'), 'AuswertungPage');
+const BerichtePage = seite(() => import('./pages/Buchhaltung'), 'BerichtePage');
+const JournalPage = seite(() => import('./pages/Buchhaltung'), 'JournalPage');
+const RegelnPage = seite(() => import('./pages/Buchhaltung'), 'RegelnPage');
+const ObjektAssistentPage = seite(() => import('./pages/ObjektAssistent'), 'ObjektAssistentPage');
+const SollstellungenPage = seite(() => import('./pages/Sollstellungen'), 'SollstellungenPage');
+const FristenPage = seite(() => import('./pages/Fristen'), 'FristenPage');
+const ErinnerungenPage = seite(() => import('./pages/Produktiv'), 'ErinnerungenPage');
+const KalenderPage = seite(() => import('./pages/Produktiv'), 'KalenderPage');
+const KontaktePage = seite(() => import('./pages/Produktiv'), 'KontaktePage');
+const NotizenPage = seite(() => import('./pages/Produktiv'), 'NotizenPage');
+const TicketBoardsPage = seite(() => import('./pages/Produktiv'), 'TicketBoardsPage');
+const TodoPage = seite(() => import('./pages/Produktiv'), 'TodoPage');
+const PostfachPage = seite(() => import('./pages/Kommunikation'), 'PostfachPage');
+const TextvorlagenPage = seite(() => import('./pages/Kommunikation'), 'TextvorlagenPage');
+const Microsoft365Page = seite(() => import('./pages/Kommunikation'), 'Microsoft365Page');
+
+type Item = { to: string; label: string; icon?: ReactNode; sub?: string; extra?: ReactNode };
 type Group = { label: string; icon: ReactNode; items: Item[] };
 type Abschnitt = { titel: string; eintraege: (Item | Group)[] };
 const I = 18;
@@ -40,6 +66,8 @@ const NAV: Abschnitt[] = [
     { to: '/', label: 'Dashboard', icon: <LayoutDashboard size={I} /> },
     { to: '/objekte', label: 'Immobilien', icon: <Building2 size={I} /> },
     { to: '/eigentuemer', label: 'Eigentümer', icon: <Users size={I} /> },
+    { to: '/mieter', label: 'Mieter', icon: <UserRound size={I} /> },
+    { to: '/vertraege', label: 'Mietverträge', icon: <KeyRound size={I} /> },
     { to: '/verwalter', label: 'Verwalter', icon: <UserCog size={I} /> },
     { to: '/kontakte', label: 'Kontakte', icon: <Contact size={I} /> },
     { to: '/ablage', label: 'Dateimanager', icon: <FolderOpen size={I} /> },
@@ -49,19 +77,21 @@ const NAV: Abschnitt[] = [
       { to: '/bank', label: 'Bank & Zuordnung' },
       { to: '/regeln', label: 'Buchungsregeln' },
     ] },
-    { label: 'Sollstellung', icon: <Banknote size={I} />, items: [
+    { label: 'Forderungen', icon: <Banknote size={I} />, items: [
       { to: '/sollstellungen', label: 'Sollstellungen' },
       { to: '/offene-posten', label: 'Offene Posten' },
-      { to: '/vertraege', label: 'Mietverträge' },
       { to: '/mahnungen', label: 'Mahnungen' },
+    ] },
+    { to: '/rechnungen', label: 'Ausgaben', icon: <Receipt size={I} /> },
+    { label: 'Abrechnungen', icon: <FileSpreadsheet size={I} />, items: [
       { to: '/weg-abrechnung', label: 'Hausgeldabrechnung' },
       { to: '/nebenkosten', label: 'Nebenkostenabrechnung' },
       { to: '/eigentuemer-abrechnung', label: 'Eigentümerabrechnung' },
     ] },
-    { to: '/rechnungen', label: 'Ausgaben', icon: <Receipt size={I} /> },
     { label: 'Buchungskonten', icon: <Network size={I} />, items: [
       { to: '/konten', label: 'Kontenplan' },
       { to: '/journal', label: 'Buchungsjournal' },
+      { to: '/protokoll', label: 'Änderungsprotokoll' },
       { to: '/auswertung', label: 'Auswertung (GuV)' },
       { to: '/berichte', label: 'Berichte' },
     ] },
@@ -74,12 +104,30 @@ const NAV: Abschnitt[] = [
     { to: '/todo', label: 'Todo', sub: 'Aufgaben', icon: <CircleCheck size={I} /> },
     { to: '/notizen', label: 'Notizen', icon: <SquarePen size={I} /> },
   ] },
+  { titel: 'Kommunikation', eintraege: [
+    { to: '/postfach', label: 'Postfach', sub: 'Outlook und freigegebene', icon: <Mail size={I} />, extra: <PostfachZahl /> },
+    { to: '/textvorlagen', label: 'Textvorlagen', icon: <FileText size={I} /> },
+    { to: '/microsoft-365', label: 'Microsoft 365', icon: <Unplug size={I} /> },
+  ] },
 ];
+
+/** Ungelesene Mails in allen Posteingängen, alle 5 Minuten neu gezählt */
+function PostfachZahl() {
+  const [n, setN] = useState(0);
+  useEffect(() => {
+    const zaehlen = () => ungelesen().then(setN).catch(() => setN(0));
+    const t = setTimeout(zaehlen, 2500);
+    const i = setInterval(zaehlen, 300e3);
+    window.addEventListener(MS_EVENT, zaehlen);
+    return () => { clearTimeout(t); clearInterval(i); window.removeEventListener(MS_EVENT, zaehlen); };
+  }, []);
+  return n > 0 ? <em className="nav-zahl" title={`${n} ungelesen`}>{n > 99 ? '99+' : n}</em> : null;
+}
 
 function NavEintrag({ n, kompakt }: { n: Item; kompakt: boolean }) {
   return (
     <NavLink to={n.to} end={n.to === '/'} className={'nav-item' + (n.sub ? ' zwei' : '')} title={kompakt ? n.label : undefined}>
-      {n.icon}<span>{n.label}{n.sub && <small>{n.sub}</small>}</span>
+      {n.icon}<span>{n.label}{n.sub && <small>{n.sub}</small>}</span>{n.extra}
     </NavLink>
   );
 }
@@ -164,6 +212,7 @@ function Topbar() {
   }, [loc.pathname]);
   return (
     <header className="topbar">
+      <KopfNetz />
       <GlobalSearch />
       <NavLink to="/offene-posten" className="bell" title={`${offen} überfällige Posten`}>
         <Bell size={20} />{offen > 0 && <span className="dot">{offen > 99 ? '99+' : offen}</span>}
@@ -199,11 +248,17 @@ function Rahmen() {
   useEffect(() => {
     const f = (e: Event) => { const t = String((e as CustomEvent).detail); setHinweis((h) => [...h, t]); setTimeout(() => setHinweis((h) => h.filter((x) => x !== t)), 12000); };
     window.addEventListener(BANK_INFO, f);
+    // Tägliche Sicherung: beim Start und, falls die App über Mitternacht läuft, stündlich prüfen
+    const sichern = () => { if (sicherheit.aktiv) sicherheit.autoSichern().then((w) => w && f(new CustomEvent(BANK_INFO, { detail: w }))).catch(() => {}); };
     const t = setTimeout(() => {
-      autoAbruf();
+      autoAbruf(); sichern();
       wiederkehrendErzeugen().then((n) => n && f(new CustomEvent(BANK_INFO, { detail: `${n} wiederkehrende Rechnung${n > 1 ? 'en' : ''} angelegt` }))).catch(() => {});
     }, 1500);
-    return () => { window.removeEventListener(BANK_INFO, f); clearTimeout(t); };
+    const stunde = setInterval(sichern, 3600e3);
+    // Outlook-Kalender: Termine, Versammlungen und Fristen beim Start und alle 15 Minuten abgleichen
+    const kal = setTimeout(kalenderImHintergrund, 6000);
+    const kalTakt = setInterval(kalenderImHintergrund, 900e3);
+    return () => { window.removeEventListener(BANK_INFO, f); clearTimeout(t); clearInterval(stunde); clearTimeout(kal); clearInterval(kalTakt); };
   }, []);
   return (
       <div className={'app' + (kompakt ? ' kompakt' : '')}>
@@ -217,15 +272,17 @@ function Rahmen() {
                   ? <NavGroup key={n.label} g={n} kompakt={kompakt} />
                   : <NavEintrag key={n.to} n={n} kompakt={kompakt} />)}
               </div>))}
-            <div className="nav-unten"><NavEintrag n={{ to: '/einstellungen', label: 'Einstellungen', icon: <Settings size={I} /> }} kompakt={kompakt} /></div>
+            <div className="nav-unten"><NavEintrag n={{ to: '/papierkorb', label: 'Papierkorb', icon: <Trash2 size={I} /> }} kompakt={kompakt} />
+              <NavEintrag n={{ to: '/einstellungen', label: 'Einstellungen', icon: <Settings size={I} /> }} kompakt={kompakt} /></div>
           </nav>
-          {hinweis.length > 0 && <div className="toasts">{hinweis.map((t) => <NavLink key={t} to={t.includes("wiederkehrend") ? "/journal" : "/bank"} className="toast" onClick={() => setHinweis((h) => h.filter((x) => x !== t))}><Landmark size={16} />{t}</NavLink>)}</div>}
+          {hinweis.length > 0 && <div className="toasts">{hinweis.map((t) => <NavLink key={t} to={t.includes("wiederkehrend") ? "/journal" : t.includes("Sicherung") ? "/einstellungen" : "/bank"} className="toast" onClick={() => setHinweis((h) => h.filter((x) => x !== t))}><Landmark size={16} />{t}</NavLink>)}</div>}
           <div className="side-foot"><Landmark size={13} /> KMS Immobilienverwaltung · Version 0.2</div>
         </aside>
         <div className="content">
           <Topbar />
           <main className="main">
             <Seite>
+            <Suspense fallback={<div className="seite-laedt" />}>
             <Routes>
               <Route path="/" element={<DashboardPage />} />
               <Route path="/objekte" element={<ObjektePage />} />
@@ -242,6 +299,8 @@ function Rahmen() {
               <Route path="/rechnungen" element={<RechnungenPage />} />
               <Route path="/konten" element={<KontenPage />} />
               <Route path="/einstellungen" element={<EinstellungenPage />} />
+              <Route path="/papierkorb" element={<PapierkorbPage />} />
+              <Route path="/protokoll" element={<ProtokollPage />} />
               <Route path="/bank" element={<BankPage />} />
               <Route path="/mahnungen" element={<MahnungenPage />} />
               <Route path="/nebenkosten" element={<NebenkostenPage />} />
@@ -262,7 +321,11 @@ function Rahmen() {
               <Route path="/tickets" element={<TicketBoardsPage />} />
               <Route path="/todo" element={<TodoPage />} />
               <Route path="/notizen" element={<NotizenPage />} />
+              <Route path="/postfach" element={<PostfachPage />} />
+              <Route path="/textvorlagen" element={<TextvorlagenPage />} />
+              <Route path="/microsoft-365" element={<Microsoft365Page />} />
             </Routes>
+            </Suspense>
             </Seite>
             <KiAssistent />
             <ModalHelfer />

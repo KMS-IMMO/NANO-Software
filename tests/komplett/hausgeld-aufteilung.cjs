@@ -1,0 +1,46 @@
+const AUS = process.env.NEOSS_TEST_AUSGABE || require('path').join(__dirname, 'ausgabe'); require('fs').mkdirSync(AUS, { recursive: true });
+// WEG, vermietete Wohnung: Eigentümer zahlt 300 € Hausgeld (davon 50 € Rücklage, 150 € NK-Vorauszahlung seines Mieters) – Demodaten
+const { chromium } = require('playwright');
+(async () => {
+  const b = await chromium.launch(); const p = await (await b.newContext({ deviceScaleFactor: 2, locale: 'de-DE' })).newPage();
+  const errs = []; p.on('pageerror', (e) => errs.push(e.message)); p.on('console', (m) => m.type() === 'error' && errs.push(m.text()));
+  const ok = (n, c, ist) => console.log(`${c ? 'OK  ' : 'FAIL'} ${n}${ist !== undefined ? ' → ' + ist : ''}`);
+  await p.goto('http://localhost:5179/#/'); await p.waitForTimeout(3500);
+  const r = await p.evaluate(async () => {
+    const { insert, db } = await import('/src/db/index.ts');
+    const soll = await import('/src/logic/soll.ts'); const bank = await import('/src/logic/bank.ts');
+    const o = await insert('objekte', { verwaltungsart: 'WEG', name: 'WEG Test300', strasse: 'X 1', plz: '50674', ort: 'Köln', objekt_nr: '9003' });
+    const eig = await insert('personen', { rolle: 'Eigentümer', vorname: 'Erika', nachname: 'Musterfrau' });
+    const eig2 = await insert('personen', { rolle: 'Eigentümer', vorname: 'Max', nachname: 'Mustermann' });
+    const mieter = await insert('personen', { rolle: 'Mieter', vorname: 'Tom', nachname: 'Beispielmieter' });
+    const e1 = await insert('einheiten', { objekt_id: o, nummer: 'WE 1', typ: 'Wohnung', mea: 500, lfd_nr: 1 });
+    const e2 = await insert('einheiten', { objekt_id: o, nummer: 'WE 2', typ: 'Wohnung', mea: 500, lfd_nr: 2 });
+    await insert('eigentum', { einheit_id: e1, person_id: eig, anteil: 100 }); await insert('eigentum', { einheit_id: e2, person_id: eig2, anteil: 100 });
+    await insert('hausgeld', { einheit_id: e1, gueltig_ab: '2025-01-01', betrag: 300, davon_ruecklage: 50 });
+    await insert('hausgeld', { einheit_id: e2, gueltig_ab: '2025-01-01', betrag: 300, davon_ruecklage: 50 });
+    await insert('mietvertraege', { einheit_id: e1, mieter_id: mieter, beginn: '2025-01-01', kaltmiete: 600, nk_vorauszahlung: 150, hk_vorauszahlung: 0, kaution: 0, personenzahl: 1, faellig_tag: 3, zahlung_an: 'Eigentümer', mietart: 'Standard' });
+    await soll.sollStellen('2025-12', { objektId: o });
+    const bk = await insert('bankkonten', { objekt_id: o, name: 'WEG', anfangssaldo: 0 });
+    const u = await insert('bankumsaetze', { bankkonto_id: bk, datum: '2025-01-05', betrag: 300, gegenpartei: 'Erika Musterfrau', verwendungszweck: 'Hausgeld', status: 'offen' });
+    await bank.zuordnenPerson((await db.select(`SELECT * FROM bankumsaetze WHERE id = ${u}`))[0], eig);
+    const geb = await db.select(`SELECT s.art, b.betrag, b.text FROM buchungen b LEFT JOIN sollstellungen s ON s.id = b.sollstellung_id WHERE b.bankumsatz_id = ${u}`);
+    const ops = await db.select(`SELECT art, COUNT(*) n, SUM(betrag) s FROM sollstellungen WHERE einheit_id = ${e1} GROUP BY art`);
+    const k = (await db.select(`SELECT id FROM buchungskonten WHERE umlagefaehig = 1 AND art = 'Aufwand' AND nummer NOT IN ('1200', '1201') ORDER BY nummer LIMIT 1`))[0];
+    await insert('buchungen', { datum: '2025-06-30', betrag: -4000, buchungskonto_id: k.id, objekt_id: o, text: 'Umlagefähige Kosten 2025' });
+    const nk = (await (await import('/src/logic/nebenkosten.ts')).nkBerechnen(o, 2025)).erg.filter((x) => x.nutzer.art === 'Mieter').map((x) => ({ summe: x.summe, vz: x.vz, saldo: x.saldo, ueber: x.ueberEigentuemer }));
+    return { o, geb, ops, nk };
+  });
+  ok('300 € vom Eigentümer komplett als Hausgeld zugeordnet', r.geb.length === 1 && r.geb[0].art === 'Hausgeld' && r.geb[0].betrag === 300, JSON.stringify(r.geb));
+  ok('Bei uns nur Hausgeld gefordert (keine Miete, keine NK beim Mieter)', r.ops.length === 1 && r.ops[0].art === 'Hausgeld' && r.ops[0].s === 3600, JSON.stringify(r.ops));
+  const m = r.nk[0];
+  ok('NK-Abrechnung Mieter: 2.000 € Kosten gegen 12 × 150 € = Nachzahlung 200 €', m && m.summe === 2000 && m.vz === 1800 && m.saldo === 200 && m.ueber, JSON.stringify(m));
+  await p.setViewportSize({ width: 2400, height: 900 });
+  await p.goto(`http://localhost:5179/#/objekte/${r.o}`); await p.waitForSelector('table.list tbody tr', { timeout: 15000 }); await p.waitForTimeout(800);
+  const karte = p.locator('.card').filter({ hasText: 'Einheiten (WEG)' }).first();
+  const z = (await karte.locator('table.list tbody tr').allInnerTexts()).map((x) => x.replace(/\s+/g, ' '));
+  ok('Liste: Aufteilung Rücklage 50 · NK Mieter 150 · Eigentümer 100', /Rücklage 50,00 € · NK Mieter 150,00 € · Eigentümer 100,00 €/.test(z[0]), z[0]);
+  ok('Selbst genutzt: nur Rücklage angezeigt', /Rücklage 50,00 €/.test(z[1]) && !/NK Mieter/.test(z[1]), z[1]);
+  await karte.screenshot({ path: AUS + '/hausgeld-aufteilung.png' });
+  ok('Keine Fehler in der Konsole', !errs.length, errs.join(' | ').slice(0, 300));
+  await b.close();
+})().catch((e) => { console.log('FAIL Abbruch: ' + e.message); process.exit(1); });

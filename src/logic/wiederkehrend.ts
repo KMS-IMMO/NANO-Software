@@ -1,5 +1,5 @@
 // Wiederkehrende Ausgaben (Versicherung, Hausmeister, Wartungsverträge …):
-// Ist das Datum erreicht, legt NANO die Rechnung automatisch als offene Rechnung an.
+// Ist das Datum erreicht, legt NEOSS die Rechnung automatisch als offene Rechnung an.
 import { db, insert } from '../db';
 import { gesperrt } from './abschluss';
 
