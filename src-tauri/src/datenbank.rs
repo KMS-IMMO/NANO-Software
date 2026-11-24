@@ -264,6 +264,12 @@ fn zeitstempel() -> String {
   chrono::Local::now().format("%Y-%m-%d_%H-%M").to_string()
 }
 
+/// Sortierschlüssel einer Sicherungsdatei: der Zeitstempel hinter dem Namen
+/// (NANO-/NEOSS-Sicherung_…, …-vor-Wiederherstellung_…), damit ältere zuerst kommen.
+fn zeit_schluessel(name: &str) -> String {
+  name.split_once('_').map_or(name, |(_, z)| z).to_string()
+}
+
 #[derive(Serialize)]
 pub struct Sicherung {
   pub name: String,
@@ -280,13 +286,13 @@ pub fn db_auto_sicherung(app: AppHandle, state: tauri::State<'_, DbState>) -> Re
     .filter_map(|e| e.ok().map(|e| e.path()))
     .filter(|p| p.extension().map_or(false, |x| x == "nanosicherung"))
     .collect();
-  vorhanden.sort();
+  vorhanden.sort_by_key(|p| zeit_schluessel(&p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()));
   if vorhanden.iter().any(|p| p.file_name().map_or(false, |n| n.to_string_lossy().contains(&heute))) {
     return Ok(None);
   }
   let g = state.0.lock().unwrap();
   let o = g.as_ref().ok_or("Die Datenbank ist gesperrt.")?;
-  let ziel = d.join(format!("NANO-Sicherung_{}.nanosicherung", zeitstempel()));
+  let ziel = d.join(format!("NEOSS-Sicherung_{}.nanosicherung", zeitstempel()));
   sichern_nach(o, &ziel)?;
   vorhanden.push(ziel.clone());
   while vorhanden.len() > SICHERUNGEN_BEHALTEN {
@@ -305,8 +311,35 @@ pub fn db_sicherung_erstellen(app: AppHandle, state: tauri::State<'_, DbState>, 
   fs::create_dir_all(&d).map_err(|e| e.to_string())?;
   let g = state.0.lock().unwrap();
   let o = g.as_ref().ok_or("Die Datenbank ist gesperrt.")?;
-  let ziel = d.join(format!("NANO-Sicherung_{}.nanosicherung", zeitstempel()));
+  let ziel = d.join(format!("NEOSS-Sicherung_{}.nanosicherung", zeitstempel()));
   sichern_nach(o, &ziel)?;
+  Ok(ziel.to_string_lossy().into_owned())
+}
+
+/// Tägliche Sicherung zusätzlich in einen gewählten Ordner (USB-Stick, NAS). Der Ordner muss schon da sein
+/// (ist der Stick nicht eingesteckt, wird nichts angelegt). Dort bleiben die letzten `behalten` NEOSS-Sicherungen.
+#[tauri::command]
+pub fn db_sicherung_extern(state: tauri::State<'_, DbState>, ordner_pfad: String, behalten: usize) -> Result<String, String> {
+  let d = PathBuf::from(&ordner_pfad);
+  if ordner_pfad.is_empty() || !d.is_dir() {
+    return Err(format!("Der Sicherungsordner ist nicht erreichbar: {ordner_pfad}"));
+  }
+  let ziel = d.join(format!("NEOSS-Sicherung_{}.nanosicherung", zeitstempel()));
+  {
+    let g = state.0.lock().unwrap();
+    let o = g.as_ref().ok_or("Die Datenbank ist gesperrt.")?;
+    sichern_nach(o, &ziel)?;
+  }
+  let mut alte: Vec<PathBuf> = fs::read_dir(&d).map_err(|e| e.to_string())?
+    .filter_map(|e| e.ok().map(|e| e.path()))
+    .filter(|p| p.extension().map_or(false, |x| x == "nanosicherung")
+      && p.file_name().map_or(false, |n| n.to_string_lossy().starts_with("NEOSS-Sicherung_")))
+    .collect();
+  alte.sort_by_key(|p| zeit_schluessel(&p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()));
+  let behalten = behalten.max(1);
+  while alte.len() > behalten {
+    let _ = fs::remove_file(alte.remove(0));
+  }
   Ok(ziel.to_string_lossy().into_owned())
 }
 
@@ -322,7 +355,7 @@ pub fn db_sicherungen(app: AppHandle) -> Result<Vec<Sicherung>, String> {
       groesse: e.metadata().map(|m| m.len()).unwrap_or(0),
     })
     .collect();
-  v.sort_by(|a, b| b.name.cmp(&a.name));
+  v.sort_by(|a, b| zeit_schluessel(&b.name).cmp(&zeit_schluessel(&a.name)));
   Ok(v)
 }
 
@@ -335,7 +368,7 @@ pub fn db_wiederherstellen(app: AppHandle, state: tauri::State<'_, DbState>, pfa
   let d = ordner(&app)?;
   let mut g = state.0.lock().unwrap();
   if let Some(o) = g.as_ref() {
-    let vorher = sicherungsordner(&app)?.join(format!("NANO-vor-Wiederherstellung_{}.nanosicherung", zeitstempel()));
+    let vorher = sicherungsordner(&app)?.join(format!("NEOSS-vor-Wiederherstellung_{}.nanosicherung", zeitstempel()));
     sichern_nach(o, &vorher)?;
   }
   *g = None;

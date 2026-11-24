@@ -6,6 +6,14 @@ import { mieteImMonat, monate } from './soll';
 
 export const HEIZ_KONTO = '1200';
 
+/** Hinweis, wenn Heizkosten nicht verbrauchsabhängig verteilt würden (Heizkostenverordnung) */
+export const HEIZ_HINWEIS = `Heizkosten (Konto ${HEIZ_KONTO}) müssen nach der Heizkostenverordnung verbrauchsabhängig verteilt werden: Messdienst-Ergebnisse eintragen oder Schlüssel „Verbrauch“ mit Werten. Liegt eine Ausnahme vor (z. B. Zweifamilienhaus mit Vermieter, § 2 HeizkostenV), den Schlüssel für Konto ${HEIZ_KONTO} in der Übersicht für diese Liegenschaft bewusst wählen.`;
+
+/** Heizkosten-Position, die weder nach Messdienst noch nach Verbrauch noch nach einem bewusst gewählten Schlüssel verteilt wird */
+export function heizkostenOhneMessung(pos: { nummer: string; konto_id: number; schluessel: string; betrag: number }[], eigene: Set<number>): boolean {
+  return pos.some((p) => p.nummer === HEIZ_KONTO && Math.abs(p.betrag) >= 0.005 && p.schluessel !== 'Messdienst' && p.schluessel !== 'Verbrauch' && !eigene.has(p.konto_id));
+}
+
 export type NkErgebnis = Ergebnis & {
   vz: number;            // Vorauszahlungen NK + HK im Jahr
   saldo: number;         // > 0 Nachzahlung, < 0 Guthaben

@@ -1,0 +1,5 @@
+Anrede;Vorname;Nachname;Straße;PLZ;Ort;Telefon;E-Mail;IBAN
+Frau;Clara;Csv;Ringstraße 4;50667;;0221 1;clara@example.de;DE07370400440000777001
+Herr;Anna;Schmidt;;;;;;
+;;;;;;;;
+Herr;Ben;Fehler;;5066;;;;DE00 1234

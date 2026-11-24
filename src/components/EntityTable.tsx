@@ -1,7 +1,11 @@
 // Wiederverwendbare Liste mit Formular zum Anlegen, Bearbeiten und Löschen.
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
-import { Pencil } from 'lucide-react';
+import { BetragFeld } from './BetragFeld';
+import { betragZahl, euro } from '../lib/betrag';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { FileDown, Pencil, X } from 'lucide-react';
 import { db, insert, remove, update, type Row } from '../db';
+import { doppeltePerson, ibanFehler, ortZurPlz, plzFehler } from '../lib/pruefen';
+import { DatumFeld } from './DatumFeld';
 
 export type FieldType = 'text' | 'number' | 'date' | 'time' | 'select' | 'textarea' | 'checkbox';
 
@@ -22,6 +26,22 @@ export interface Field {
   sum?: boolean;
   /** Text der leeren Auswahl (Standard: – bitte wählen –) */
   leer?: string;
+  /** Geldbetrag: Eingabe mit €, Anzeige 1.234,00 €, Minusbeträge rot */
+  geld?: boolean;
+  /** bei geld: Minusbeträge nicht rot färben */
+  minusNeutral?: boolean;
+  /** Feld im Formular nur zeigen, wenn die Bedingung zutrifft (z. B. Index-Angaben nur bei Indexmiete) */
+  zeigen?: (werte: Row) => boolean;
+  /** Gelber Hinweis unter dem Feld (blockiert nicht) */
+  hinweis?: (werte: Row) => string | null;
+  /** Fehlertext, der das Speichern verhindert */
+  pruefen?: (v: any, werte: Row) => string | null;
+  /** Vorbelegung beim Neuanlegen (Wert oder Funktion, die ihn liefert) */
+  standard?: any;
+  /** Auswahl einer Person: Knopf „+ Neu“ legt sie direkt hier mit dieser Rolle an */
+  neuePerson?: string;
+  /** Abschnitt im Bearbeiten-Fenster (z. B. „Anschrift“, „Kontakt“): Felder gleichen Abschnitts stehen zusammen in einer Karte */
+  abschnitt?: string;
 }
 
 interface Props {
@@ -45,13 +65,21 @@ interface Props {
   onNew?: () => void;
   /** Eigener Ablauf beim Löschen (z. B. mit Bestätigungsfeld) */
   onDelete?: (row: Row) => void;
+  /** Grund, warum ein Datensatz nicht gelöscht werden darf (sonst null) */
+  loeschSperre?: (row: Row) => string | null;
   /** Ändert sich der Wert, wird die Liste neu geladen */
   version?: number;
+  /** Zusätzliche CSS-Klasse je Zeile, z. B. Farbe nach Rolle */
+  rowClass?: (row: Row) => string | undefined;
+  /** Zusätzlicher Bereich unter dem Formular eines gespeicherten Datensatzes, z. B. Schriftverkehr */
+  editExtra?: (row: Row) => ReactNode;
+  /** Kopf des Bearbeiten-Fensters (z. B. Name mit Kürzel und Rolle), bekommt die aktuellen Eingaben */
+  kopf?: (werte: Row) => ReactNode;
 }
 
 type Opt = { value: string | number; label: string };
 
-export function EntityTable({ title, table, fields, listSql, listParams = [], fixed, onOpen, emptyText, onChange, groupBy, newLabel, icon, onNew, onDelete, version }: Props) {
+export function EntityTable({ title, table, fields, listSql, listParams = [], fixed, onOpen, emptyText, onChange, groupBy, newLabel, icon, onNew, onDelete, loeschSperre, version, rowClass, editExtra, kopf }: Props) {
   const [rows, setRows] = useState<Row[]>([]);
   const [editing, setEditing] = useState<Row | null>(null);
   const [opts, setOpts] = useState<Record<string, Opt[]>>({});
@@ -77,22 +105,49 @@ export function EntityTable({ title, table, fields, listSql, listParams = [], fi
   }, [!!editing]);
 
   const formFields = fields.filter((f) => !f.computed);
+  const [warnung, setWarnung] = useState('');
+  const neu = () => { setWarnung(''); setError(''); setEditing(Object.fromEntries(formFields.filter((f) => f.standard !== undefined).map((f) => [f.key, typeof f.standard === 'function' ? f.standard() : f.standard]))); };
+  const sichtbar = (f: Field) => !editing || !f.zeigen || f.zeigen(editing);
+  // Werte ändern; bei PLZ gleich den Ort ergänzen, wenn er noch leer ist
+  const setzen = (f: Field, v: any) => {
+    setEditing((e) => ({ ...e, [f.key]: v }));
+    setWarnung('');
+    if (f.key === 'plz' && formFields.some((x) => x.key === 'ort')) {
+      ortZurPlz(v).then((ort) => { if (ort) setEditing((e) => (e && !String(e.ort ?? '').trim() ? { ...e, ort } : e)); });
+    }
+  };
+  const fehlerVon = (f: Field, w: Row) => f.pruefen?.(w[f.key], w) ?? (f.key === 'iban' ? ibanFehler(w[f.key]) : null);
+  const hinweisVon = (f: Field, w: Row) => f.hinweis?.(w) ?? (f.key === 'plz' ? plzFehler(w[f.key]) : null);
 
   async function save() {
     if (!editing) return;
     setError('');
     for (const f of formFields) {
+      if (!sichtbar(f)) continue;
       if (f.required && (editing[f.key] === undefined || editing[f.key] === null || editing[f.key] === '')) {
         setError(`Bitte „${f.label}“ ausfüllen.`);
         return;
       }
+      const fe = fehlerVon(f, editing);
+      if (fe) { setError(`${f.label}: ${fe}`); return; }
+    }
+    if (table === 'personen' && !warnung) {
+      const d = await doppeltePerson(editing, editing.id);
+      if (d) { setWarnung(d); return; }
     }
     const values: Row = {};
     for (const f of formFields) {
       let v = editing[f.key];
       if (v === '' || v === undefined) v = null;
-      if (f.type === 'number' && v !== null) v = Number(String(v).replace(',', '.'));
+      if (f.type === 'number' && v !== null) {
+        const n = betragZahl(v);
+        if (n === null) { setError(`„${f.label}“ ist keine gültige Zahl.`); return; }
+        v = n;
+      }
       if (f.type === 'checkbox') v = v ? 1 : 0;
+      if (f.key === 'iban' && v) v = String(v).replace(/\s/g, '').toUpperCase();
+      // leerer Geldbetrag beim Anlegen: es gilt der Standard der Datenbank (z. B. 0 € NK-Vorauszahlung)
+      if (f.geld && v === null && !editing.id) continue;
       values[f.key] = v;
     }
     try {
@@ -108,14 +163,16 @@ export function EntityTable({ title, table, fields, listSql, listParams = [], fi
 
   async function del() {
     if (!editing?.id) return;
+    const sperre = loeschSperre?.(editing);
+    if (sperre) { setError(sperre); return; }
     if (onDelete) { const r = editing; setEditing(null); onDelete(r); return; }
-    if (!window.confirm('Datensatz wirklich löschen?')) return;
+    if (!window.confirm('Datensatz löschen? Er liegt danach 30 Tage im Papierkorb und lässt sich dort wiederherstellen.')) return;
     try {
       await remove(table, editing.id);
       setEditing(null);
       await load();
       onChange?.();
-    } catch (e: any) {
+    } catch {
       setError('Löschen nicht möglich: Der Datensatz wird noch verwendet.');
     }
   }
@@ -133,13 +190,32 @@ export function EntityTable({ title, table, fields, listSql, listParams = [], fi
     return v ?? '';
   };
 
+  // Liste als PDF: genau die sichtbaren Spalten und Zeilen (inkl. Suchfilter)
+  const karte = useRef<HTMLElement>(null);
+  const alsPdf = async () => {
+    const t = karte.current?.querySelector('table.list'); if (!t) return;
+    const txt = (el: Element) => (el as HTMLElement).innerText.replace(/\s*\n\s*/g, ' ').trim();
+    const ths = [...t.querySelectorAll('thead th')];
+    const nutz = ths.map((th, i) => (txt(th) && !th.classList.contains('wahl') ? i : -1)).filter((i) => i >= 0);
+    const zeile = (tr: Element) => { const c = [...tr.children]; return nutz.map((i) => (c[i] ? txt(c[i]) : '')); };
+    const rechts = nutz.map((i, j) => (ths[i].classList.contains('num') ? j : -1)).filter((j) => j >= 0);
+    const body = [...t.querySelectorAll('tbody tr')].filter((tr) => !tr.classList.contains('sum')).map(zeile);
+    const fuss = [...t.querySelectorAll('tfoot tr, tbody tr.sum')].map(zeile);
+    const { listePdf } = await import('../lib/pdf');
+    const { oeffnen, speichern } = await import('../lib/dateien');
+    const heute = new Date().toLocaleDateString('de-DE');
+    const bytes = await listePdf(title, `Stand ${heute} · ${body.length} Einträge${filter ? ` · Suche „${filter}“` : ''}`, nutz.map((i) => txt(ths[i])), body, fuss.length ? fuss : undefined, rechts);
+    oeffnen(await speichern(bytes, `${title} ${new Date().toISOString().slice(0, 10)}.pdf`, { bezug: 'Objekt', bezugId: 0, ordner: ['Berichte'] }));
+  };
+
   return (
-    <section className="card">
+    <section className="card" ref={karte}>
       <div className="card-head">
         <h2 className="title-ico">{icon}{title}</h2>
         <div className="row">
           <input className="search" placeholder="Suchen…" value={filter} onChange={(e) => setFilter(e.target.value)} />
-          <button className="primary" onClick={() => (onNew ? onNew() : setEditing({}))}>+ {newLabel ?? 'Neu'}</button>
+          {visible.length > 0 && <button onClick={alsPdf} title="Liste als PDF"><FileDown size={16} />PDF</button>}
+          <button className="primary" onClick={() => (onNew ? onNew() : neu())}>+ {newLabel ?? 'Neu'}</button>
         </div>
       </div>
       {visible.length === 0 ? (
@@ -154,10 +230,10 @@ export function EntityTable({ title, table, fields, listSql, listParams = [], fi
               groupBy && (i === 0 || visible[i - 1][groupBy] !== r[groupBy]) ? (
                 <tr key={'g' + r.id} className="group"><td colSpan={shown.length + 1}>{r[groupBy] ?? 'Ohne Gruppe'}</td></tr>
               ) : null,
-              <tr key={r.id} onClick={() => (onOpen ? onOpen(r) : setEditing(r))} className="clickable">
-                {shown.map((f) => <td key={f.key} className={f.type === 'number' ? 'num' : ''}>{display(f, r)}</td>)}
+              <tr key={r.id} onClick={() => (onOpen ? onOpen(r) : setEditing(r))} className={'clickable' + (rowClass?.(r) ? ' ' + rowClass(r) : '')}>
+                {shown.map((f) => <td key={f.key} className={f.type === 'number' ? 'num' + (f.geld && !f.minusNeutral && Number(r[f.key]) < -0.004 ? ' neg' : '') : ''}>{display(f, r)}</td>)}
                 <td className="actions">
-                  <button className="icon-btn" title="Bearbeiten" onClick={(e) => { e.stopPropagation(); setEditing(r); }}><Pencil size={17} /></button>
+                  <button className="icon-btn" title="Bearbeiten" onClick={(e) => { e.stopPropagation(); setWarnung(''); setEditing(r); }}><Pencil size={17} /></button>
                 </td>
               </tr>,
             ])}
@@ -175,29 +251,97 @@ export function EntityTable({ title, table, fields, listSql, listParams = [], fi
         </table></div>
       )}
 
-      {editing && (
+      {editing && (() => {
+        const enter = (e: React.KeyboardEvent) => { if (e.key === 'Enter' && !(e.target instanceof HTMLTextAreaElement) && !(e.target instanceof HTMLButtonElement)) { e.preventDefault(); save(); } };
+        const feld = (f: Field) => {
+          const fe = editing[f.key] ? fehlerVon(f, editing) : null, hi = hinweisVon(f, editing);
+          return (
+            <label key={f.key} className={[f.wide || f.type === 'textarea' ? 'wide' : '', f.type === 'checkbox' ? 'check-feld' : ''].filter(Boolean).join(' ')}>
+              <span>{f.label}{f.required ? ' *' : ''}</span>
+              {f.neuePerson
+                ? <PersonWahl f={f} value={editing[f.key]} opts={opts[f.key]} onChange={(v) => setzen(f, v)}
+                    onNeu={(o) => { setOpts((x) => ({ ...x, [f.key]: [...(x[f.key] ?? []), o].sort((a, b) => a.label.localeCompare(b.label, 'de')) })); setzen(f, o.value); }} />
+                : <Input f={f} value={editing[f.key]} opts={opts[f.key]} onChange={(v) => setzen(f, v)} />}
+              {fe ? <small className="feld-fehler">{fe}</small> : hi ? <small className="feld-hinweis">{hi}</small> : null}
+            </label>);
+        };
+        const felder = formFields.filter(sichtbar);
+        const abschnitte = [...new Set(felder.map((f) => f.abschnitt ?? ''))];
+        const mitAbschnitten = felder.some((f) => f.abschnitt);
+        return (
         <div className="modal-bg" onClick={() => setEditing(null)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <h3>{editing.id ? `${title}: bearbeiten` : `${title}: neu anlegen`}</h3>
-            <div className="form" onKeyDown={(e) => { if (e.key === 'Enter' && !(e.target instanceof HTMLTextAreaElement) && !(e.target instanceof HTMLButtonElement)) { e.preventDefault(); save(); } }}>
-              {formFields.map((f) => (
-                <label key={f.key} className={f.wide || f.type === 'textarea' ? 'wide' : ''}>
-                  <span>{f.label}{f.required ? ' *' : ''}</span>
-                  <Input f={f} value={editing[f.key]} opts={opts[f.key]} onChange={(v) => setEditing({ ...editing, [f.key]: v })} />
-                </label>
-              ))}
+          <div className={'modal' + (mitAbschnitten || kopf ? ' et-fenster' : '')} onClick={(e) => e.stopPropagation()}>
+            <div className="et-kopf">
+              <div className="et-kopf-text">
+                {kopf && <small className="muted">{editing.id ? `${title}: bearbeiten` : `${title}: neu anlegen`}</small>}
+                {kopf ? kopf(editing) : <h3>{editing.id ? `${title}: bearbeiten` : `${title}: neu anlegen`}</h3>}
+              </div>
+              <button className="icon-btn" title="Schließen" onClick={() => setEditing(null)}><X size={18} /></button>
             </div>
+            {mitAbschnitten
+              ? <div className="et-abschnitte" onKeyDown={enter}>{abschnitte.map((a) => (
+                  <section key={a || 'weitere'} className="et-abschnitt">
+                    <h4>{a || 'Weitere Angaben'}</h4>
+                    <div className="form">{felder.filter((f) => (f.abschnitt ?? '') === a).map(feld)}</div>
+                  </section>))}</div>
+              : <div className="form" onKeyDown={enter}>{felder.map(feld)}</div>}
             {error && <p className="error">{error}</p>}
-            <div className="row end">
+            {warnung && <p className="warn">{warnung}</p>}
+            <div className="row end et-fuss">
               {editing.id && <button className="danger" onClick={del}>Löschen</button>}
               <span className="grow" />
               <button onClick={() => setEditing(null)}>Abbrechen</button>
               <button className="primary" onClick={save}>Speichern</button>
             </div>
+            {editing.id && editExtra?.(editing)}
           </div>
-        </div>
-      )}
+        </div>);
+      })()}
     </section>
+  );
+}
+
+/** Personenauswahl mit „+ Neu“: legt die Person gleich hier an, ohne das Formular zu verlassen */
+function PersonWahl({ f, value, opts, onChange, onNeu }: { f: Field; value: any; opts?: Opt[]; onChange: (v: any) => void; onNeu: (o: Opt) => void }) {
+  const [auf, setAuf] = useState(false);
+  const [p, setP] = useState<Record<string, string>>({ anrede: 'Herr', vorname: '', nachname: '', firma: '', telefon: '', email: '', iban: '' });
+  const [fehler, setFehler] = useState('');
+  const [warn, setWarn] = useState('');
+  const s = (k: string) => (e: { target: { value: string } }) => { setP({ ...p, [k]: e.target.value }); setWarn(''); };
+  async function anlegen() {
+    setFehler('');
+    if (!p.nachname.trim() && !p.firma.trim()) { setFehler('Bitte Nachname oder Firma eintragen.'); return; }
+    const ib = ibanFehler(p.iban); if (ib) { setFehler(ib); return; }
+    if (!warn) { const d = await doppeltePerson(p); if (d) { setWarn(d.replace('Nochmal auf Speichern', 'Nochmal auf Anlegen')); return; } }
+    const leer = (x: string) => x.trim() || null;
+    const id = await insert('personen', { rolle: f.neuePerson, anrede: leer(p.anrede), vorname: leer(p.vorname), nachname: leer(p.nachname), firma: leer(p.firma),
+      telefon: leer(p.telefon), email: leer(p.email), iban: leer(p.iban.replace(/\s/g, '').toUpperCase()) });
+    const label = p.nachname.trim() ? [p.nachname.trim(), p.vorname.trim()].filter(Boolean).join(', ') : p.firma.trim();
+    onNeu({ value: id, label });
+    setAuf(false); setWarn(''); setP({ anrede: 'Herr', vorname: '', nachname: '', firma: '', telefon: '', email: '', iban: '' });
+  }
+  return (
+    <span className="person-wahl">
+      <span className="row">
+        <span className="grow"><Input f={f} value={value} opts={opts} onChange={onChange} /></span>
+        <button type="button" className={auf ? '' : 'link'} onClick={(e) => { e.preventDefault(); setAuf(!auf); }} title={`Neuen Kontakt (${f.neuePerson}) direkt anlegen`}>{auf ? 'Schließen' : '+ Neu'}</button>
+      </span>
+      {auf && <span className="person-neu" onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); anlegen(); } }}>
+        <b>Neuer Kontakt ({f.neuePerson})</b>
+        <span className="person-neu-raster">
+          <select value={p.anrede} onChange={s('anrede')}>{['Herr', 'Frau', 'Divers', 'Firma', 'Eheleute'].map((a) => <option key={a}>{a}</option>)}</select>
+          <input placeholder="Vorname" value={p.vorname} onChange={s('vorname')} autoFocus />
+          <input placeholder="Nachname" value={p.nachname} onChange={s('nachname')} />
+          <input placeholder="Firma (bei Gewerbe)" value={p.firma} onChange={s('firma')} />
+          <input placeholder="Telefon" value={p.telefon} onChange={s('telefon')} />
+          <input placeholder="E-Mail" value={p.email} onChange={s('email')} />
+          <input className="breit" placeholder="IBAN (für die Zuordnung der Zahlungen)" value={p.iban} onChange={s('iban')} />
+        </span>
+        {fehler && <small className="feld-fehler">{fehler}</small>}
+        {warn && <small className="feld-hinweis">{warn}</small>}
+        <span className="row end"><button type="button" className="primary" onClick={(e) => { e.preventDefault(); anlegen(); }}>Anlegen und auswählen</button></span>
+      </span>}
+    </span>
   );
 }
 
@@ -216,9 +360,10 @@ function Input({ f, value, opts, onChange }: { f: Field; value: any; opts?: Opt[
     case 'checkbox':
       return <input type="checkbox" checked={!!value} onChange={(e) => onChange(e.target.checked)} />;
     case 'number':
-      return <input inputMode="decimal" value={v} onChange={(e) => onChange(e.target.value)} />;
+      if (f.geld) return <BetragFeld value={value} onChange={(e) => onChange(e.target.value)} />;
+      return <input inputMode="decimal" value={typeof value === 'number' ? String(value).replace('.', ',') : v} onChange={(e) => onChange(e.target.value)} />;
     case 'date':
-      return <input type="date" value={v} onChange={(e) => onChange(e.target.value)} />;
+      return <DatumFeld value={v} onChange={(e) => onChange(e.target.value)} />;
     case 'time':
       return <input type="time" value={v} onChange={(e) => onChange(e.target.value)} />;
     default:
@@ -228,5 +373,8 @@ function Input({ f, value, opts, onChange }: { f: Field; value: any; opts?: Opt[
 
 export const num = (v: any, digits = 2) =>
   v === null || v === undefined || v === '' ? '' : Number(v).toLocaleString('de-DE', { minimumFractionDigits: digits, maximumFractionDigits: digits });
-export const eur = (v: any) => (v === null || v === undefined ? '' : num(v) + ' €');
+/** Geldbetrag immer als 1.234,00 € */
+export const eur = (v: any) => (v === null || v === undefined || v === '' || !Number.isFinite(Number(v)) ? '' : euro(Number(v)));
+/** CSS-Klasse für ein Abrechnungsergebnis: positiv = Nachzahlung (rot), negativ = Guthaben (grün) */
+export const farbe = (n: number) => (n > 0.005 ? 'neg' : n < -0.005 ? 'pos' : '');
 export const datum = (v: any) => (v ? new Date(v + 'T00:00:00').toLocaleDateString('de-DE') : '');
