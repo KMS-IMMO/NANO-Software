@@ -45,9 +45,14 @@ export interface Umsatz {
 /* ---------------- Einlesen ---------------- */
 
 export function parseDatei(name: string, text: string): Umsatz[] {
+  return parseDateiDetail(name, text).umsaetze;
+}
+
+/** Wie parseDatei, nennt aber zusätzlich die Zeilen, die nicht als Umsatz übernommen wurden (mit Grund) */
+export function parseDateiDetail(name: string, text: string): { umsaetze: Umsatz[]; uebersprungen: string[] } {
   const t = text.trimStart();
-  if (t.startsWith('<') || /\.xml$/i.test(name)) return parseCamt(t);
-  return parseCsv(text);
+  if (t.startsWith('<') || /\.xml$/i.test(name)) return { umsaetze: parseCamt(t), uebersprungen: [] };
+  return parseCsvDetail(text);
 }
 
 const txt = (el: Element | null | undefined, sel: string) => el?.querySelector(sel)?.textContent?.trim() ?? '';
@@ -75,27 +80,48 @@ export function parseCamt(xml: string): Umsatz[] {
   return out;
 }
 
+/** CSV in Datensätze zerlegen. Felder in Anführungszeichen dürfen Trennzeichen und Zeilenumbrüche enthalten
+ *  (z. B. mehrzeiliger Verwendungszweck bei Volksbank und Sparkasse), "" steht für ein Anführungszeichen. */
+function csvDatensaetze(text: string, sep: string): string[][] {
+  const out: string[][] = [];
+  let zeile: string[] = [], cur = '', q = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (q) {
+      if (c === '"') { if (text[i + 1] === '"') { cur += '"'; i++; } else q = false; }
+      else cur += c === '\r' ? '' : c === '\n' ? ' ' : c;
+    } else if (c === '"') q = true;
+    else if (c === sep) { zeile.push(cur); cur = ''; }
+    else if (c === '\n' || c === '\r') {
+      if (c === '\r' && text[i + 1] === '\n') i++;
+      zeile.push(cur); cur = '';
+      if (zeile.some((x) => x.trim())) out.push(zeile.map((x) => x.replace(/\s+/g, ' ').trim()));
+      zeile = [];
+    } else cur += c;
+  }
+  zeile.push(cur);
+  if (zeile.some((x) => x.trim())) out.push(zeile.map((x) => x.replace(/\s+/g, ' ').trim()));
+  return out;
+}
+
 /** CSV-Export deutscher Banken (Sparkasse, Volksbank, Deutsche Bank, Commerzbank, ING, …) mit Spaltenerkennung */
 export function parseCsv(text: string): Umsatz[] {
-  const lines = text.replace(/^\uFEFF/, '').split(/\r?\n/).filter((l) => l.trim());
-  const sep = (lines.find((l) => /buchung|betrag|datum/i.test(l)) ?? lines[0]).split(';').length > 2 ? ';' : ',';
-  const split = (l: string) => {
-    const r: string[] = []; let cur = ''; let q = false;
-    for (const c of l) {
-      if (c === '"') q = !q;
-      else if (c === sep && !q) { r.push(cur); cur = ''; }
-      else cur += c;
-    }
-    r.push(cur);
-    return r.map((x) => x.trim());
-  };
-  const hIdx = lines.findIndex((l) => /betrag/i.test(l) && /(buchung|datum)/i.test(l));
+  return parseCsvDetail(text).umsaetze;
+}
+
+export function parseCsvDetail(text: string): { umsaetze: Umsatz[]; uebersprungen: string[] } {
+  text = text.replace(/^\uFEFF/, '');
+  const roh = text.split(/\r?\n/).filter((l) => l.trim());
+  const sep = (roh.find((l) => /buchung|betrag|datum/i.test(l)) ?? roh[0] ?? '').split(';').length > 2 ? ';' : ',';
+  const saetze = csvDatensaetze(text, sep);
+  const hIdx = saetze.findIndex((c) => (c.some((h) => /betrag/i.test(h)) || (c.some((h) => /^soll/i.test(h)) && c.some((h) => /^haben/i.test(h))))
+    && c.some((h) => /buchung|datum/i.test(h)));
   if (hIdx < 0) throw new Error('In der CSV-Datei wurde keine Kopfzeile mit „Betrag“ und „Datum“ gefunden.');
-  const head = split(lines[hIdx]).map((h) => h.toLowerCase());
+  const head = saetze[hIdx].map((h) => h.toLowerCase());
   const col = (...names: RegExp[]) => { for (const n of names) { const i = head.findIndex((h) => n.test(h)); if (i >= 0) return i; } return -1; };
-  const cDatum = col(/^buchungstag$/, /^buchungsdatum$/, /buchung/, /^datum$/);
+  const cDatum = col(/^buchungstag$/, /^buchungsdatum$/, /buchung(stag|sdatum)/, /^datum$/, /^buchung$/, /buchung/, /datum/);
   const cValuta = col(/valuta/, /wertstellung/);
-  const cBetrag = col(/^betrag( \(eur\))?$/, /^betrag/, /umsatz/);
+  const cBetrag = col(/^betrag( \(eur\))?$/, /^betrag/, /betrag/, /umsatz/);
   const cSoll = col(/^soll/), cHaben = col(/^haben/);
   const cZweck = col(/verwendungszweck/, /buchungstext/, /^text/);
   const cName = col(/beguenstigter|begünstigter|zahlungspflichtiger|auftraggeber|empfänger|name/);
@@ -103,23 +129,48 @@ export function parseCsv(text: string): Umsatz[] {
   const datum = (s: string) => {
     const m = s.match(/(\d{1,2})\.(\d{1,2})\.(\d{2,4})/);
     if (m) { const y = m[3].length === 2 ? '20' + m[3] : m[3]; return `${y}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`; }
+    const iso = s.match(/(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if (iso) return `${iso[1]}-${iso[2].padStart(2, '0')}-${iso[3].padStart(2, '0')}`;
     return s.slice(0, 10);
   };
-  const zahl = (s: string) => Number((s || '0').replace(/[^\d,.-]/g, '').replace(/\.(?=\d{3}(\D|$))/g, '').replace(',', '.')) || 0;
-  const out: Umsatz[] = [];
-  for (const l of lines.slice(hIdx + 1)) {
-    const c = split(l);
-    if (c.length < 3 || !c[cDatum]) continue;
-    let betrag = cBetrag >= 0 ? zahl(c[cBetrag]) : zahl(c[cHaben]) - zahl(c[cSoll]);
+  // „1.234,56“, „-1234,56“, „1.234,56 €“, „+12,00“, „−12,00“ (typografisches Minus), auch „1,234.56“ / „12.50“
+  const zahl = (s: string): number | null => {
+    let t = (s || '').replace(/[−–]/g, '-').replace(/[^\d,.-]/g, '');
+    if (!/\d/.test(t)) return null;
+    const neg = t.includes('-'); t = t.replace(/-/g, '');
+    const k = t.lastIndexOf(','), p = t.lastIndexOf('.');
+    if (k > p) t = t.replace(/\./g, '').replace(',', '.');
+    else if (p > k && (k >= 0 || t.length - p - 1 !== 3)) t = t.replace(/,/g, '');
+    else t = t.replace(/[.,]/g, '');
+    const n = Number(t);
+    return Number.isFinite(n) ? (neg ? -n : n) : null;
+  };
+  const out: Umsatz[] = [], uebersprungen: string[] = [];
+  const zeigen = (c: string[]) => c.filter(Boolean).join(' · ').slice(0, 140);
+  for (const c of saetze.slice(hIdx + 1)) {
+    if (c.filter(Boolean).length < 2) continue;              // Leer- oder Fußzeile ohne Inhalt
+    const d = datum(c[cDatum] ?? '');
+    const b = cBetrag >= 0 ? zahl(c[cBetrag]) : (zahl(c[cHaben]) ?? 0) - (zahl(c[cSoll]) ?? 0);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) {
+      // Summen- und Saldozeilen am Ende sind keine Umsätze
+      if (!/saldo|kontostand|summe|anzahl|umsätze|^\*/i.test(c.join(' '))) uebersprungen.push(`Kein Buchungsdatum: „${zeigen(c)}“`);
+      continue;
+    }
+    if (b === null) { if (!/saldo|kontostand/i.test(c.join(' '))) uebersprungen.push(`Kein Betrag lesbar: „${zeigen(c)}“`); continue; }
+    let betrag = b;
     if (cBetrag >= 0 && /^s$/i.test(c[cBetrag + 1] ?? '')) betrag = -Math.abs(betrag);
+    if (betrag === 0) { uebersprungen.push(`Betrag 0,00 €: „${zeigen(c)}“`); continue; }
     out.push({
-      datum: datum(c[cDatum]), valuta: cValuta >= 0 ? datum(c[cValuta]) : undefined, betrag,
-      verwendungszweck: cZweck >= 0 ? c[cZweck] : '', gegenpartei: cName >= 0 ? c[cName] : '',
-      gegen_iban: cIban >= 0 ? c[cIban].replace(/\s/g, '') : '',
+      datum: d, valuta: cValuta >= 0 && c[cValuta] ? datum(c[cValuta]) : undefined, betrag,
+      verwendungszweck: cZweck >= 0 ? c[cZweck] ?? '' : '', gegenpartei: cName >= 0 ? c[cName] ?? '' : '',
+      gegen_iban: cIban >= 0 ? (c[cIban] ?? '').replace(/\s/g, '') : '',
     });
   }
-  return out.filter((u) => /^\d{4}-\d{2}-\d{2}$/.test(u.datum) && u.betrag !== 0);
+  return { umsaetze: out, uebersprungen };
 }
+
+/** Kurzbeschreibung eines Umsatzes für Hinweise („02.01.2026 Maria Neumann 320,00 €“) */
+export const umsatzKurz = (u: Umsatz) => `${u.datum.split('-').reverse().join('.')} ${u.gegenpartei || u.verwendungszweck.slice(0, 40)} ${eurText(u.betrag)}`.replace(/\s+/g, ' ');
 
 const hash = (k: number, u: Umsatz) => [k, u.datum, u.betrag.toFixed(2), u.gegen_iban, u.gegenpartei, u.verwendungszweck].join('|');
 
@@ -129,6 +180,7 @@ export async function importieren(bankkontoId: number, umsaetze: Umsatz[]) {
   // Gleiche Umsätze in derselben Datei (z. B. zwei gleiche Überweisungen am selben Tag) sind echte Buchungen:
   // ab dem zweiten bekommt der Schlüssel eine laufende Nummer. Beim erneuten Einlesen derselben Datei bleiben sie trotzdem doppelt erkannt.
   const gesehen = new Map<string, number>();
+  const schonDa: Umsatz[] = [];
   for (const u of umsaetze) {
     const h0 = hash(bankkontoId, u), nr = (gesehen.get(h0) ?? 0) + 1;
     gesehen.set(h0, nr);
@@ -137,8 +189,9 @@ export async function importieren(bankkontoId: number, umsaetze: Umsatz[]) {
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
       [bankkontoId, u.datum, u.valuta ?? null, u.betrag, u.verwendungszweck, u.gegenpartei, u.gegen_iban, nr > 1 ? `${h0}#${nr}` : h0]);
     neu += r.rowsAffected;
+    if (!r.rowsAffected) schonDa.push(u);
   }
-  return { neu, doppelt: umsaetze.length - neu };
+  return { neu, doppelt: umsaetze.length - neu, schonDa };
 }
 
 /* ---------------- Zuordnen ---------------- */
@@ -490,7 +543,7 @@ const GELD = /([+-]?\s?\d{1,3}(?:\.\d{3})*,\d{2}|[+-]?\s?\d+,\d{2})\s*([+-]|S|H)
 const BETRAG_TXT = (s: string) => Number(s.replace(/\s/g, '').replace(/\./g, '').replace(',', '.'));
 const UEBERSPRINGEN = /kontostand|saldo|übertrag|uebertrag|zwischensumme|summe soll|summe haben|seite \d|blatt \d|^\s*buchungstag|^\s*datum\b/i;
 
-export interface PdfAuszug { umsaetze: Umsatz[]; anfang?: number; ende?: number; hinweis?: string }
+export interface PdfAuszug { umsaetze: Umsatz[]; anfang?: number; ende?: number; hinweis?: string; uebersprungen?: string[] }
 
 /** Liest die Umsätze aus dem Text eines PDF-Kontoauszugs (Sparkasse, Volksbank, Commerzbank, Deutsche Bank, ING u. a.).
  *  Erkennt Zeilen, die mit einem Datum beginnen und mit einem Betrag enden; Folgezeilen sind Empfänger und Verwendungszweck. */
@@ -525,7 +578,7 @@ export function parseOnlineListe(text: string): PdfAuszug {
   const KOPF = /^(.*?)\s*([+\-−–$*·•]?)\s?(\d{1,3}(?:[.,]\d{3})*[.,;:]\d{2})\s*(?:EUR|€)\b\s*(.*)$/i;
   const DAT_IRGENDWO = /(\d{1,2})[.:,](\d{1,2})[.:,](20\d{2})/;
   const BETRAGZEILE = /\d[.,;:]\d{2}\s*(?:EUR|€)/i;
-  const unerkannt: string[] = [];
+  const unerkannt: string[] = [], verworfen: string[] = [];
   const DAT = /(\d{1,2})[.:,](\d{1,2})[.:,](20\d{2})\W*$/;
   const IBAN = /^([A-Z]{2}\d{2}[A-Z0-9]{10,30})$/;
   let anfang: number | undefined, ende: number | undefined;
@@ -574,6 +627,7 @@ export function parseOnlineListe(text: string): PdfAuszug {
       // das Datum muss direkt unter dem Betrag stehen, sonst war es ein Betrag im Verwendungszweck
       if (u.zeilen === 1 && datumZeile(u, z)) continue;
       unerkannt.push(`${u.gegenpartei} ${eurText(u.betrag)}`.trim());
+      verworfen.push(`Ohne Datum, an den vorherigen Umsatz angehängt: „${`${u.gegenpartei} ${eurText(u.betrag)} ${z}`.trim().slice(0, 120)}“`);
       const vorher = out[out.length - 1];
       if (vorher && vorher.verwendungszweck.length < 300) vorher.verwendungszweck += ` ${u.gegenpartei} ${eurText(Math.abs(u.betrag))} ${z}`.replace(/\s+/g, ' ');
       akt = null; continue;
@@ -582,13 +636,14 @@ export function parseOnlineListe(text: string): PdfAuszug {
     if (u.offen && u.teile.length < 4) u.teile.push(z.replace(/[|]/g, ' ').replace(/\bTAN:?\s*\S+/i, 'TAN').replace(/\s+/g, ' ').trim());
   }
   fertig();
+  for (const u of out) if (u.betrag === 0) verworfen.push(`Betrag 0,00 €: „${u.datum} ${u.gegenpartei}“`);
   const umsaetze = out.filter((u) => u.betrag !== 0);
   vorzeichenKlaeren(umsaetze, anfang, ende);
   ziffernPruefen(umsaetze, anfang, ende);
   let hinweis = saldoHinweis(umsaetze, anfang, ende);
   if (/^Achtung/.test(hinweis) && unerkannt.length)
     hinweis += ` Diese Zeilen mit Betrag wurden nicht als Umsatz erkannt, bitte mit dem Auszug vergleichen: ${unerkannt.slice(0, 6).map((z) => `„${z.slice(0, 70)}“`).join(', ')}${unerkannt.length > 6 ? ` und ${unerkannt.length - 6} weitere` : ''}.`;
-  return { umsaetze, anfang, ende, hinweis };
+  return { umsaetze, anfang, ende, hinweis, uebersprungen: verworfen };
 }
 
 /** Bleibt eine Differenz zum Endsaldo, die Umsätze markieren, bei denen eine einzige falsch gelesene Ziffer genau diese Differenz erklärt */
@@ -660,7 +715,7 @@ function parseKlassisch(text: string): PdfAuszug {
     return m[2] === '-' || m[2] === 'S' || /^-/.test(m[1].trim()) ? -Math.abs(v) : Math.abs(v); };
   const anfang = saldo(/(alter|vorheriger|anfangs)[ -]?(kontostand|saldo)/i) ?? (kst.length > 1 ? wert(kst[0]) : undefined);
   const ende = saldo(/(neuer|end)[ -]?(kontostand|saldo)/i) ?? (kst.length > 1 ? wert(kst[kst.length - 1]) : undefined);
-  const out: Umsatz[] = [];
+  const out: Umsatz[] = [], uebersprungen: string[] = [];
   let akt: (Umsatz & { teile: string[] }) | null = null;
   const abschliessen = () => {
     if (!akt) return;
@@ -672,6 +727,8 @@ function parseKlassisch(text: string): PdfAuszug {
   for (const z of zeilen) {
     const d = z.match(/^(\d{1,2})\.(\d{1,2})\.(\d{2,4})?\s+(?:(\d{1,2})\.(\d{1,2})\.(\d{2,4})?\s+)?(.*)$/);
     const g = z.match(GELD);
+    // Zeile mit Datum und Betrag, die wegen eines Stichworts (z. B. „Übertrag“) nicht als Umsatz gilt: dem Nutzer zeigen
+    if (d && g && UEBERSPRINGEN.test(z) && !/kontostand|saldo|summe/i.test(z)) uebersprungen.push(`Nicht als Umsatz gelesen: „${z.slice(0, 120)}“`);
     if (d && g && !UEBERSPRINGEN.test(z)) {
       abschliessen();
       const y = d[3] ? (d[3].length === 2 ? '20' + d[3] : d[3]) : jahrText;
@@ -698,11 +755,12 @@ function parseKlassisch(text: string): PdfAuszug {
     ? (Math.abs(anfang + summe - ende) < 0.01 ? `Kontostand passt: ${e(anfang)} + Umsätze ${e(summe)} = ${e(ende)}.`
       : `Achtung: Alter Kontostand ${e(anfang)} + Umsätze ${e(summe)} ergibt nicht den neuen Kontostand ${e(ende)}. Bitte die Liste prüfen.`)
     : 'Kontostand im PDF nicht gefunden, bitte die Liste prüfen.';
-  return { umsaetze: out.filter((u) => u.betrag !== 0), anfang, ende, hinweis };
+  for (const u of out) if (u.betrag === 0) uebersprungen.push(`Betrag 0,00 €: „${u.datum} ${u.gegenpartei} ${u.verwendungszweck}“`.slice(0, 160));
+  return { umsaetze: out.filter((u) => u.betrag !== 0), anfang, ende, hinweis, uebersprungen };
 }
 
 /** Eine Kontoauszug-Datei lesen: CAMT-XML, CSV, PDF oder (mit Texterkennung) eingescannte PDF */
-export async function auszugLesen(f: File, fortschritt?: (text: string) => void): Promise<{ umsaetze: Umsatz[]; hinweis?: string; anfang?: number; ende?: number }> {
+export async function auszugLesen(f: File, fortschritt?: (text: string) => void): Promise<{ umsaetze: Umsatz[]; hinweis?: string; anfang?: number; ende?: number; uebersprungen?: string[] }> {
   const buf = new Uint8Array(await f.arrayBuffer());
   if (/\.pdf$/i.test(f.name) || f.type === 'application/pdf') {
     const { pdfText } = await import('./rechnungLesen');
@@ -718,7 +776,7 @@ export async function auszugLesen(f: File, fortschritt?: (text: string) => void)
   if (istBild(f)) return bilderLesen([f], fortschritt);
   let text = new TextDecoder('utf-8').decode(buf);
   if (text.includes('\uFFFD')) text = new TextDecoder('windows-1252').decode(buf);
-  return { umsaetze: parseDatei(f.name, text) };
+  return parseDateiDetail(f.name, text);
 }
 
 function auszugAusText(name: string, text: string, ocr: boolean) {

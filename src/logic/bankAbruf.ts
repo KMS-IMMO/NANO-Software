@@ -38,11 +38,13 @@ export async function abholen(k: Row, tage: number, abbruch: () => boolean, wart
     const r = await invoke<Abruf>('bank_abholen', { iban: kontoIban(k), bic: String(k.bic ?? '').trim(), tage });
     if (r.wartet) { await new Promise((ok) => setTimeout(ok, 3000)); continue; }
     const gebucht = r.umsaetze.filter((u) => !u.vorgemerkt && u.betrag !== 0);
+    // Vorgemerkte Umsätze zeigt die Bank schon an, gebucht sind sie aber erst später: sie kommen beim nächsten Abruf dazu
+    const vorgemerkt = r.umsaetze.filter((u) => u.vorgemerkt && u.betrag !== 0).length;
     const imp = await importieren(k.id, gebucht.map(({ vorgemerkt: _v, ...u }) => u));
     const a = await automatischZuordnen();
     await db.execute(`UPDATE bankkonten SET letzter_abruf = datetime('now', 'localtime'), abruf_hinweis = NULL, fints_system_id = COALESCE($1, fints_system_id) WHERE id = $2`, [r.system_id, k.id]);
     const saldo = r.saldo != null ? ` Kontostand laut Bank: ${eur(r.saldo)}${r.saldo_datum ? ` (${datum(r.saldo_datum)})` : ''}.` : '';
-    return `${imp.neu} ${imp.neu === 1 ? 'neuer Umsatz' : 'neue Umsätze'} abgerufen${imp.doppelt ? `, ${imp.doppelt} waren schon vorhanden` : ''}. ${a.zugeordnet} automatisch zugeordnet, ${a.pruefen} zum Prüfen.${saldo}`;
+    return `${imp.neu} ${imp.neu === 1 ? 'neuer Umsatz' : 'neue Umsätze'} abgerufen${imp.doppelt ? `, ${imp.doppelt} waren schon vorhanden` : ''}. ${a.zugeordnet} automatisch zugeordnet, ${a.pruefen} zum Prüfen.${vorgemerkt ? ` ${vorgemerkt} ${vorgemerkt === 1 ? 'Umsatz ist' : 'Umsätze sind'} bei der Bank erst vorgemerkt und ${vorgemerkt === 1 ? 'kommt' : 'kommen'} nach der Buchung beim nächsten Abruf dazu.` : ''}${saldo}`;
   }
   invoke('bank_abbrechen').catch(() => {});
   return null;

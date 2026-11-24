@@ -28,7 +28,7 @@ const r=await p.evaluate(async(xml)=>{
  await insert('rechnungen',{objekt_id:o,firma_id:f2,rechnungsnr:'RE-2025-0815',datum:'2025-08-01',betrag:850,buchungskonto_id:await k('1300'),anteil_lohn:500});
  for(const [m,n] of [['RheinEnergie','1214'],['Hausmeister Kurz','1246'],['Verwalterverguetung','1400'],['Grundbesitzabgaben','1220']]) await insert('buchungsregeln',{muster:m,richtung:'Ausgang',buchungskonto_id:await k(n),objekt_id:o});
  const ns=await soll.sollStellen('2025-12',{objektId:o});
- const u=bank.parseDatei('k.xml',xml); const imp=await bank.importieren(bk,u);
+ const u=bank.parseDatei('k.xml',xml); const { neu, doppelt }=await bank.importieren(bk,u); const imp={ neu, doppelt };
  const auto=await bank.automatischZuordnen();
  const offen=await db.select("SELECT u.datum,u.betrag,u.gegenpartei,u.verwendungszweck FROM bankumsaetze u WHERE u.bankkonto_id=$1 AND status='offen'",[bk]);
  const ohneKonto=await db.select("SELECT datum,betrag,text FROM buchungen WHERE objekt_id=$1 AND buchungskonto_id IS NULL",[o]);
