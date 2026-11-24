@@ -9,6 +9,7 @@ import { wid } from '../db/labels';
 import { AbrechnungsUebersicht } from '../components/AbrechnungsUebersicht';
 import { SchluesselWahl, schluesselText } from '../components/SchluesselWahl';
 import { AbschlussKarte } from '../components/AbschlussKarte';
+import { AbschlussListe } from '../components/AbschlussListe';
 import { useObjektKontext } from '../logic/objektKontext';
 import { eur, farbe, num, datum } from '../components/EntityTable';
 import { eigeneSchluessel, nichtVerteilteKosten, tageImJahr, type Position, type Schluessel } from '../logic/verteilung';
@@ -150,6 +151,8 @@ export function NebenkostenPage() {
         <span className="muted small">01.01.{jahr} bis 31.12.{jahr} · {tageImJahr(jahr)} Tage</span>
       </section>
       {info && <p className="info">{info}</p>}
+      {objekt !== '' && <AbschlussListe objekt={Number(objekt)} art="Nebenkosten" jahr={jahr} stand={stand} onJahr={setJahr}
+        onGeloescht={(j, t) => { setJahr(j); setInfo(t); setStand((x) => x + 1); }} />}
       {objekt !== '' && oAkt && <AbschlussKarte objekt={Number(objekt)} jahr={jahr} art="Nebenkosten" stand={stand} ordner={[oAkt.name, 'Nebenkostenabrechnungen', String(jahr)]}
         extra={[
           { ok: mieter.length > 0, sperrt: true, text: 'Mieter mit Abrechnung im Jahr vorhanden' },

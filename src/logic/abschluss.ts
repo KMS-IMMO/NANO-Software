@@ -2,7 +2,7 @@
 // Vor dem Abschluss prüft das Programm, ob das Jahr vorbei ist und alles gebucht wurde.
 // Nach dem Abschluss sind Buchungen und Rechnungen des Jahres für diese Liegenschaft gesperrt, bis der Abschluss aufgehoben wird.
 import { abgleichPruefungen, kontoabgleich } from './kontoabgleich';
-import { db, type Row } from '../db';
+import { db, sicherheit, type Row } from '../db';
 import { BJ } from './buchung';
 
 export type AbschlussArt = 'WEG' | 'Nebenkosten';
@@ -26,6 +26,61 @@ export async function abschlussAufheben(objekt: number, jahr: number, art: Absch
   if (g.length < 5) throw new Error('Bitte kurz begründen, warum der Abschluss aufgehoben wird.');
   await db.execute(`UPDATE abrechnungen SET status = 'Aufgehoben', aufhebung_grund = $4, aufgehoben_am = $5 WHERE objekt_id = $1 AND jahr = $2 AND art = $3 AND status = 'Abgeschlossen'`,
     [objekt, jahr, art, g, new Date().toISOString().slice(0, 10)]);
+}
+
+/** Offene Posten, die „Ergebnis buchen“ aus dem Abschluss erzeugt (WEG: Abrechnungsspitzen, Miete: NK-Nachzahlung/-Guthaben) */
+const OP: Record<AbschlussArt, { art: string; monat: (j: number) => string }> = {
+  WEG: { art: 'WEG-Abrechnung', monat: (j) => `${j}-JA` },
+  Nebenkosten: { art: 'NK-Abrechnung', monat: (j) => `${j}-NK` },
+};
+const opWhere = (objekt: number, jahr: number, art: AbschlussArt) =>
+  `s.art = '${OP[art].art}' AND s.monat = '${OP[art].monat(jahr)}' AND s.einheit_id IN (SELECT id FROM einheiten WHERE objekt_id = ${Math.trunc(objekt)})`;
+
+export interface AbschlussEintrag { id: number; jahr: number; abgeschlossen_am: string; ergebnis: Record<string, number>; posten: number; bezahlt: number; juengster: boolean }
+
+/** Alle bestehenden Abschlüsse einer Liegenschaft, jüngstes Jahr zuerst. Nur der jüngste lässt sich löschen (Vorträge hängen am Vorjahr). */
+export async function abschluesseListe(objekt: number, art: AbschlussArt): Promise<AbschlussEintrag[]> {
+  const rows = await db.select(`SELECT id, jahr, abgeschlossen_am, ergebnis FROM abrechnungen WHERE objekt_id = $1 AND art = $2 AND status = 'Abgeschlossen' ORDER BY jahr DESC, id DESC`, [objekt, art]);
+  const out: AbschlussEintrag[] = [];
+  const gesehen = new Set<number>();
+  for (const r of rows) {
+    const jahr = Number(r.jahr);
+    if (gesehen.has(jahr)) continue;   // doppelte Zeilen desselben Jahres nur einmal zeigen
+    gesehen.add(jahr);
+    let e: Record<string, number> = {}; try { e = r.ergebnis ? JSON.parse(r.ergebnis) : {}; } catch { /* altes Format */ }
+    const op = (await db.select(`SELECT COUNT(*) AS n, COALESCE(SUM(EXISTS (SELECT 1 FROM buchungen b WHERE b.sollstellung_id = s.id)), 0) AS bez
+      FROM sollstellungen s WHERE ${opWhere(objekt, jahr, art)}`))[0] ?? {};
+    out.push({ id: Number(r.id), jahr, abgeschlossen_am: String(r.abgeschlossen_am ?? ''), ergebnis: e, posten: Number(op.n ?? 0), bezahlt: Number(op.bez ?? 0), juengster: !out.length });
+  }
+  return out;
+}
+
+/**
+ * Abschluss löschen, damit das Jahr wieder offen ist und neu gebucht werden kann.
+ * - geht nur für den jüngsten Abschluss der Liegenschaft
+ * - vorher automatische Datensicherung (in der Desktop-App)
+ * - noch nicht bezahlte offene Posten aus „Ergebnis buchen“ werden entfernt, bezahlte bleiben stehen
+ * - der Abschluss bleibt als „Gelöscht“ mit Datum und Grund im Änderungsprotokoll nachvollziehbar
+ */
+export async function abschlussLoeschen(objekt: number, jahr: number, art: AbschlussArt, grund = ''): Promise<{ sicherung: string | null; posten: number; bezahlt: number }> {
+  const o = Math.trunc(Number(objekt)), j = Math.trunc(Number(jahr));
+  const spaeter = (await db.select(`SELECT MAX(jahr) AS j FROM abrechnungen WHERE objekt_id = $1 AND art = $2 AND status = 'Abgeschlossen' AND jahr > $3`, [o, art, j]))[0]?.j;
+  if (spaeter) throw new Error(`Erst den Abschluss ${spaeter} löschen. Es lässt sich immer nur der jüngste Abschluss löschen, weil das Folgejahr auf diesem Jahr aufbaut.`);
+  if (!(await abschlussLaden(o, j, art))) throw new Error(`Für ${j} gibt es keinen Abschluss.`);
+  const sicherung = sicherheit.aktiv ? await sicherheit.sicherungErstellen() : null;
+  const w = opWhere(o, j, art);
+  const n = (await db.select(`SELECT COUNT(*) AS n, COALESCE(SUM(EXISTS (SELECT 1 FROM buchungen b WHERE b.sollstellung_id = s.id)), 0) AS bez FROM sollstellungen s WHERE ${w}`))[0] ?? {};
+  const g = String(grund ?? '').trim() || 'Abschluss gelöscht, Jahr wird neu gebucht';
+  const heute = new Date().toISOString().slice(0, 10);
+  const esc = (t: string) => t.replace(/'/g, "''");
+  const sql = `BEGIN;
+    DELETE FROM sollstellungen WHERE id IN (SELECT s.id FROM sollstellungen s WHERE ${w} AND NOT EXISTS (SELECT 1 FROM buchungen b WHERE b.sollstellung_id = s.id));
+    ${art === 'Nebenkosten' ? `DELETE FROM abrechnungen WHERE objekt_id = ${o} AND art = 'Nebenkosten' AND jahr = ${j} AND status = 'Gebucht';` : ''}
+    UPDATE abrechnungen SET status = 'Gelöscht', aufhebung_grund = '${esc(g)}', aufgehoben_am = '${heute}' WHERE objekt_id = ${o} AND jahr = ${j} AND art = '${art}' AND status = 'Abgeschlossen';
+    COMMIT;`;
+  try { await db.execute(sql); }
+  catch (e) { await db.execute('ROLLBACK').catch(() => {}); throw e; }
+  return { sicherung, posten: Number(n.n ?? 0) - Number(n.bez ?? 0), bezahlt: Number(n.bez ?? 0) };
 }
 
 /** Ist das Jahr dieses Datums für die Liegenschaft abgeschlossen? Gibt den Namen der Abrechnung zurück, sonst null. */
