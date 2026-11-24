@@ -6,6 +6,7 @@ import { db } from '../db';
 import { objektPersonenSql } from '../db/labels';
 import { datum, eur } from './EntityTable';
 import { zahlungNeuZuordnen, type ZahlungOhnePosten } from '../logic/zahlungenOhnePosten';
+import { MehrfachZuordnen } from './MehrfachZuordnen';
 
 export function ZahlungenOhnePostenKarte({ objekt, jahr, liste, gesperrt, onChanged }:
   { objekt: number; jahr: number; liste: ZahlungOhnePosten[]; gesperrt?: boolean; onChanged: (text: string) => void }) {
@@ -13,6 +14,7 @@ export function ZahlungenOhnePostenKarte({ objekt, jahr, liste, gesperrt, onChan
   const [wahl, setWahl] = useState<Record<number, string>>({});
   const [fehler, setFehler] = useState('');
   const [busy, setBusy] = useState(false);
+  const [mehrfach, setMehrfach] = useState<ZahlungOhnePosten | null>(null);
   useEffect(() => { db.select(objektPersonenSql(objekt)).then((l) => setPersonen(l as any)); }, [objekt]);
   useEffect(() => { setWahl(Object.fromEntries(liste.map((z) => [z.buchungId, z.vorschlag ? String(z.vorschlag) : '']))); }, [liste]);
   if (!liste.length) return null;
@@ -34,7 +36,8 @@ export function ZahlungenOhnePostenKarte({ objekt, jahr, liste, gesperrt, onChan
       <div className="card-head"><h2 className="title-ico"><AlertTriangle size={20} />Zahlungen ohne offenen Posten {jahr}</h2></div>
       <p className="muted small">Diese Zahlungseingänge sind keinem Hausgeld- bzw. Miet-Posten zugeordnet. Meist wurde beim Zuordnen eine falsche Person gewählt
         oder die Zahlung frei gebucht. Dann steht beim eigentlichen Zahler eine Forderung offen, obwohl das Geld auf dem Konto ist. Mit „Neu zuordnen“ wird die Zahlung
-        auf die offenen Posten des gewählten Eigentümers bzw. Mieters verteilt (älteste zuerst oder der Monat aus dem Verwendungszweck).</p>
+        auf die offenen Posten des gewählten Eigentümers bzw. Mieters verteilt (älteste zuerst oder der Monat aus dem Verwendungszweck).
+        Gehört eine Zahlung mehreren Personen oder allen (z. B. Miete der Funkanlage), dann „Mehrere Personen oder Gemeinschaft …“ wählen.</p>
       <table className="list">
         <thead><tr><th>Datum</th><th>Auftraggeber / Verwendungszweck</th><th className="num">Betrag</th><th>Bisher gebucht</th><th>Auffällig</th><th style={{ width: 300 }}>Zahler</th></tr></thead>
         <tbody>{liste.map((z) => (
@@ -51,12 +54,17 @@ export function ZahlungenOhnePostenKarte({ objekt, jahr, liste, gesperrt, onChan
                   <option key={g + p.value} value={p.value}>{p.label}{!p.aktiv ? ' (früher)' : ''}</option>)}</optgroup>)}
               </select>
               <button className="primary small-btn" disabled={gesperrt || busy || !wahl[z.buchungId]} onClick={() => zuordnen(z)}>Neu zuordnen</button>
-            </div></td>
+            </div>
+            <button className="link small" disabled={gesperrt || busy} onClick={() => setMehrfach(z)} title="Zahlung auf mehrere Eigentümer/Mieter aufteilen oder der Gemeinschaft zuführen (z. B. Miete Funkanlage)">
+              Mehrere Personen oder Gemeinschaft …</button></td>
           </tr>))}
         </tbody>
       </table>
       {gesperrt && <p className="muted small">Das Jahr ist abgeschlossen. Zum Ändern zuerst den Abschluss aufheben.</p>}
       {fehler && <p className="error small">{fehler}</p>}
+      {mehrfach && <MehrfachZuordnen objekt={objekt} start={!mehrfach.einheit && !mehrfach.vorschlag ? 'gemeinschaft' : 'mehrere'}
+        u={{ id: mehrfach.bankumsatzId, betrag: mehrfach.umsatzBetrag, datum: mehrfach.datum, gegenpartei: mehrfach.gegenpartei, verwendungszweck: mehrfach.zweck }}
+        onClose={() => setMehrfach(null)} onDone={(t) => { setMehrfach(null); onChanged(t); }} />}
     </section>
   );
 }

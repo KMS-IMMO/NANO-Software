@@ -11,6 +11,7 @@ import { eur } from './EntityTable';
 import type { Position } from '../logic/verteilung';
 import { BJ, buchungLoeschen, loeschHinweis } from '../logic/buchung';
 import { gesperrt, sperrText } from '../logic/abschluss';
+import { DatumFeld } from './DatumFeld';
 
 const datum = (d: string) => (d ? new Date(d + 'T00:00:00').toLocaleDateString('de-DE') : '');
 
@@ -80,7 +81,7 @@ function Belege({ liste, ausgabe, kontoId, objekt, jahr, onChanged }: { liste: R
   }
   const zeile = (b: Row | null) => e && (
     <tr className="beleg-edit" key={'e' + (b ? keyVon(b) : 'neu')}>
-      <td><input type="date" className="cell" value={e.datum} onChange={(x) => setE({ ...e, datum: x.target.value })} /></td>
+      <td><DatumFeld className="cell" value={e.datum} onChange={(x) => setE({ ...e, datum: x.target.value })} /></td>
       <td colSpan={4}><input className="cell" style={{ width: '100%', textAlign: 'left' }} placeholder="Text, z. B. Korrektur oder Rechnung Hausmeister" value={e.text} onChange={(x) => setE({ ...e, text: x.target.value })} /></td>
       <td className="num"><BetragFeld zelle className="cell" autoFocus style={{ width: 130 }} value={e.betrag} onChange={(x) => setE({ ...e, betrag: x.target.value })}
         onKeyDown={(x) => { if (x.key === 'Enter') speichern(b); if (x.key === 'Escape') setE(null); }} /></td>
@@ -216,7 +217,7 @@ export function AbrechnungsUebersicht({ objekt, jahr, pos, schluessel, stand = 0
             {pos.length > 0 && <optgroup label="Schon in der Abrechnung">{pos.map((p) => <option key={p.konto_id} value={p.konto_id}>{p.nummer} {p.name}</option>)}</optgroup>}
             <optgroup label="Weitere Konten">{neueKonten.map((k) => <option key={k.id} value={k.id}>{k.nummer} {k.name}</option>)}</optgroup>
           </select></label>
-          <label><span>Datum</span><input type="date" value={neu.datum} onChange={(x) => setNeu({ ...neu, datum: x.target.value })} /></label>
+          <label><span>Datum</span><DatumFeld value={neu.datum} onChange={(x) => setNeu({ ...neu, datum: x.target.value })} /></label>
           <label className="grow"><span>Text</span><input placeholder="z. B. Rechnung Hausmeister Dezember" value={neu.text} onChange={(x) => setNeu({ ...neu, text: x.target.value })} /></label>
           <label><span>Betrag</span><BetragFeld value={neu.betrag} onChange={(x) => setNeu({ ...neu, betrag: x.target.value })} onKeyDown={(x) => x.key === 'Enter' && neuSpeichern()} /></label>
           <div className="row"><button onClick={() => { setNeu(null); setNeuFehler(''); }}>Abbrechen</button><button className="primary" onClick={neuSpeichern}>Hinzufügen</button></div>

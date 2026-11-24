@@ -28,3 +28,14 @@ export function BetragFeld({ value, onChange, zelle, className, onFocus, onBlur,
     </span>
   );
 }
+
+/** Eingabefeld für Mengen (Verbrauch, Fläche …) mit fester Einheit rechts im Feld, z. B. „m³“, „kWh“ oder „€“ */
+export function MengeFeld({ value, onChange, einheit, zelle, className, style, ...rest }: Omit<InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange'> & {
+  value: string | number | null | undefined; onChange: (e: { target: { value: string } }) => void; einheit?: string | null; zelle?: boolean }) {
+  return (
+    <span className={'betrag-feld menge-feld' + (zelle ? ' zelle' : '') + (einheit && einheit.length > 2 ? ' lang' : '')}>
+      <input {...rest} className={className} style={style} inputMode="decimal" autoComplete="off" value={value ?? ''} onChange={(e) => onChange({ target: { value: e.target.value } })} />
+      {einheit && <span className="betrag-eur" aria-hidden="true">{einheit}</span>}
+    </span>
+  );
+}

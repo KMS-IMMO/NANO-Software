@@ -48,7 +48,7 @@ const { chromium } = require('playwright');
     await insert('rechnungen', { objekt_id: o, datum: '2025-05-01', betrag: 300, buchungskonto_id: k.id, rechnungsnr: 'W-1' });
     return { k, es: es.map((x) => x.id) }; }, o);
   await p.goto(`http://localhost:5179/#/objekte/${o}/nebenkosten`); await p.waitForTimeout(2500);
-  const jf = p.locator('main input[type=number]').first(); if (await jf.count()) { await jf.fill('2025'); await p.waitForTimeout(2000); }
+  const jf = p.locator('main select.jahr-wahl').first(); if (await jf.count()) { await jf.selectOption('2025'); await p.waitForTimeout(2000); }
   const zk = p.locator('button:has-text("Zählerstände")');
   ok('Knopf „Zählerstände“ in der Nebenkostenabrechnung', await zk.count() === 1);
   if (await zk.count()) {

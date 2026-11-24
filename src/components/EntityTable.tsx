@@ -2,9 +2,10 @@
 import { BetragFeld } from './BetragFeld';
 import { betragZahl, euro } from '../lib/betrag';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { FileDown, Pencil } from 'lucide-react';
+import { FileDown, Pencil, X } from 'lucide-react';
 import { db, insert, remove, update, type Row } from '../db';
 import { doppeltePerson, ibanFehler, ortZurPlz, plzFehler } from '../lib/pruefen';
+import { DatumFeld } from './DatumFeld';
 
 export type FieldType = 'text' | 'number' | 'date' | 'time' | 'select' | 'textarea' | 'checkbox';
 
@@ -39,6 +40,8 @@ export interface Field {
   standard?: any;
   /** Auswahl einer Person: Knopf „+ Neu“ legt sie direkt hier mit dieser Rolle an */
   neuePerson?: string;
+  /** Abschnitt im Bearbeiten-Fenster (z. B. „Anschrift“, „Kontakt“): Felder gleichen Abschnitts stehen zusammen in einer Karte */
+  abschnitt?: string;
 }
 
 interface Props {
@@ -70,11 +73,13 @@ interface Props {
   rowClass?: (row: Row) => string | undefined;
   /** Zusätzlicher Bereich unter dem Formular eines gespeicherten Datensatzes, z. B. Schriftverkehr */
   editExtra?: (row: Row) => ReactNode;
+  /** Kopf des Bearbeiten-Fensters (z. B. Name mit Kürzel und Rolle), bekommt die aktuellen Eingaben */
+  kopf?: (werte: Row) => ReactNode;
 }
 
 type Opt = { value: string | number; label: string };
 
-export function EntityTable({ title, table, fields, listSql, listParams = [], fixed, onOpen, emptyText, onChange, groupBy, newLabel, icon, onNew, onDelete, loeschSperre, version, rowClass, editExtra }: Props) {
+export function EntityTable({ title, table, fields, listSql, listParams = [], fixed, onOpen, emptyText, onChange, groupBy, newLabel, icon, onNew, onDelete, loeschSperre, version, rowClass, editExtra, kopf }: Props) {
   const [rows, setRows] = useState<Row[]>([]);
   const [editing, setEditing] = useState<Row | null>(null);
   const [opts, setOpts] = useState<Record<string, Opt[]>>({});
@@ -246,27 +251,43 @@ export function EntityTable({ title, table, fields, listSql, listParams = [], fi
         </table></div>
       )}
 
-      {editing && (
+      {editing && (() => {
+        const enter = (e: React.KeyboardEvent) => { if (e.key === 'Enter' && !(e.target instanceof HTMLTextAreaElement) && !(e.target instanceof HTMLButtonElement)) { e.preventDefault(); save(); } };
+        const feld = (f: Field) => {
+          const fe = editing[f.key] ? fehlerVon(f, editing) : null, hi = hinweisVon(f, editing);
+          return (
+            <label key={f.key} className={[f.wide || f.type === 'textarea' ? 'wide' : '', f.type === 'checkbox' ? 'check-feld' : ''].filter(Boolean).join(' ')}>
+              <span>{f.label}{f.required ? ' *' : ''}</span>
+              {f.neuePerson
+                ? <PersonWahl f={f} value={editing[f.key]} opts={opts[f.key]} onChange={(v) => setzen(f, v)}
+                    onNeu={(o) => { setOpts((x) => ({ ...x, [f.key]: [...(x[f.key] ?? []), o].sort((a, b) => a.label.localeCompare(b.label, 'de')) })); setzen(f, o.value); }} />
+                : <Input f={f} value={editing[f.key]} opts={opts[f.key]} onChange={(v) => setzen(f, v)} />}
+              {fe ? <small className="feld-fehler">{fe}</small> : hi ? <small className="feld-hinweis">{hi}</small> : null}
+            </label>);
+        };
+        const felder = formFields.filter(sichtbar);
+        const abschnitte = [...new Set(felder.map((f) => f.abschnitt ?? ''))];
+        const mitAbschnitten = felder.some((f) => f.abschnitt);
+        return (
         <div className="modal-bg" onClick={() => setEditing(null)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <h3>{editing.id ? `${title}: bearbeiten` : `${title}: neu anlegen`}</h3>
-            <div className="form" onKeyDown={(e) => { if (e.key === 'Enter' && !(e.target instanceof HTMLTextAreaElement) && !(e.target instanceof HTMLButtonElement)) { e.preventDefault(); save(); } }}>
-              {formFields.filter(sichtbar).map((f) => {
-                const fe = editing[f.key] ? fehlerVon(f, editing) : null, hi = hinweisVon(f, editing);
-                return (
-                <label key={f.key} className={[f.wide || f.type === 'textarea' ? 'wide' : '', f.type === 'checkbox' ? 'check-feld' : ''].filter(Boolean).join(' ')}>
-                  <span>{f.label}{f.required ? ' *' : ''}</span>
-                  {f.neuePerson
-                    ? <PersonWahl f={f} value={editing[f.key]} opts={opts[f.key]} onChange={(v) => setzen(f, v)}
-                        onNeu={(o) => { setOpts((x) => ({ ...x, [f.key]: [...(x[f.key] ?? []), o].sort((a, b) => a.label.localeCompare(b.label, 'de')) })); setzen(f, o.value); }} />
-                    : <Input f={f} value={editing[f.key]} opts={opts[f.key]} onChange={(v) => setzen(f, v)} />}
-                  {fe ? <small className="feld-fehler">{fe}</small> : hi ? <small className="feld-hinweis">{hi}</small> : null}
-                </label>);
-              })}
+          <div className={'modal' + (mitAbschnitten || kopf ? ' et-fenster' : '')} onClick={(e) => e.stopPropagation()}>
+            <div className="et-kopf">
+              <div className="et-kopf-text">
+                {kopf && <small className="muted">{editing.id ? `${title}: bearbeiten` : `${title}: neu anlegen`}</small>}
+                {kopf ? kopf(editing) : <h3>{editing.id ? `${title}: bearbeiten` : `${title}: neu anlegen`}</h3>}
+              </div>
+              <button className="icon-btn" title="Schließen" onClick={() => setEditing(null)}><X size={18} /></button>
             </div>
+            {mitAbschnitten
+              ? <div className="et-abschnitte" onKeyDown={enter}>{abschnitte.map((a) => (
+                  <section key={a || 'weitere'} className="et-abschnitt">
+                    <h4>{a || 'Weitere Angaben'}</h4>
+                    <div className="form">{felder.filter((f) => (f.abschnitt ?? '') === a).map(feld)}</div>
+                  </section>))}</div>
+              : <div className="form" onKeyDown={enter}>{felder.map(feld)}</div>}
             {error && <p className="error">{error}</p>}
             {warnung && <p className="warn">{warnung}</p>}
-            <div className="row end">
+            <div className="row end et-fuss">
               {editing.id && <button className="danger" onClick={del}>Löschen</button>}
               <span className="grow" />
               <button onClick={() => setEditing(null)}>Abbrechen</button>
@@ -274,8 +295,8 @@ export function EntityTable({ title, table, fields, listSql, listParams = [], fi
             </div>
             {editing.id && editExtra?.(editing)}
           </div>
-        </div>
-      )}
+        </div>);
+      })()}
     </section>
   );
 }
@@ -342,7 +363,7 @@ function Input({ f, value, opts, onChange }: { f: Field; value: any; opts?: Opt[
       if (f.geld) return <BetragFeld value={value} onChange={(e) => onChange(e.target.value)} />;
       return <input inputMode="decimal" value={typeof value === 'number' ? String(value).replace('.', ',') : v} onChange={(e) => onChange(e.target.value)} />;
     case 'date':
-      return <input type="date" value={v} onChange={(e) => onChange(e.target.value)} />;
+      return <DatumFeld value={v} onChange={(e) => onChange(e.target.value)} />;
     case 'time':
       return <input type="time" value={v} onChange={(e) => onChange(e.target.value)} />;
     default:

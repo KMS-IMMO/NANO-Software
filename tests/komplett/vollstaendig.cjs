@@ -67,7 +67,7 @@ const { chromium } = require('playwright');
   ok('Allstimmig: abwesender Eigentümer fehlt → abgelehnt', r.m.allstimmig === false);
   // Oberfläche: Gesamtabrechnung mit Einnahmen und Kontenentwicklung
   await p.goto('http://localhost:5179/#/weg-abrechnung'); await p.waitForTimeout(2500);
-  await p.locator('select').first().selectOption({ label: 'WEG Vollhaus' }); await p.locator('input[type=number]').first().fill('2025'); await p.waitForTimeout(3000);
+  await p.locator('select').first().selectOption({ label: 'WEG Vollhaus' }); await p.locator('select.jahr-wahl').first().selectOption('2025'); await p.waitForTimeout(3000);
   const t = await p.locator('body').innerText();
   ok('Einnahmen 2025 aus Zahlungseingängen (800,00 €)', /Summe Einnahmen 2025\s+800,00/.test(t));
   ok('Kontenentwicklung 1.000 + 800 − 300 = 1.500 (Umsatz am Saldotag zählt nicht doppelt)', /Konto Vollhaus\s+1\.000,00\s*€\s+800,00\s*€\s+-300,00\s*€\s+1\.500,00/.test(t), (t.match(/Konto Vollhaus[^\n]*/) || [''])[0]);

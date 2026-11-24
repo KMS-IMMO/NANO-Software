@@ -1,6 +1,7 @@
 // Nebenkostenabrechnung je Objekt und Kalenderjahr (Mietverwaltung und vermietete WEG-Einheiten).
 import { ZaehlerstaendeKnopf } from '../components/Zaehlerstaende';
-import { BetragFeld } from '../components/BetragFeld';
+import { BetragFeld, MengeFeld } from '../components/BetragFeld';
+import { MASSEINHEITEN } from '../components/SchluesselWahl';
 import { betragZahl } from '../lib/betrag';
 import { useEffect, useState } from 'react';
 import { db, type Row } from '../db';
@@ -14,6 +15,7 @@ import { eigeneSchluessel, nichtVerteilteKosten, tageImJahr, type Position, type
 import { HEIZ_HINWEIS, HEIZ_KONTO, heizkostenOhneMessung, nkBerechnen, type NkErgebnis } from '../logic/nebenkosten';
 import { Brief, absender, dDatum, geld } from '../lib/pdf';
 import { oeffnen, speichern } from '../lib/dateien';
+import { JahrWahl } from '../components/DatumFeld';
 
 const einheitText: Record<string, string> = { Fläche: 'm²', MEA: 'MEA', Einheiten: 'Einh.', Personen: 'Pers.-Tage', Verbrauch: 'Verbr.', Messdienst: '€ lt. Messdienst', Direkt: '€', Summe: '€' };
 const basisFmt = (s: Schluessel, v: number) => (s === 'Personen' ? num(v, 0) : s === 'Einheiten' ? num(v, 3) : num(v, 2));
@@ -28,6 +30,8 @@ export function NebenkostenPage() {
   const [erg, setErg] = useState<NkErgebnis[]>([]);
   const [heiz, setHeiz] = useState<Record<number, { heizkosten: string; warmwasser: string }>>({});
   const [verbr, setVerbr] = useState<Record<string, string>>({});
+  /** Maßeinheit je Verbrauchskonto im Jahr (m³, kWh, € …), siehe Schlüssel „Verbrauch“ */
+  const [masse, setMasse] = useState<Record<number, string>>({});
   const [info, setInfo] = useState('');
   const [, setBusy] = useState(false);
   const [zu, setZu] = useState<Row | null>(null);
@@ -44,6 +48,8 @@ export function NebenkostenPage() {
     setHeiz(Object.fromEntries(h.map((x) => [x.einheit_id, { heizkosten: String(x.heizkosten ?? ''), warmwasser: String(x.warmwasser ?? '') }])));
     const v = await db.select(`SELECT v.* FROM verbrauch v JOIN einheiten e ON e.id = v.einheit_id WHERE e.objekt_id = $1 AND v.jahr = $2`, [objekt, jahr]);
     setVerbr(Object.fromEntries(v.map((x) => [`${x.einheit_id}-${x.buchungskonto_id}`, String(x.menge).replace('.', ',')])));
+    const me = await db.select('SELECT buchungskonto_id, masseinheit FROM objekt_schluessel_jahr WHERE objekt_id = $1 AND jahr = $2 AND masseinheit IS NOT NULL', [objekt, jahr]);
+    setMasse(Object.fromEntries(me.map((x) => [Number(x.buchungskonto_id), String(x.masseinheit)])));
     await rechnen();
   }
   useEffect(() => { if (jahr >= 1900 && jahr <= 2200) laden(); }, [objekt, jahr]);
@@ -126,6 +132,13 @@ export function NebenkostenPage() {
   // Heizkostenverordnung: verbrauchsabhängig (Messdienst oder Verbrauch); ein für die Liegenschaft bewusst gewählter Schlüssel gilt als Ausnahme
   const heizFehlt = heizkostenOhneMessung(pos, eigene);
 
+  // Einheit der Verbrauchswerte: gespeicherte Maßeinheit, beim Heizkosten-Konto (Abschlag/Abrechnung in Euro) sonst €
+  const masseVon = (p: Position) => masse[p.konto_id] ?? (p.nummer === HEIZ_KONTO ? '€' : '');
+  async function masseSetzen(p: Position, m: string) {
+    await db.execute(`INSERT INTO objekt_schluessel_jahr (objekt_id, jahr, buchungskonto_id, schluessel, masseinheit) VALUES ($1, $2, $3, 'Verbrauch', $4)
+      ON CONFLICT (objekt_id, jahr, buchungskonto_id) DO UPDATE SET masseinheit = excluded.masseinheit`, [objekt, jahr, p.konto_id, m || null]);
+    setMasse({ ...masse, [p.konto_id]: m });
+  }
   return (
     <>
       <div className="page-head"><h1>Nebenkostenabrechnung</h1><p className="muted">Kalenderjahr, Umlage nach den Schlüsseln des Objekts, Leerstand trägt der Eigentümer</p></div>
@@ -133,7 +146,7 @@ export function NebenkostenPage() {
         {!fix && <select style={{ width: 300 }} value={objekt} onChange={(e) => setObjekt(Number(e.target.value))}>
           {objekte.map((o) => <option key={o.id} value={o.id}>{o.name} ({o.verwaltungsart})</option>)}
         </select>}
-        <label className="inline">Jahr <input type="number" style={{ width: 90 }} value={jahr} onChange={(e) => setJahr(Number(e.target.value))} /></label>
+        <label className="inline">Jahr <JahrWahl value={jahr} onChange={setJahr} /></label>
         <span className="muted small">01.01.{jahr} bis 31.12.{jahr} · {tageImJahr(jahr)} Tage</span>
       </section>
       {info && <p className="info">{info}</p>}
@@ -164,10 +177,12 @@ export function NebenkostenPage() {
           <button onClick={eingabenSpeichern}>Speichern und neu berechnen</button></div></div>
         <table className="list">
           <thead><tr><th>Einheit</th><th className="num">Fläche</th><th className="num">Heizkosten lt. Messdienst</th><th className="num">Warmwasser lt. Messdienst</th>
-            {verbrauchsKonten.map((k) => <th key={k.konto_id} className="num">{k.schluessel === 'Summe' ? `Betrag € ${k.name}` : `Verbrauch ${k.name}`}</th>)}</tr></thead>
+            {verbrauchsKonten.map((k) => <th key={k.konto_id} className="num">{k.schluessel === 'Summe' ? `Betrag € ${k.name}` : <>Verbrauch {k.name}
+              <select className="einheit-wahl" title="Maßeinheit der Werte" value={masseVon(k)} onChange={(e) => masseSetzen(k, e.target.value)}>
+                {!masseVon(k) && <option value="">Einheit …</option>}{MASSEINHEITEN.map((m) => <option key={m} value={m}>{m}</option>)}</select></>}</th>)}</tr></thead>
           <tbody>{einheiten.map((e) => (
             <tr key={e.id}>
-              <td>{e.nummer}</td><td className="num">{num(e.flaeche)}</td>
+              <td>{e.nummer}</td><td className="num nowrap">{e.flaeche != null && e.flaeche !== '' ? `${num(e.flaeche)} m²` : '–'}</td>
               {(['heizkosten', 'warmwasser'] as const).map((f) => (
                 <td key={f} className="num"><BetragFeld zelle className="cell" placeholder="" value={heiz[e.id]?.[f] ?? ''}
                   onChange={(ev) => setHeiz({ ...heiz, [e.id]: { heizkosten: heiz[e.id]?.heizkosten ?? '', warmwasser: heiz[e.id]?.warmwasser ?? '', [f]: ev.target.value } })} /></td>
@@ -175,8 +190,10 @@ export function NebenkostenPage() {
               {verbrauchsKonten.map((k) => (
                 <td key={k.konto_id} className="num">{k.schluessel === 'Summe'
                   ? <BetragFeld zelle className="cell" placeholder="" value={verbr[`${e.id}-${k.konto_id}`] ?? ''} onChange={(ev) => setVerbr({ ...verbr, [`${e.id}-${k.konto_id}`]: ev.target.value })} />
-                  : <input className="cell" inputMode="decimal" value={verbr[`${e.id}-${k.konto_id}`] ?? ''}
-                  onChange={(ev) => setVerbr({ ...verbr, [`${e.id}-${k.konto_id}`]: ev.target.value })} />}</td>
+                  : masseVon(k) === '€'
+                    ? <BetragFeld zelle className="cell" placeholder="" value={verbr[`${e.id}-${k.konto_id}`] ?? ''} onChange={(ev) => setVerbr({ ...verbr, [`${e.id}-${k.konto_id}`]: ev.target.value })} />
+                    : <MengeFeld zelle className="cell" einheit={masseVon(k)} value={verbr[`${e.id}-${k.konto_id}`] ?? ''}
+                      onChange={(ev) => setVerbr({ ...verbr, [`${e.id}-${k.konto_id}`]: ev.target.value })} />}</td>
               ))}
             </tr>))}
           </tbody>

@@ -98,13 +98,15 @@ const O = AUS + '/neu/'; fs.mkdirSync(O, { recursive: true });
   const dls = []; p.on('download', (d) => dls.push(d));
   p.on('dialog', (d) => d.accept());
   await nkBtn.click(); await p.waitForTimeout(5000);
+  // Die Vorschau zeichnet die Seiten selbst (kein iframe mehr); die Datei kommt über „Im PDF-Programm öffnen“
+  await p.getByRole('button', { name: 'Im PDF-Programm öffnen' }).click(); await p.waitForTimeout(2500);
   let t2 = ''; for (const [i, d] of dls.entries()) { await d.saveAs(O + `nk-${i}.pdf`); t2 += await pdfText(O + `nk-${i}.pdf`); }
   ok('PDF Nebenkosten: § 35a mit Minijob, Dienstleistungen und Hinweisen', t2.includes('Steuerermäßigung § 35a') && t2.includes('Minijob im Haushalt') && t2.includes('VI R 24/20'), dls.length + ' PDF');
 
   // Auswertung
   await p.goto('http://localhost:5179/#/auswertung'); await p.waitForTimeout(2500);
   await p.locator('main select').first().selectOption({ label: 'Miethaus Test' }).catch(() => {});
-  await p.locator('main input[type=date]').first().fill('2025-01-01'); await p.locator('main input[type=date]').nth(1).fill('2025-12-31'); await p.waitForTimeout(2500);
+  await p.locator('main input.datum-eingabe').first().fill('2025-01-01'); await p.locator('main input.datum-eingabe').nth(1).fill('2025-12-31'); await p.waitForTimeout(2500);
   const gv = await p.locator('main').innerText(); await p.screenshot({ path: O + 'auswertung.png', fullPage: true });
   ok('Auswertung: Ergebnis 10.840 € ohne Auszahlungen, eigener Block', gv.includes('10.840,00') && gv.includes('Auszahlungen an den Eigentümer') && gv.includes('7.240,00'), '');
 

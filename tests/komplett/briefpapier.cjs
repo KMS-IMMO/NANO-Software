@@ -1,5 +1,5 @@
 const AUS = process.env.NEOSS_TEST_AUSGABE || require('path').join(__dirname, 'ausgabe'); require('fs').mkdirSync(AUS, { recursive: true });
-// Briefpapier im App-Design (Variante A) und Schrift Montserrat in allen PDFs; ein früheres Briefpapier wird gesichert (Demodaten)
+// Briefpapier im App-Design (Variante A) und Schrift Arial (Liberation Sans eingebettet) in allen PDFs; ein früheres Briefpapier wird gesichert (Demodaten)
 const { chromium } = require('playwright');
 (async () => {
   const b = await chromium.launch();
@@ -32,7 +32,7 @@ const { chromium } = require('playwright');
   ok('Umstellung nur einmal (eigene Wahl bleibt)', await wert('briefpapier_name') === 'Eigenes.pdf' && await wert('briefpapier_vorher_name') === 'Altes Briefpapier.pdf');
   await p.evaluate(async () => { const { db } = await import('/src/db/index.ts'); await db.execute(`UPDATE einstellungen SET wert = 'KMS-Briefpapier (App-Design)' WHERE schluessel = 'briefpapier_name'`); });
 
-  // PDFs: Brief, Liste, Bericht. Schrift Montserrat eingebettet, Text mit Umlauten lesbar
+  // PDFs: Brief, Liste, Bericht. Schrift Arial eingebettet, Text mit Umlauten lesbar
   const pdfs = await p.evaluate(async () => {
     const pdf = await import('/src/lib/pdf.ts'); const { pdfjsLaden } = await import('/src/lib/pdfjs.ts'); const pdfjs = await pdfjsLaden();
     const br = new pdf.Brief(await pdf.absender()).neuerBrief();
@@ -55,13 +55,13 @@ const { chromium } = require('playwright');
         const s = await d.getPage(i); t += (await s.getTextContent()).items.map((x) => x.str).join(' ') + '\n';
         if (i <= 2) { const vp = s.getViewport({ scale: 1240 / s.getViewport({ scale: 1 }).width }); const c = document.createElement('canvas'); c.width = vp.width; c.height = vp.height; await s.render({ canvasContext: c.getContext('2d'), viewport: vp, canvas: c }).promise; bilder.push(c.toDataURL('image/png')); }
       }
-      aus[n] = { montserrat: /\/BaseFont \/[A-Z]*\+?Montserrat/.test(roh) || roh.includes('Montserrat'), helv: /\/BaseFont \/Helvetica/.test(roh), seiten: d.numPages, text: t, bilder };
+      aus[n] = { arial: /\/BaseFont \/Arial/.test(roh) && /\/FontFile2/.test(roh), helv: /\/BaseFont \/Helvetica/.test(roh), seiten: d.numPages, text: t, bilder };
     }
     return aus;
   });
   const fs = require('fs');
   for (const [n, r] of Object.entries(pdfs)) {
-    ok(`PDF ${n}: Schrift Montserrat eingebettet`, r.montserrat, `${r.seiten} Seiten`);
+    ok(`PDF ${n}: Schrift Arial eingebettet`, r.arial, `${r.seiten} Seiten`);
     r.bilder.forEach((u, i) => fs.writeFileSync(`${AUS}/briefpapier-${n}-${i + 1}.png`, Buffer.from(u.split(',')[1], 'base64')));
   }
   ok('Brief: Umlaute und Sonderzeichen lesbar', /Straße, Grüße, Äpfel, Öl, Übergabe, Şahin/.test(pdfs.brief.text.replace(/\s+/g, ' ')), pdfs.brief.text.slice(0, 80).replace(/\s+/g, ' '));

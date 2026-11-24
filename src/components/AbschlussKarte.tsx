@@ -1,10 +1,11 @@
 // Abschluss der Abrechnung: Prüfliste, PDF-Vorschau aller Schreiben, Abschließen bzw. Aufheben,
 // danach endgültige PDFs ablegen und Ergebnis buchen.
 import { useEffect, useState } from 'react';
-import { CheckCircle2, AlertTriangle, XCircle, Lock, Unlock, Eye, FileDown, X, Printer, ExternalLink } from 'lucide-react';
+import { CheckCircle2, AlertTriangle, XCircle, Lock, Unlock, Eye, FileDown } from 'lucide-react';
 import { type Row } from '../db';
 import { ABSCHLUSS_TEXT, abschliessen, abschlussAufheben, abschlussLaden, pruefen, type AbschlussArt, type Pruefung } from '../logic/abschluss';
 import { oeffnen, speichern } from '../lib/dateien';
+import { PdfVorschau } from './PdfVorschau';
 
 const datum = (d: string) => (d ? new Date(d + 'T00:00:00').toLocaleDateString('de-DE') : '');
 
@@ -19,7 +20,7 @@ export function AbschlussKarte({ objekt, jahr, art, extra, stand, vorschau, able
 }) {
   const [checks, setChecks] = useState<Pruefung[]>([]);
   const [ab, setAb] = useState<Row | null>(null);
-  const [pdf, setPdf] = useState<{ url: string; bytes: Uint8Array } | null>(null);
+  const [pdf, setPdf] = useState<{ bytes: Uint8Array } | null>(null);
   const [busy, setBusy] = useState('');
   const name = ABSCHLUSS_TEXT[art];
   const extraKey = JSON.stringify(extra);
@@ -40,18 +41,14 @@ export function AbschlussKarte({ objekt, jahr, art, extra, stand, vorschau, able
     setBusy('vorschau');
     try {
       const bytes = await vorschau(entwurf);
-      setPdf({ url: URL.createObjectURL(new Blob([bytes as BlobPart], { type: 'application/pdf' })), bytes });
+      setPdf({ bytes });
     } finally { setBusy(''); }
   }
-  function schliessen() { if (pdf) URL.revokeObjectURL(pdf.url); setPdf(null); }
+  function schliessen() { setPdf(null); }
   async function extern() {
     if (!pdf) return;
     const pfad = await speichern(pdf.bytes, `${ab ? '' : 'Entwurf '}${name} ${jahr} gesamt.pdf`, { bezug: 'Objekt', bezugId: objekt, ordner: [...ordner, 'Vorschau'] });
     oeffnen(pfad);
-  }
-  function drucken() {
-    const f = document.getElementById('abschluss-pdf') as HTMLIFrameElement | null;
-    try { f?.contentWindow?.focus(); f?.contentWindow?.print(); } catch { extern(); }
   }
   async function abschluss() {
     if (blocker.length) return;
@@ -85,15 +82,7 @@ export function AbschlussKarte({ objekt, jahr, art, extra, stand, vorschau, able
           <button className="primary" onClick={() => los('ablegen', ablegen)} disabled={!!busy}><FileDown size={16} />{busy === 'ablegen' ? 'Wird abgelegt …' : 'PDFs erstellen und ablegen'}</button></>
           : <button className="primary abschluss-los" onClick={abschluss} disabled={!!blocker.length || !!busy} title={blocker.length ? 'Erst die rot markierten Punkte oben erledigen' : ''}><Lock size={16} />Abschluss: abschließen und PDF öffnen</button>}
       </div>
-      {pdf && (
-        <div className="modal-bg" onClick={schliessen}>
-          <div className="modal pdf-vorschau" onClick={(e) => e.stopPropagation()}>
-            <div className="card-head"><h3>{ab ? '' : 'Entwurf: '}{name} {jahr}</h3>
-              <div className="row"><button onClick={drucken}><Printer size={16} />Drucken</button><button onClick={extern}><ExternalLink size={16} />Im PDF-Programm öffnen</button>
-                <button className="icon-btn" title="Schließen" onClick={schliessen}><X size={18} /></button></div></div>
-            <iframe id="abschluss-pdf" title="PDF-Vorschau" src={pdf.url} />
-          </div>
-        </div>)}
+      <PdfVorschau bytes={pdf?.bytes ?? null} titel={`${ab ? '' : 'Entwurf: '}${name} ${jahr}`} onClose={schliessen} extern={extern} />
     </section>
   );
 
@@ -124,15 +113,7 @@ export function AbschlussKarte({ objekt, jahr, art, extra, stand, vorschau, able
       <p className="muted small">{ab
         ? 'Die Abrechnung ist abgeschlossen. Buchungen und Rechnungen dieses Jahres sind für die Liegenschaft gesperrt. Zum Korrigieren hebst du den Abschluss auf.'
         : 'Die Vorschau zeigt alle Schreiben in einem PDF, noch mit dem Schriftzug „ENTWURF“. Abschließen geht, wenn alle rot markierten Punkte erledigt sind.'}</p>
-      {pdf && (
-        <div className="modal-bg" onClick={schliessen}>
-          <div className="modal pdf-vorschau" onClick={(e) => e.stopPropagation()}>
-            <div className="card-head"><h3>{ab ? '' : 'Entwurf: '}{name} {jahr}</h3>
-              <div className="row"><button onClick={drucken}><Printer size={16} />Drucken</button><button onClick={extern}><ExternalLink size={16} />Im PDF-Programm öffnen</button>
-                <button className="icon-btn" title="Schließen" onClick={schliessen}><X size={18} /></button></div></div>
-            <iframe id="abschluss-pdf" title="PDF-Vorschau" src={pdf.url} />
-          </div>
-        </div>)}
+      <PdfVorschau bytes={pdf?.bytes ?? null} titel={`${ab ? '' : 'Entwurf: '}${name} ${jahr}`} onClose={schliessen} extern={extern} />
     </section>
   );
 }

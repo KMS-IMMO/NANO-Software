@@ -1,5 +1,6 @@
 // WEG-Module: Beschlüsse und Versammlungen, Erhaltungsrücklage, Wirtschaftsplan; Instandhaltung (WEG und Miete).
-import { BetragFeld } from '../components/BetragFeld';
+import { PdfVorschau } from '../components/PdfVorschau';
+import { BetragFeld, MengeFeld } from '../components/BetragFeld';
 import { betragZahl } from '../lib/betrag';
 import { einheitLabel } from '../db/labels';
 import { useEffect, useState } from 'react';
@@ -10,9 +11,10 @@ import { kostenErmitteln, tageImJahr, verteilen, type Ergebnis, type Nutzer, typ
 import { Brief, absender, geld } from '../lib/pdf';
 import { oeffnen, speichern as dateiSpeichern } from '../lib/dateien';
 import { personLabel } from '../db/labels';
-import { Eye, FileDown, X } from 'lucide-react';
+import { Eye, FileDown, Percent } from 'lucide-react';
 import { OsaPlanVorschlag } from '../components/OsaPlanVorschlag';
 import { ruecklageJahr, ruecklageStand } from '../logic/ruecklage';
+import { DatumFeld, JahrWahl } from '../components/DatumFeld';
 
 const pill = (v: any, map: Record<string, string>) => v ? <span className={'pill ' + (map[v] ?? '')}>{v}</span> : '';
 const STATUS_B: Record<string, string> = { 'Geplant': 'künftig', 'In Umsetzung': 'teil', 'Erledigt': 'bezahlt' };
@@ -186,7 +188,7 @@ export function RuecklagenTab({ objektId }: { objektId: number }) {
       <div className="grid2">
         <section className="card">
           <div className="card-head"><h2 className="title-ico"><PiggyBank size={22} />Rücklagenkonto {jahr}</h2>
-            <label className="inline">Jahr <input type="number" style={{ width: 90 }} value={jahr} onChange={(e) => setJahr(Number(e.target.value))} /></label></div>
+            <label className="inline">Jahr <JahrWahl value={jahr} onChange={setJahr} /></label></div>
           <table className="list"><tbody>
             <tr><td>Anfangsbestand (01.01.{jahr})</td><td className="num">{eur(j.anfangsbestand ?? 0)}</td></tr>
             {j.uebernahme ? <tr><td>+ Übernahmebestand</td><td className="num">{eur(j.uebernahme)}</td></tr> : null}
@@ -199,7 +201,7 @@ export function RuecklagenTab({ objektId }: { objektId: number }) {
           </tbody></table>
           <div className="row" style={{ marginTop: 14 }}>
             <label className="inline small">Bestand bei Übernahme <input className="cell" value={basis.anfang} onChange={(e) => setBasis({ ...basis, anfang: e.target.value })} /> €</label>
-            <label className="inline small">am <input type="date" style={{ width: 150 }} value={basis.stichtag} onChange={(e) => setBasis({ ...basis, stichtag: e.target.value })} /></label>
+            <label className="inline small">am <DatumFeld style={{ width: 150 }} value={basis.stichtag} onChange={(e) => setBasis({ ...basis, stichtag: e.target.value })} /></label>
             <button onClick={basisSpeichern}>Speichern</button>
           </div>
           {info && <p className="info">{info}</p>}
@@ -248,11 +250,15 @@ export function WirtschaftsplanTab({ objektId }: { objektId: number }) {
   const [jahr, setJahr] = useState(new Date().getFullYear() + 1);
   const [konten, setKonten] = useState<Row[]>([]);
   const [plan, setPlan] = useState<Record<number, string>>({});
+  // Prozentprognose: je Kostenart ein Prozentsatz auf die Ausgangsbasis (Ist Vorjahr, sonst der Planwert beim ersten Eintragen)
+  const [prozent, setProzent] = useState<Record<number, string>>({});
+  const [basis, setBasis] = useState<Record<number, number>>({});
+  const [alleProzent, setAlleProzent] = useState('');
   const [vorjahr, setVorjahr] = useState<Record<number, number>>({});
   const [einheiten, setEinheiten] = useState<Row[]>([]);
   const [verteilung, setVerteilung] = useState<Record<number, { kosten: number; ruecklage: number }>>({});
   const [details, setDetails] = useState<{ k: Ergebnis[]; r: Ergebnis[] }>({ k: [], r: [] });
-  const [pdf, setPdf] = useState<{ url: string; bytes: Uint8Array } | null>(null);
+  const [pdf, setPdf] = useState<{ bytes: Uint8Array } | null>(null);
   const [busy, setBusy] = useState('');
   const [objName, setObjName] = useState('');
   const [info, setInfo] = useState('');
@@ -264,6 +270,7 @@ export function WirtschaftsplanTab({ objektId }: { objektId: number }) {
     setKonten(k);
     const p = await db.select('SELECT * FROM wirtschaftsplan WHERE objekt_id = $1 AND jahr = $2', [objektId, jahr]);
     setPlan(Object.fromEntries(p.map((x) => [x.buchungskonto_id, String(x.betrag).replace('.', ',')])));
+    setProzent({}); setBasis({}); setAlleProzent('');
     const ist = await kostenErmitteln(objektId, jahr - 1, false);
     setVorjahr(Object.fromEntries(ist.map((x) => [x.konto_id, x.betrag])));
     setEinheiten(await db.select('SELECT * FROM einheiten WHERE objekt_id = $1 ORDER BY lfd_nr, nummer', [objektId]));
@@ -355,7 +362,7 @@ export function WirtschaftsplanTab({ objektId }: { objektId: number }) {
     // Einzelwirtschaftspläne je Eigentümer
     const eig = await db.select(`SELECT ei.einheit_id, p.id AS pid, ${personLabel('p')} AS name, p.vorname, p.nachname, p.firma, p.strasse, p.plz, p.ort
       FROM eigentum ei JOIN personen p ON p.id = ei.person_id JOIN einheiten e ON e.id = ei.einheit_id
-      WHERE e.objekt_id = $1 AND (ei.von IS NULL OR ei.von <= $2) AND (ei.bis IS NULL OR ei.bis >= $2) ORDER BY p.nachname, p.vorname`, [objektId, `${jahr}-01-01`]);
+      WHERE e.objekt_id = $1 AND (ei.von IS NULL OR ei.von <= $2) AND (ei.bis IS NULL OR ei.bis >= $2) ORDER BY e.lfd_nr, e.nummer, p.nachname, p.vorname`, [objektId, `${jahr}-01-01`]);
     const alt = await db.select(`SELECT h.einheit_id, h.betrag FROM hausgeld h JOIN einheiten e ON e.id = h.einheit_id WHERE e.objekt_id = $1
       AND h.gueltig_ab = (SELECT MAX(y.gueltig_ab) FROM hausgeld y WHERE y.einheit_id = h.einheit_id AND y.gueltig_ab < $2)`, [objektId, `${jahr}-01-01`]);
     const personen = [...new Map(eig.map((x) => [x.pid, x])).values()];
@@ -388,7 +395,7 @@ export function WirtschaftsplanTab({ objektId }: { objektId: number }) {
 
   async function vorschau() {
     setBusy('vorschau');
-    try { await speichern(); const bytes = await planPdf(true); setPdf({ url: URL.createObjectURL(new Blob([bytes as BlobPart], { type: 'application/pdf' })), bytes }); }
+    try { await speichern(); const bytes = await planPdf(true); setPdf({ bytes }); }
     catch (e: any) { setInfo('Fehler: ' + (e?.message ?? e)); }
     setBusy('');
   }
@@ -403,6 +410,25 @@ export function WirtschaftsplanTab({ objektId }: { objektId: number }) {
     setBusy('');
   }
 
+  /** Basis für die Prozentprognose: einmal gemerkt, damit mehrfaches Ändern des Prozentsatzes nicht aufaddiert */
+  const basisVon = (id: number) => basis[id] ?? (vorjahr[id] ? Math.round(vorjahr[id] * 100) / 100 : zahl(plan[id] ?? ''));
+  const mitProzent = (b: number, p: string) => Math.round(b * (1 + (betragZahl(p) ?? 0) / 100) * 100) / 100;
+  function prozentSetzen(id: number, p: string) {
+    const b = basisVon(id);
+    setBasis({ ...basis, [id]: b }); setProzent({ ...prozent, [id]: p });
+    setPlan({ ...plan, [id]: p.trim() === '' ? (b ? String(b).replace('.', ',') : plan[id] ?? '') : String(mitProzent(b, p)).replace('.', ',') });
+  }
+  function prozentAlle() {
+    if (betragZahl(alleProzent) === null) { setInfo('Bitte einen Prozentsatz eintragen, z. B. 10 oder 3,5.'); return; }
+    const np = { ...plan }, npr = { ...prozent }, nb = { ...basis }; let n = 0;
+    for (const k of konten) {
+      if (k.nummer === RUECKLAGE_KONTO) continue;   // Rücklage wird gesondert beschlossen
+      const b = basisVon(k.id); if (!b) continue;
+      nb[k.id] = b; npr[k.id] = alleProzent; np[k.id] = String(mitProzent(b, alleProzent)).replace('.', ','); n++;
+    }
+    setPlan(np); setProzent(npr); setBasis(nb);
+    setInfo(n ? `${alleProzent.replace('.', ',')} % auf ${n} Kostenarten gerechnet (Basis: Ist ${jahr - 1}, sonst der bisherige Planwert). Prüfe die Werte und klicke auf „Speichern“.` : `Keine Kostenart mit Ist ${jahr - 1} oder Planwert gefunden.`);
+  }
   const summe = (r: boolean) => konten.filter((k) => (k.nummer === RUECKLAGE_KONTO) === r).reduce((a, k) => a + zahl(plan[k.id] ?? ''), 0);
   const kosten = summe(false), ruecklage = summe(true);
   let gruppe = '';
@@ -421,25 +447,37 @@ export function WirtschaftsplanTab({ objektId }: { objektId: number }) {
       <section className="card">
         <div className="card-head"><h2 className="title-ico"><ClipboardList size={22} />Wirtschaftsplan {jahr}</h2>
           <div className="row">
-            <label className="inline">Jahr <input type="number" style={{ width: 90 }} value={jahr} onChange={(e) => setJahr(Number(e.target.value))} /></label>
+            <label className="inline">Jahr <JahrWahl value={jahr} onChange={setJahr} /></label>
             <button onClick={vorjahrUebernehmen}>Ist {jahr - 1} übernehmen</button>
             <button className="primary" onClick={speichern}>Speichern</button>
           </div></div>
+        <div className="wp-prognose">
+          <Percent size={16} /><span>Prozentprognose für {jahr}:</span>
+          <MengeFeld zelle className="cell" einheit="%" placeholder="z. B. 10" value={alleProzent} onChange={(e) => setAlleProzent(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') prozentAlle(); }} aria-label="Prozent auf alle Kostenarten" />
+          <button onClick={prozentAlle}>Auf alle Kosten anwenden</button>
+          <span className="muted small">Basis ist das Ist {jahr - 1} (sonst der Planwert), z. B. 50,00 € + 10 % = 55,00 €. Je Kostenart geht es auch einzeln in der Spalte „±&nbsp;%“.</span>
+        </div>
         <table className="list">
-          <thead><tr><th>Kostenart</th><th>Schlüssel</th><th className="num">Ist {jahr - 1}</th><th className="num">Geplante Kosten</th></tr></thead>
+          <thead><tr><th>Kostenart</th><th>Schlüssel</th><th className="num">Ist {jahr - 1}</th><th className="num">± %</th><th className="num">Geplante Kosten</th></tr></thead>
           <tbody>{konten.flatMap((k) => {
             const out = [];
-            if (k.gruppe !== gruppe) { gruppe = k.gruppe; out.push(<tr key={'g' + k.id} className="group"><td colSpan={4}>{gruppe}</td></tr>); }
+            if (k.gruppe !== gruppe) { gruppe = k.gruppe; out.push(<tr key={'g' + k.id} className="group"><td colSpan={5}>{gruppe}</td></tr>); }
             out.push(
               <tr key={k.id}><td>{k.nummer} {k.name}</td><td className="muted small">{k.nummer === RUECKLAGE_KONTO ? 'MEA' : k.objekt_schluessel ?? 'MEA'}</td>
                 <td className="num muted">{vorjahr[k.id] ? eur(vorjahr[k.id]) : ''}</td>
-                <td className="num"><BetragFeld zelle className="cell" placeholder="" value={plan[k.id] ?? ''} onChange={(e) => setPlan({ ...plan, [k.id]: e.target.value })} /></td></tr>);
+                <td className="num" title={prozent[k.id] ? `${eur(basisVon(k.id))} ${(betragZahl(prozent[k.id]) ?? 0) < 0 ? '−' : '+'} ${String(prozent[k.id]).replace('-', '')} % = ${eur(mitProzent(basisVon(k.id), prozent[k.id]))}` : 'Prozent auf das Ist des Vorjahres (sonst auf den Planwert)'}>
+                  <MengeFeld zelle className="cell wp-prozent" einheit="%" placeholder="" value={prozent[k.id] ?? ''} onChange={(e) => prozentSetzen(k.id, e.target.value)} /></td>
+                <td className="num"><BetragFeld zelle className="cell" placeholder="" value={plan[k.id] ?? ''} onChange={(e) => {
+                  setPlan({ ...plan, [k.id]: e.target.value });
+                  // von Hand geändert: Prozent der Zeile gilt nicht mehr
+                  if (prozent[k.id] !== undefined) { const p = { ...prozent }; delete p[k.id]; setProzent(p); const b = { ...basis }; delete b[k.id]; setBasis(b); } }} /></td></tr>);
             return out;
           })}</tbody>
           <tfoot>
-            <tr><td colSpan={3}>Summe Kosten</td><td className="num">{eur(kosten)}</td></tr>
-            <tr><td colSpan={3}>+ Zuführung Erhaltungsrücklage</td><td className="num">{eur(ruecklage)}</td></tr>
-            <tr><td colSpan={3}>Gesamt (p. a.)</td><td className="num">{eur(kosten + ruecklage)}</td></tr>
+            <tr><td colSpan={4}>Summe Kosten</td><td className="num">{eur(kosten)}</td></tr>
+            <tr><td colSpan={4}>+ Zuführung Erhaltungsrücklage</td><td className="num">{eur(ruecklage)}</td></tr>
+            <tr><td colSpan={4}>Gesamt (p. a.)</td><td className="num">{eur(kosten + ruecklage)}</td></tr>
           </tfoot>
         </table>
       </section>
@@ -464,15 +502,8 @@ export function WirtschaftsplanTab({ objektId }: { objektId: number }) {
         <p className="muted small">Die PDF enthält den Gesamtwirtschaftsplan und für jeden Eigentümer einen Einzelwirtschaftsplan mit seinem Anteil je Kostenart und dem neuen Hausgeld.</p>
         {info && <p className="info">{info}</p>}
       </section>
-      {pdf && (
-        <div className="modal-bg" onClick={() => { URL.revokeObjectURL(pdf.url); setPdf(null); }}>
-          <div className="modal pdf-vorschau" onClick={(e) => e.stopPropagation()}>
-            <div className="card-head"><h3>Entwurf: Wirtschaftsplan {jahr}</h3>
-              <div className="row"><button onClick={ablegen}><FileDown size={16} />PDFs ablegen</button>
-                <button className="icon-btn" title="Schließen" onClick={() => { URL.revokeObjectURL(pdf.url); setPdf(null); }}><X size={18} /></button></div></div>
-            <iframe id="abschluss-pdf" title="PDF-Vorschau" src={pdf.url} />
-          </div>
-        </div>)}
+      <PdfVorschau bytes={pdf?.bytes ?? null} titel={`Entwurf: Wirtschaftsplan ${jahr}`} onClose={() => setPdf(null)}
+        aktionen={<button onClick={ablegen}><FileDown size={16} />PDFs ablegen</button>} />
     </div>
     </>
   );

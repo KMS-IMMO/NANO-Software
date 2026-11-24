@@ -907,4 +907,12 @@ CREATE TABLE kontoabgleich (
   PRIMARY KEY (bankkonto_id, jahr)
 );
 `,
+  // 35: Live-Versammlung – Beschlussfeld: der in der Versammlung niedergeschriebene Wortlaut des Beschlusses (der Antrag bleibt unverändert)
+  `
+ALTER TABLE versammlung_tops ADD COLUMN beschluss_text TEXT;
+`,
+  // 36: Einnahmen & Ausgaben mit Kontostand – Buchung bewusst ohne Bankkonto (bar, Umbuchung, Verrechnung): zählt nicht als „ohne Kontoumsatz“
+  `
+ALTER TABLE buchungen ADD COLUMN zahlweg TEXT;
+`,
 ];

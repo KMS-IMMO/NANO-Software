@@ -5,10 +5,10 @@ import { OffeneUmsaetze } from '../components/OffeneUmsaetze';
 import { AuszugImport } from '../components/AuszugImport';
 import { useEffect, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { BarChart3, BookOpen, Download, FileSpreadsheet, FileText, Gavel, Paperclip, Pencil, PiggyBank, Plus, Receipt, Sparkles, Trash2, Users, User } from 'lucide-react';
+import { BarChart3, BookOpen, Download, FileSpreadsheet, FileText, Gavel, Paperclip, Pencil, PiggyBank, Plus, Receipt, RefreshCw, Search, Sparkles, Trash2, Users, User, X } from 'lucide-react';
 import { EntityTable, datum, eur, num } from '../components/EntityTable';
 import { db, insert, remove, update, type Row } from '../db';
-import { einheitLabel, personLabel } from '../db/labels';
+import { einheitLabel, einheitPerson, personLabel } from '../db/labels';
 import { OP_SQL } from '../logic/soll';
 import { csv, dDatum, einnahmenAusgabenPdf, einnahmenOderAusgabenPdf, geld, listePdf } from '../lib/pdf';
 import { oeffnen, speichern } from '../lib/dateien';
@@ -21,6 +21,10 @@ import { Wiederkehrend } from '../components/Wiederkehrend';
 import { BJ, aufteilungLoeschen, buchungLoeschen, loeschHinweis } from '../logic/buchung';
 import { buchungGesperrt, gesperrt, sperrText } from '../logic/abschluss';
 import { ruecklageMonate, ruecklageZeitraum } from '../logic/ruecklage';
+import { DatumFeld, JahrWahl } from '../components/DatumFeld';
+import { KontostandLeiste, type StatusFilter } from '../components/KontostandLeiste';
+import { KontoumsaetzeAnsicht } from '../components/KontoumsaetzeAnsicht';
+import { STATUS_TEXT, bankStatus, barSetzen, passendeUmsaetze, saldoDatum, verbinden } from '../logic/kontostand';
 
 // Konten der Erhaltungsrücklage: bei einer WEG nicht in der GuV, sondern im eigenen Rücklagen-Ausweis
 const RL_KONTEN = ['1260', '1261', '1262'];
@@ -28,6 +32,23 @@ const RL_KONTEN = ['1260', '1261', '1262'];
 const heute = () => new Date().toISOString().slice(0, 10);
 const zahl = (s: string) => betragZahl(s) ?? 0;
 const kontoOptions = `SELECT id AS value, nummer || ' ' || name AS label, hdl, hwl FROM buchungskonten ORDER BY nummer`;
+
+/** Passt die Buchung (oder Rechnung) zur Suche? Mehrere Wörter müssen alle vorkommen. Beträge findet man als 350, 350,00, 1.234,50 oder 1234.5 */
+function trifft(r: Row, suche: string): boolean {
+  const b = Math.abs(Number(r.betrag) || 0);
+  const betragTexte = [b.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }), b.toFixed(2).replace('.', ','), b.toFixed(2), String(b)];
+  const d = String(r.datum ?? ''), f = String(r.faellig ?? '');
+  const heu = [r.id, d, d && `${d.slice(8, 10)}.${d.slice(5, 7)}.${d.slice(0, 4)}`, f && `${f.slice(8, 10)}.${f.slice(5, 7)}.${f.slice(0, 4)}`, r.objekt, r.einheit, r.person, r.einheit_person,
+    r.nummer, r.konto, r.firma, r.text, r.rechnungsnr, ...betragTexte].filter(Boolean).join(' | ').toLowerCase();
+  return suche.toLowerCase().split(/\s+/).filter(Boolean).every((w) => {
+    if (/^-?[\d.,]+$/.test(w) && /\d/.test(w)) {
+      // Zahl: als Betrag (auch ohne Tausenderpunkt) oder als Datumsteil/Nummer
+      const n = Number(w.replace(/^-/, '').replace(/\.(?=\d{3}(\D|$))/g, '').replace(',', '.'));
+      if (Number.isFinite(n) && Math.abs(n - b) < 0.005) return true;
+    }
+    return heu.includes(w);
+  });
+}
 
 function useObjekte() {
   const [objekte, setObjekte] = useState<Row[]>([]);
@@ -51,9 +72,14 @@ export function JournalPage() {
   const [monat, setMonat] = useState('');
   const [kontoWahl, setKontoWahl] = useState<number[]>([]);
   const [konten, setKonten] = useState<Row[]>([]);
-  const [rows, setRows] = useState<Row[]>([]);
-  const [offeneRechnungen, setOffeneRechnungen] = useState<Row[]>([]);
-  const [ansicht, setAnsicht] = useState<'buchungen' | 'rechnungen' | 'wiederkehrend'>('buchungen');
+  const [alleRows, setRows] = useState<Row[]>([]);
+  const [alleRechnungen, setOffeneRechnungen] = useState<Row[]>([]);
+  const [suche, setSuche] = useState('');
+  const [aktualisiert, setAktualisiert] = useState('');
+  const [ansicht, setAnsicht] = useState<'buchungen' | 'umsaetze' | 'rechnungen' | 'wiederkehrend'>('buchungen');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('');
+  const [saldoTag, setSaldoTag] = useState<string | null>(null);
+  const [passendU, setPassendU] = useState<Record<number, Row[]>>({});
   const [edit, setEdit] = useState<Row | null>(null);
   const [modus, setModus] = useState<'rechnung' | 'buchung'>('rechnung');
   const [fehler, setFehler] = useState('');
@@ -91,10 +117,23 @@ export function JournalPage() {
     if (monat) w.push(`substr(b.datum, 6, 2) = '${monat}'`);
     if (objekt !== '') w.push(`b.objekt_id = ${Number(objekt)}`);
     if (kontoWahl.length) w.push(`b.buchungskonto_id IN (${kontoWahl.map(Number).join(',')})`);
-    setRows(await db.select(`SELECT b.*, (SELECT COUNT(*) FROM buchungen x WHERE x.aufteilung = b.aufteilung) AS teile_n, (SELECT COUNT(*) FROM buchungen x WHERE x.aufteilung = b.aufteilung AND x.id <= b.id) AS teil_nr, (SELECT SUM(x.betrag) FROM buchungen x WHERE x.aufteilung = b.aufteilung) AS teile_summe, k.nummer, k.name AS konto, k.art AS kontoart, o.name AS objekt, e.nummer AS einheit, COALESCE(f.name, rf.name) AS firma, COALESCE(b.rechnungsnr, r.rechnungsnr) AS rechnungsnr, ${BELEGE_SQL} AS belege
+    setRows(await db.select(`SELECT b.*, (SELECT COUNT(*) FROM buchungen x WHERE x.aufteilung = b.aufteilung) AS teile_n, (SELECT COUNT(*) FROM buchungen x WHERE x.aufteilung = b.aufteilung AND x.id <= b.id) AS teil_nr, (SELECT SUM(x.betrag) FROM buchungen x WHERE x.aufteilung = b.aufteilung) AS teile_summe, k.nummer, k.name AS konto, k.art AS kontoart, o.name AS objekt, e.nummer AS einheit, COALESCE(f.name, rf.name) AS firma, COALESCE(b.rechnungsnr, r.rechnungsnr) AS rechnungsnr, ${BELEGE_SQL} AS belege,
+        (SELECT u.datum FROM bankumsaetze u WHERE u.id = b.bankumsatz_id) AS bankumsatz_datum,
+        COALESCE((SELECT ${personLabel('pp')} FROM sollstellungen ss JOIN personen pp ON pp.id = ss.person_id WHERE ss.id = b.sollstellung_id),
+          (SELECT u.gegenpartei FROM bankumsaetze u WHERE u.id = b.bankumsatz_id)) AS person,
+        CASE WHEN b.einheit_id IS NOT NULL THEN ${einheitPerson('e')} END AS einheit_person
       FROM buchungen b LEFT JOIN buchungskonten k ON k.id = b.buchungskonto_id LEFT JOIN objekte o ON o.id = b.objekt_id LEFT JOIN einheiten e ON e.id = b.einheit_id
       LEFT JOIN firmen f ON f.id = b.firma_id LEFT JOIN rechnungen r ON r.id = b.rechnung_id LEFT JOIN firmen rf ON rf.id = r.firma_id
       WHERE ${w.join(' AND ')} ORDER BY b.datum, b.id`));
+    // Bankstatus: Buchungen ohne Kontoumsatz und passende offene Umsätze (gleicher Betrag, nahes Datum) zum Verbinden
+    if (objekt !== '') {
+      const sd = await saldoDatum(Number(objekt)); setSaldoTag(sd);
+      const ohne = (await db.select(`SELECT id, objekt_id, datum, betrag, bankumsatz_id, zahlweg FROM buchungen b WHERE ${w.join(' AND ')} AND b.bankumsatz_id IS NULL AND b.aufteilung IS NULL`))
+        .filter((b) => bankStatus(b, sd) === 'ohne').slice(0, 80);
+      const pu: Record<number, Row[]> = {};
+      for (const b of ohne) { const l = await passendeUmsaetze(b); if (l.length) pu[b.id] = l; }
+      setPassendU(pu);
+    } else { setSaldoTag(null); setPassendU({}); }
     const wr = ['r.bezahlt_am IS NULL'];
     if (objekt !== '') wr.push(`r.objekt_id = ${Number(objekt)}`);
     if (kontoWahl.length) wr.push(`r.buchungskonto_id IN (${kontoWahl.map(Number).join(',')})`);
@@ -103,6 +142,21 @@ export function JournalPage() {
       WHERE ${wr.join(' AND ')} AND NOT EXISTS (SELECT 1 FROM buchungen b WHERE b.rechnung_id = r.id) ORDER BY r.datum, r.id`));
   };
   useEffect(() => { load(); }, [objekt, jahr, monat, kontoWahl.join(',')]);
+  /** Seite neu laden (z. B. nach Zahlungsanpassungen in einem anderen Fenster): Buchungen, Kontoauszug, Konten */
+  async function aktualisieren() {
+    await load(); setBankVersion((v) => v + 1); db.select(kontoOptions).then(setKonten);
+    setAktualisiert(new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+  }
+  // Suche über Betrag, Eigentümer/Mieter/Zahler, Datum, Einheit, Konto, Unternehmen, Text und Buchungsnummer
+  const gesucht = suche.trim() ? alleRows.filter((r) => trifft(r, suche)) : alleRows;
+  const mitBank = objekt !== '';
+  const rows = mitBank && statusFilter ? gesucht.filter((r) => { const st = bankStatus(r, saldoTag); return statusFilter === 'ohne' ? st === 'ohne' : st === statusFilter; }) : gesucht;
+  useEffect(() => { setStatusFilter(''); }, [objekt]);
+  async function bankAktion(f: () => Promise<void>, text: string) {
+    try { await f(); setInfo(text); load(); setBankVersion((v) => v + 1); } catch (e) { setInfo(String((e as Error)?.message ?? e)); }
+  }
+  const offeneRechnungen = suche.trim() ? alleRechnungen.filter((r) => trifft(r, suche)) : alleRechnungen;
+  useEffect(() => { setWahl(new Set()); }, [suche]);
 
   const soll = rows.reduce((a, r) => a + (r.betrag < 0 ? -r.betrag : 0), 0), haben = rows.reduce((a, r) => a + (r.betrag > 0 ? r.betrag : 0), 0);
   const kontoText = kontoWahl.length ? konten.filter((k) => kontoWahl.includes(k.value)).map((k) => String(k.label).split(' ')[0]).join(', ') : '';
@@ -234,7 +288,7 @@ export function JournalPage() {
         {!fix && <select style={{ width: 240 }} value={objekt} onChange={(e) => setObjekt(e.target.value ? Number(e.target.value) : '')}>
           <option value="">Alle Liegenschaften</option>{objekte.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
         </select>}
-        <label className="inline">Jahr <input type="number" style={{ width: 90 }} value={jahr} onChange={(e) => setJahr(Number(e.target.value))} /></label>
+        <label className="inline">Jahr <JahrWahl value={jahr} onChange={setJahr} /></label>
         <select style={{ width: 140 }} value={monat} onChange={(e) => setMonat(e.target.value)}>
           <option value="">Alle Monate</option>
           {Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, '0')).map((m) => <option key={m} value={m}>{new Date(2000, Number(m) - 1).toLocaleDateString('de-DE', { month: 'long' })}</option>)}
@@ -254,15 +308,31 @@ export function JournalPage() {
         <button onClick={() => { setFehler(''); setModus('rechnung'); setEdit({ datum: heute(), richtung: 'Ausgabe', objekt_id: objekt || '' }); }}><Receipt size={16} />Rechnung erfassen</button>
         <button className="primary" onClick={() => setBuchen(true)}><Plus size={16} />Buchen</button>
       </section>
+      {mitBank && <KontostandLeiste objekt={Number(objekt)} jahr={jahr} monat={monat} version={bankVersion} filter={statusFilter}
+        onFilter={(f) => { setStatusFilter(f); setAnsicht('buchungen'); }} onUmsaetze={() => { setStatusFilter(''); setAnsicht('umsaetze'); }} />}
       {info && <p className="info">{info}</p>}
       <AuszugImport objektId={objekt === '' ? null : Number(objekt)} kompakt onDone={() => { setBankVersion((v) => v + 1); nachBank(); }} />
       <OffeneUmsaetze objektId={objekt === '' ? null : Number(objekt)} version={bankVersion} onChange={nachBank} />
+      <div className="ea-suchleiste">
+        <span className="ea-suche"><Search size={17} />
+          <input type="text" placeholder="Suchen: Betrag, Eigentümer, Mieter, Datum, Einheit, Text …" value={suche} onChange={(e) => setSuche(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Escape') setSuche(''); }} aria-label="Buchungen durchsuchen" />
+          {suche && <button className="icon-btn" title="Suche leeren" onClick={() => setSuche('')}><X size={15} /></button>}</span>
+        {suche.trim() && <span className="muted small">{rows.length} von {alleRows.length} Buchungen{alleRechnungen.length ? `, ${offeneRechnungen.length} von ${alleRechnungen.length} offenen Rechnungen` : ''}</span>}
+        <span className="grow" />
+        {aktualisiert && <span className="muted small">aktualisiert {aktualisiert}</span>}
+        <button onClick={aktualisieren} title="Buchungen, Kontoauszug und offene Posten neu laden (z. B. nach Zahlungsanpassungen)"><RefreshCw size={16} />Aktualisieren</button>
+      </div>
       <div className="seg">
         <button className={ansicht === 'buchungen' ? 'on' : ''} onClick={() => setAnsicht('buchungen')}>Buchungen ({rows.length})</button>
+        {mitBank && <button className={ansicht === 'umsaetze' ? 'on' : ''} onClick={() => setAnsicht('umsaetze')}>Kontoumsätze</button>}
         <button className={ansicht === 'rechnungen' ? 'on' : ''} onClick={() => setAnsicht('rechnungen')}>Offene Rechnungen ({offeneRechnungen.length})</button>
         <button className={ansicht === 'wiederkehrend' ? 'on' : ''} onClick={() => setAnsicht('wiederkehrend')}>Wiederkehrend</button>
       </div>
-      {ansicht === 'wiederkehrend' ? <Wiederkehrend objektId={fix?.id ?? (objekt === '' ? undefined : Number(objekt))} onChange={load} /> : ansicht === 'rechnungen' ? (
+      {ansicht === 'umsaetze' && mitBank ? <KontoumsaetzeAnsicht objekt={Number(objekt)} jahr={jahr} monat={monat} version={bankVersion}
+          suche={(r) => !suche.trim() || trifft({ ...r, text: `${r.gegenpartei ?? ''} ${r.verwendungszweck ?? ''}`, konto: r.konto }, suche)}
+          onChange={(t) => { if (t) setInfo(t); load(); setBankVersion((v) => v + 1); }} />
+      : ansicht === 'wiederkehrend' ? <Wiederkehrend objektId={fix?.id ?? (objekt === '' ? undefined : Number(objekt))} onChange={load} /> : ansicht === 'rechnungen' ? (
         <section className="card">
           <div className="card-head"><h2 className="title-ico"><Receipt size={22} />Offene Rechnungen</h2><span className="muted">noch nicht bezahlt: <b className="neg">{eur(offeneRechnungen.reduce((a, r) => a + Number(r.betrag), 0))}</b></span></div>
           {offeneRechnungen.length === 0 ? <p className="muted">Keine offenen Rechnungen.</p> : (
@@ -283,31 +353,47 @@ export function JournalPage() {
         </section>
       ) : (
       <section className="card">
-        <div className="card-head"><h2 className="title-ico"><BookOpen size={22} />Buchungen ({rows.length})</h2></div>
+        <div className="card-head"><h2 className="title-ico"><BookOpen size={22} />Buchungen ({rows.length})</h2>
+          {mitBank && statusFilter && <span className="ks-filterinfo">Nur: {STATUS_TEXT[statusFilter]} · <button className="link" onClick={() => setStatusFilter('')}>alle zeigen</button></span>}</div>
         {wahl.size > 0 && (
           <div className="auswahl-leiste">
             <b>{wahl.size} ausgewählt</b>
             <button className="danger" onClick={auswahlLoeschen}><Trash2 size={14} /> Buchungen löschen</button>
             <button className="link" onClick={() => setWahl(new Set())}>Auswahl aufheben</button>
           </div>)}
-        {rows.length === 0 ? <p className="muted">Keine Buchungen im Zeitraum.</p> : (
+        {rows.length === 0 ? <p className="muted">{suche.trim() ? `Keine Buchung passt zu „${suche.trim()}“.` : 'Keine Buchungen im Zeitraum.'}</p> : (
           <div className="tablewrap"><table className="list gross">
             <thead><tr><th className="wahl"><input type="checkbox" title="Alle auswählen" checked={rows.length > 0 && rows.every((r) => wahl.has(r.id))}
-              onChange={(e) => setWahl(e.target.checked ? new Set(rows.map((r) => r.id)) : new Set())} /></th><th>Bu.-Nr.</th><th>Datum</th><th>{fix ? 'Einheit' : 'Liegenschaft'}</th><th>Konto</th><th>Unternehmen</th><th>Buchungstext</th><th className="num">Soll</th><th className="num">Haben</th><th /></tr></thead>
-            <tbody>{rows.map((r) => (
-              <tr key={r.id}>
+              onChange={(e) => setWahl(e.target.checked ? new Set(rows.map((r) => r.id)) : new Set())} /></th>{mitBank && <th className="ks-dot-sp" title="Bankstatus" />}<th>Bu.-Nr.</th><th>Datum</th><th>{fix ? 'Einheit' : 'Liegenschaft'}</th><th>Konto</th><th>Unternehmen</th><th>Buchungstext</th><th className="num">Soll</th><th className="num">Haben</th>{mitBank && <th>Bank</th>}<th /></tr></thead>
+            <tbody>{rows.map((r) => { const st = bankStatus(r, saldoTag); const pu = passendU[r.id] ?? []; return [
+              <tr key={r.id} className={mitBank && st === 'ohne' ? 'ks-rot' : ''}>
                 <td className="wahl"><input type="checkbox" checked={wahl.has(r.id)} onChange={() => setWahl((w) => { const n = new Set(w); if (n.has(r.id)) n.delete(r.id); else n.add(r.id); return n; })} /></td>
-                <td>{r.id}</td><td>{datum(r.datum)}</td><td>{!fix && r.objekt}<div className={fix ? '' : 'muted small'}>{r.einheit ?? (r.betrag < 0 ? 'alle Einheiten' : fix ? 'gesamtes Objekt' : '')}</div></td>
+                {mitBank && <td><i className={'ks-dot ' + ({ bank: 'gruen', ohne: 'rot', bar: 'grau', vorher: 'leer' } as const)[st]} title={STATUS_TEXT[st]} /></td>}
+                <td>{r.id}</td><td>{datum(r.datum)}</td><td>{!fix && r.objekt}<div className={fix ? '' : 'muted small'}>{r.einheit ?? (r.betrag < 0 ? 'alle Einheiten' : fix ? 'gesamtes Objekt' : '')}</div>
+                  {(r.person || r.einheit_person) && r.betrag > 0 && <div className="muted small">{r.person || r.einheit_person}</div>}</td>
                 <td>{r.nummer ? `${r.nummer} ${r.konto}` : <span className="tag">ohne Konto</span>}</td>
                 <td>{r.firma ?? <span className="muted">–</span>}</td>
-                <td className="small">{r.text}{r.rechnungsnr && !String(r.text ?? "").includes(r.rechnungsnr) ? <span className="muted"> · Rechnung {r.rechnungsnr}</span> : ''}{r.bankumsatz_id ? <span className="muted"> · Bank</span> : ''}{r.aufteilung ? <span className="tag teil-tag" title={`Teil ${r.teil_nr} von ${r.teile_n} einer Aufteilung über ${eur(Math.abs(Number(r.teile_summe)))}`}>Teil {r.teil_nr}/{r.teile_n}</span> : ''}</td>
+                <td className="small">{r.text}{r.rechnungsnr && !String(r.text ?? "").includes(r.rechnungsnr) ? <span className="muted"> · Rechnung {r.rechnungsnr}</span> : ''}{!mitBank && r.bankumsatz_id ? <span className="muted"> · Bank</span> : ''}{r.aufteilung ? <span className="tag teil-tag" title={`Teil ${r.teil_nr} von ${r.teile_n} einer Aufteilung über ${eur(Math.abs(Number(r.teile_summe)))}`}>Teil {r.teil_nr}/{r.teile_n}</span> : ''}</td>
                 <td className="num neg">{r.betrag < 0 ? eur(-r.betrag) : '–'}</td><td className="num pos">{r.betrag > 0 ? eur(r.betrag) : '–'}</td>
+                {mitBank && <td className="nowrap">{st === 'bank' ? <span className="pill ks-pill-gruen">Bank{r.bankumsatz_datum ? ` · ${datum(r.bankumsatz_datum)}` : ''}</span>
+                  : st === 'bar' ? <button className="pill ks-pill-grau" title="Bewusst ohne Bankkonto. Klicken, um es wieder als Bankzahlung zu führen." onClick={() => bankAktion(() => barSetzen(Number(r.id), false), `Buchung ${r.id} wird wieder als Bankzahlung geführt.`)}>bar</button>
+                  : st === 'vorher' ? <span className="muted small" title="Liegt vor dem ersten erfassten Kontoumsatz und steckt im Anfangssaldo">vor Kontostart</span>
+                  : <span className="pill ks-pill-rot">kein Kontoumsatz</span>}</td>}
                 <td className="actions nowrap"><button className={'icon-btn beleg-btn ' + (r.belege ? 'hat' : 'leer')} title={r.belege ? `${r.belege} Beleg(e) ansehen oder anhängen` : 'Beleg anhängen'} onClick={() => setBelegFuer(r)}><Paperclip size={15} />{r.belege > 0 && <small>{r.belege}</small>}</button>
                   <button className="icon-btn" title="Buchung bearbeiten" onClick={() => bearbeiten(r)}><Pencil size={15} /></button>
                   <button className="icon-btn" title="Buchung löschen" onClick={() => loeschen(r)}><Trash2 size={15} /></button></td>
-              </tr>))}
+              </tr>,
+              mitBank && st === 'ohne' && <tr key={r.id + 'h'} className="ks-rot"><td /><td /><td colSpan={10}>
+                <div className="ks-hinweis">{pu.length
+                  ? <span><b>Diese Buchung gibt es schon auf dem Konto:</b> Kontoumsatz vom {datum(pu[0].datum)}, {eur(Number(pu[0].betrag))}, „{[pu[0].gegenpartei, pu[0].verwendungszweck].filter(Boolean).join(' · ')}“ ist noch offen.{pu.length > 1 ? ` ${pu.length - 1} weitere passen ebenfalls.` : ''} Ohne Verbinden würde die Zahlung beim Zuordnen ein zweites Mal gebucht.</span>
+                  : <span>Noch kein passender Kontoumsatz (gleicher Betrag, bis {20} Tage Abstand). Sobald der Kontoauszug eingelesen ist, erscheint hier „Verbinden“. Bar oder ohne Bank bezahlt? Dann so kennzeichnen.</span>}
+                  <span className="grow" />
+                  {pu.length > 0 && <button className="primary small-btn" onClick={() => bankAktion(() => verbinden(Number(r.id), Number(pu[0].id)), `Buchung ${r.id} mit dem Kontoumsatz vom ${datum(pu[0].datum)} verbunden. Die Zahlung zählt nur einmal.`)}>Verbinden</button>}
+                  <button className="small-btn" onClick={() => bankAktion(() => barSetzen(Number(r.id), true), `Buchung ${r.id} als bar / ohne Bank gekennzeichnet. Sie zählt nicht im Kontostand.`)}>Bar / ohne Bank</button>
+                </div></td></tr>,
+            ]; })}
             </tbody>
-            <tfoot><tr><td colSpan={7}>Summe</td><td className="num neg">{eur(soll)}</td><td className="num">{eur(haben)}</td><td /></tr></tfoot>
+            <tfoot><tr><td colSpan={mitBank ? 8 : 7}>Summe</td><td className="num neg">{eur(soll)}</td><td className="num">{eur(haben)}</td>{mitBank && <td />}<td /></tr></tfoot>
           </table></div>)}
         <p className="muted small">Mit dem Stift änderst du eine Buchung, mit dem Papierkorb löschst du sie. Neue Einnahmen und Ausgaben buchst du über „Buchen“, Rechnungen mit Beleg über „Rechnung erfassen“.
           Mit den Häkchen wählst du mehrere Buchungen zum Löschen aus. Gelöschte Bankbuchungen stehen danach wieder oben unter „Aus dem Kontoauszug“ zum Buchen bereit.</p>
@@ -350,8 +436,8 @@ export function JournalPage() {
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <h3>Rechnung bearbeiten</h3>
             <div className="form">
-              <label><span>Rechnungsdatum *</span><input type="date" value={rEdit.datum ?? ''} onChange={(e) => setREdit({ ...rEdit, datum: e.target.value })} /></label>
-              <label><span>Fällig am</span><input type="date" value={rEdit.faellig ?? ''} onChange={(e) => setREdit({ ...rEdit, faellig: e.target.value })} /></label>
+              <label><span>Rechnungsdatum *</span><DatumFeld value={rEdit.datum ?? ''} onChange={(e) => setREdit({ ...rEdit, datum: e.target.value })} /></label>
+              <label><span>Fällig am</span><DatumFeld value={rEdit.faellig ?? ''} onChange={(e) => setREdit({ ...rEdit, faellig: e.target.value })} /></label>
               <label><span>Unternehmen</span><input value={rEdit.firma ?? ''} onChange={(e) => setREdit({ ...rEdit, firma: e.target.value })} /></label>
               <label><span>Rechnungs-Nr.</span><input value={rEdit.rechnungsnr ?? ''} onChange={(e) => setREdit({ ...rEdit, rechnungsnr: e.target.value })} /></label>
               <label><span>Buchungskonto *</span><select value={rEdit.buchungskonto_id ?? ''} onChange={(e) => setREdit({ ...rEdit, buchungskonto_id: e.target.value })}>
@@ -408,7 +494,7 @@ function BuchungForm({ edit, setEdit, objekte, konten, fest }: { edit: Row; setE
   const summe = Math.round(gewaehlt.reduce((a, k) => a + zahl(anteile[k]), 0) * 100) / 100;
   return (
     <div className="form">
-      <label><span>Datum *</span><input type="date" value={edit.datum ?? ''} onChange={(e) => set('datum', e.target.value)} /></label>
+      <label><span>Datum *</span><DatumFeld value={edit.datum ?? ''} onChange={(e) => set('datum', e.target.value)} /></label>
       <label><span>Art *</span><select value={edit.richtung} onChange={(e) => set('richtung', e.target.value)}><option>Ausgabe</option><option>Einnahme</option></select></label>
       {!fest && <label><span>Liegenschaft *</span><select value={edit.objekt_id ?? ''} onChange={(e) => setEdit({ ...edit, objekt_id: e.target.value, einheit_id: '', anteile: {} })}>
         <option value="">– bitte wählen –</option>{objekte.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}</select></label>}
@@ -602,8 +688,8 @@ export function AuswertungPage() {
       <div className="page-head"><h1>Auswertung (GuV)</h1><p className="muted">Jahresübersicht mit Statistik und Prognose, darunter Erträge und Aufwendungen je Konto im gewählten Zeitraum</p></div>
       <section className="card row">
         {!fix && <select style={{ width: 260 }} value={objekt} onChange={(e) => setObjekt(Number(e.target.value))}>{objekte.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}</select>}
-        <label className="inline">von <input type="date" value={von} onChange={(e) => setVon(e.target.value)} /></label>
-        <label className="inline">bis <input type="date" value={bis} onChange={(e) => setBis(e.target.value)} /></label>
+        <label className="inline">von <DatumFeld value={von} onChange={(e) => setVon(e.target.value)} /></label>
+        <label className="inline">bis <DatumFeld value={bis} onChange={(e) => setBis(e.target.value)} /></label>
       </section>
       {objekt !== '' && <Jahresuebersicht objektId={Number(objekt)} weg={weg} />}
       <div className="kpis">

@@ -72,7 +72,7 @@ const { chromium } = require('playwright');
   await p.goto('http://localhost:5179/#/journal'); await p.waitForTimeout(1200);
   const wahl = p.locator('select').filter({ has: p.locator('option', { hasText: 'Splitt Testhaus' }) }).first();
   await wahl.selectOption({ label: 'Splitt Testhaus' }); await p.waitForTimeout(400);
-  await p.locator('label:has-text("Jahr") input').first().fill('2026'); await p.waitForTimeout(1000);
+  await p.locator('label:has-text("Jahr") select').first().selectOption('2026'); await p.waitForTimeout(1000);
   ok('Journal zeigt „Teil 1/2“', await p.locator('.teil-tag:has-text("Teil 1/2")').count() >= 2);
   await bild('splitt-3-journal.png');
   await p.locator('button:has-text("Buchen")').first().click(); await f.waitFor(); await p.waitForTimeout(700);
@@ -90,7 +90,7 @@ const { chromium } = require('playwright');
   // 4) Löschen eines Teils löscht die ganze Aufteilung, Umsatz wird wieder offen
   await p.goto('http://localhost:5179/#/journal'); await p.waitForTimeout(1200);
   await wahl.selectOption({ label: 'Splitt Testhaus' }); await p.waitForTimeout(400);
-  await p.locator('label:has-text("Jahr") input').first().fill('2026'); await p.waitForTimeout(1000);
+  await p.locator('label:has-text("Jahr") select').first().selectOption('2026'); await p.waitForTimeout(1000);
   await p.locator('tr:has-text("Abschlag 03/2026") button[title="Buchung löschen"]').first().click(); await p.waitForTimeout(1200);
   ok('Beide Teile gelöscht', (await q('SELECT COUNT(*) n FROM buchungen WHERE bankumsatz_id = $1', [d.u1]))[0].n === 0);
   ok('Umsatz wieder offen', (await q('SELECT status FROM bankumsaetze WHERE id = $1', [d.u1]))[0]?.status === 'offen');

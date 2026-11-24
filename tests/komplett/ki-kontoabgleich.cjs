@@ -86,7 +86,7 @@ const { chromium } = require('playwright');
 
   // Oberfläche: Karte „Kontoabgleich“ in der Hausgeldabrechnung
   await p.goto('http://localhost:5179/#/weg-abrechnung'); await p.waitForTimeout(2500);
-  await p.locator('select').first().selectOption({ label: 'WEG KI-Abgleich' }); await p.locator('input[type=number]').first().fill('2025'); await p.waitForTimeout(3000);
+  await p.locator('select').first().selectOption({ label: 'WEG KI-Abgleich' }); await p.locator('select.jahr-wahl').first().selectOption('2025'); await p.waitForTimeout(3000);
   let t = await p.locator('body').innerText();
   ok('Karte Kontoabgleich mit Anfangs- und Endbestand', /Kontoabgleich 2025/.test(t) && /Konto Abgleich\s+2\.000,00\s*€\s+600,00\s*€\s+-205,00\s*€\s+2\.395,00/.test(t), (t.match(/Konto Abgleich[^\n]*/) || [''])[0]);
   ok('Zweite Prüfung zeigt offenen Umsatz', /1 noch nicht gebucht \(100,00\s*€\)/.test(t));

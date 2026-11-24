@@ -4,6 +4,7 @@ import { db, insert, type Row } from '../db';
 import { ablegen, erfassen } from '../db/papierkorb';
 import { KONTO_FUER_ART, OP_SQL } from './soll';
 import { buchungGesperrt, gesperrt, sperrText } from './abschluss';
+import { passendeBuchungen, verbinden } from './kontostand';
 
 /* ---------------- Jahressperre ----------------
    Ist die Abrechnung eines Jahres für eine Liegenschaft abgeschlossen, dürfen über „Bank & Zuordnung“ in diesem Jahr
@@ -145,7 +146,15 @@ export async function importieren(bankkontoId: number, umsaetze: Umsatz[]) {
 const norm = (s: string) => (s ?? '').toLowerCase().replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/ß/g, 'ss').replace(/[^a-z0-9]/g, ' ');
 const woerter = (s: string) => norm(s).split(/\s+/).filter((w) => w.length > 2);
 
-export interface Vorschlag { art: 'person' | 'rechnung' | 'konto'; id: number; label: string; sicher: boolean; grund: string }
+export interface Vorschlag { art: 'person' | 'rechnung' | 'konto' | 'buchung'; id: number; label: string; sicher: boolean; grund: string }
+
+/** Einen Vorschlag ausführen. „buchung“ = vorhandene Buchung ohne Kontoumsatz mit dem Umsatz verbinden (keine neue Buchung). */
+export async function zuordnenVorschlag(u: Row, v: Vorschlag) {
+  if (v.art === 'person') return zuordnenPerson(u, v.id);
+  if (v.art === 'konto') return zuordnenKonto(u, v.id);
+  if (v.art === 'buchung') return verbinden(v.id, Number(u.id));
+  return zuordnenRechnung(u, v.id);
+}
 
 /** Erste passende aktive Buchungsregel (nach Priorität) für einen Umsatz */
 export async function regelFuer(u: Row, objekt: number | null): Promise<Vorschlag | null> {
@@ -164,6 +173,14 @@ export async function regelFuer(u: Row, objekt: number | null): Promise<Vorschla
 
 /** Sucht für einen Umsatz den passenden Mieter/Eigentümer (Eingang) oder die passende Rechnung (Ausgang). */
 export async function vorschlag(u: Row): Promise<Vorschlag | null> {
+  // Gibt es die Zahlung schon als Buchung ohne Kontoumsatz (z. B. unter „Einnahmen & Ausgaben“ oder „Als bezahlt buchen“)?
+  // Dann verbinden statt ein zweites Mal buchen. Nie automatisch: der Vorschlag bleibt zum Bestätigen stehen.
+  const vorhanden = await passendeBuchungen(u);
+  if (vorhanden.length) {
+    const b = vorhanden[0];
+    return { art: 'buchung', id: Number(b.id), sicher: false, grund: `schon gebucht${vorhanden.length > 1 ? ` (${vorhanden.length} passende Buchungen)` : ''}`,
+      label: `Vorhandene Buchung Nr. ${b.id} vom ${String(b.datum).split('-').reverse().join('.')}${b.nummer ? ` · ${b.nummer} ${b.konto}` : ''}${b.einheit ? ` · ${b.einheit}` : ''} verbinden` };
+  }
   const objekt = (await db.select('SELECT objekt_id FROM bankkonten WHERE id = $1', [u.bankkonto_id]))[0]?.objekt_id ?? null;
   if (u.betrag > 0) {
     const ops = (await db.select(`SELECT * FROM (${OP_SQL}) WHERE betrag - bezahlt > 0.005`))
@@ -460,9 +477,7 @@ export async function automatischZuordnen(): Promise<{ zugeordnet: number; pruef
     const sp = await sperreNeu(u, [await bankObjekt(u), ...(v.art === 'rechnung' ? [(await db.select('SELECT objekt_id FROM rechnungen WHERE id = $1', [v.id]))[0]?.objekt_id] : [])]);
     if (sp) continue;
     try {
-      if (v.art === 'person') await zuordnenPerson(u, v.id);
-      else if (v.art === 'konto') await zuordnenKonto(u, v.id);
-      else await zuordnenRechnung(u, v.id);
+      await zuordnenVorschlag(u, v);
     } catch (e) { if (String((e as Error)?.message ?? e).includes('abgeschlossen')) continue; throw e; }
     zugeordnet++;
   }

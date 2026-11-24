@@ -70,7 +70,7 @@ export async function eigentuemerAmTag(objektId: number, datum: string): Promise
       GROUP_CONCAT(e.nummer, ', ') AS einheiten, SUM(COALESCE(e.mea, 0) * COALESCE(ei.anteil, 100) / 100.0) AS mea
     FROM eigentum ei JOIN einheiten e ON e.id = ei.einheit_id JOIN personen p ON p.id = ei.person_id
     WHERE e.objekt_id = $1 AND (ei.von IS NULL OR ei.von <= $2) AND (ei.bis IS NULL OR ei.bis >= $2)
-    GROUP BY p.id ORDER BY MIN(e.nummer), name`, [objektId, datum]);
+    GROUP BY p.id ORDER BY MIN(COALESCE(e.lfd_nr, 9999)), MIN(e.nummer), name`, [objektId, datum]);
   return r;
 }
 
@@ -170,7 +170,7 @@ export async function beschlussFesthalten(vs: Versammlung, top: Row) {
   const ergebnisText = e.angenommen ? 'Angenommen' : 'Abgelehnt';
   const summe = e.ja + e.nein;
   const zust = summe ? Math.round(e.ja / summe * 1000) / 10 : null;
-  const werte = [top.titel, top.antrag || null, ergebnisText, zust, e.ja, e.nein, e.enthaltung, plusMonate(v.datum, 1)];
+  const werte = [top.titel, top.beschluss_text || top.antrag || null, ergebnisText, zust, e.ja, e.nein, e.enthaltung, plusMonate(v.datum, 1)];
   if (top.beschluss_id) {
     await db.execute(`UPDATE beschluesse SET betreff = $1, notiz = $2, ergebnis = $3, zustimmung = $4, ja = $5, nein = $6, enthaltung = $7, anfechtung_bis = $8 WHERE id = $9`, [...werte, top.beschluss_id]);
   } else {

@@ -1,13 +1,9 @@
-@import '@fontsource/montserrat/400.css';
-@import '@fontsource/montserrat/500.css';
-@import '@fontsource/montserrat/600.css';
-@import '@fontsource/montserrat/700.css';
 :root {
   --bg: #f5f5f3; --panel: #ffffff; --side: #35383d; --side-2: #2c2f33; --side-text: #e9e9e7; --text: #1f2328; --muted: #575b62;
   --line: #e6e6e3; --accent: #b08a4a; --accent-dark: #93733b; --accent-soft: #f6efe3; --sum: #f8f0e3; --head: #f1f1ef;
   --neg: #c0392b; --pos: #2e7d32; --warn-bg: #fff4dc; --shadow: 0 1px 2px rgba(20,20,20,.04), 0 2px 10px rgba(20,20,20,.04);
   --gray: #5f6166;
-  font-family: Montserrat, "Segoe UI", system-ui, -apple-system, sans-serif; font-size: 14px; color: var(--text); background: var(--bg);
+  font-family: Arial, "Helvetica Neue", Helvetica, sans-serif; font-size: 14px; color: var(--text); background: var(--bg);
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); }
@@ -333,7 +329,20 @@ label.hint-35a small { display: block; margin-top: 2px; font-size: 12px; }
 .abschluss .pruefliste li.ok svg { color: #3a8a4f; }
 .abschluss .pruefliste li.fehlt svg { color: #c0392b; }
 .abschluss .pruefliste li.hinweis svg { color: #c98a1a; }
-.modal.pdf-vorschau { width: min(1100px, 96vw); height: 92vh; display: flex; flex-direction: column; padding: 16px; }
+.modal.pdf-vorschau { width: min(1100px, 96vw); height: 92vh; max-height: calc(100vh - 32px); display: flex; flex-direction: column; padding: 16px; }
+.modal-bg.pdf-bg { align-items: center; padding: 16px; z-index: 60; }
+.pdf-seiten { flex: 1; min-height: 0; overflow: auto; background: #ece8e0; border: 1px solid #e6e0d6; border-radius: 10px; padding: 18px; display: flex; flex-direction: column; align-items: center; gap: 16px; }
+.pdf-seiten img { width: min(100%, 820px); height: auto; background: #fff; box-shadow: 0 4px 18px rgba(0,0,0,.14); border-radius: 2px; }
+.pdf-seiten > p { margin: auto; }
+.pdf-druck { display: none; }
+@media print {
+  @page { size: A4; margin: 0; }
+  body.druckt-pdf > *:not(.pdf-druck) { display: none !important; }
+  body.druckt-pdf { background: #fff !important; }
+  body.druckt-pdf .pdf-druck { display: block; }
+  body.druckt-pdf .pdf-druck img { display: block; width: 210mm; height: 297mm; object-fit: contain; page-break-after: always; break-after: page; }
+  body.druckt-pdf .pdf-druck img:last-child { page-break-after: auto; break-after: auto; }
+}
 .modal.pdf-vorschau iframe { flex: 1; width: 100%; border: 1px solid #e6e0d6; border-radius: 8px; background: #f3f0ea; }
 fieldset.gesperrt { border: none; padding: 0; margin: 0; min-width: 0; }
 
@@ -612,7 +621,7 @@ body { background: radial-gradient(1200px 600px at 100% -10%, #f7efe1 0%, transp
 .topbar { background: rgba(255,255,255,.72); backdrop-filter: saturate(1.6) blur(14px); -webkit-backdrop-filter: saturate(1.6) blur(14px); border-bottom-color: rgba(232,228,220,.8); }
 .gsearch { border-color: var(--line); background: rgba(255,255,255,.9); transition: box-shadow .25s, border-color .25s, width .35s var(--weich); border-radius: 10px; }
 .gsearch:focus-within { border-color: var(--accent); box-shadow: var(--ring); width: 420px; }
-.gsearch-kbd { font: 600 12px/1 Montserrat, sans-serif; color: var(--muted); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 6px; padding: 3px 6px; background: #fff; white-space: nowrap; }
+.gsearch-kbd { font: 600 12px/1 Arial, Helvetica, sans-serif; color: var(--muted); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 6px; padding: 3px 6px; background: #fff; white-space: nowrap; }
 .gsearch-res { animation: nano-pop .22s var(--weich) both; border-radius: 12px; box-shadow: var(--shadow-hoch); }
 .gsearch-res button.an { background: var(--accent-soft); }
 .avatar { background: linear-gradient(135deg, #b8924f, #7d6233); box-shadow: 0 3px 10px rgba(147,115,59,.35); transition: transform .25s var(--feder); }
@@ -1190,7 +1199,7 @@ table.list td.einzug { padding-left: 28px; color: var(--muted); }
 .dateiliste { margin-top: 14px; } .dateiliste td button.link { display: inline-flex; align-items: center; gap: 6px; }
 .ordner-bild { position: relative; display: inline-block; }
 .ordner-neu { position: absolute; top: -4px; right: -10px; background: var(--accent); color: #fff; font-size: 12px; font-weight: 600; padding: 1px 7px; border-radius: 10px; }
-.ordner-symbol .ordner-nummer { font: 600 24px Montserrat, system-ui, sans-serif; fill: #8d8f93; }
+.ordner-symbol .ordner-nummer { font: 700 24px Arial, Helvetica, sans-serif; fill: #8d8f93; }
 .ordner-kachel .ordner-name { overflow-wrap: normal; word-break: normal; hyphens: auto; }
 .ordner-umschalter { margin-bottom: 10px; }
 .ordner-kachel:focus:not(:focus-visible) { background: none; border-color: transparent; }
@@ -1280,6 +1289,11 @@ button.link.klick-neu { display: inline-flex; align-items: center; gap: 4px; fon
 table.list.kompakt td, table.list.kompakt th { padding-top: 6px; padding-bottom: 6px; }
 .unter-titel { font-size: 14px; margin: 18px 0 6px; }
 .hausgeld-anpassen .form { margin-bottom: 8px; }
+.hausgeld-verlauf .hg-aktionen { white-space: nowrap; width: 1%; }
+.hausgeld-verlauf .hg-aktionen .icon-btn + .icon-btn { margin-left: 2px; }
+.hausgeld-verlauf .hg-aktionen .icon-btn[title="Löschen"]:hover { color: var(--neg); }
+.hausgeld-verlauf tr.hg-edit td { padding-top: 4px; padding-bottom: 4px; vertical-align: middle; }
+.hausgeld-verlauf tr.hg-edit input { min-width: 0; width: 100%; }
 
 /* Rechnung erfassen im Stil des Buchen-Fensters */
 .rerf .card-head { justify-content: space-between; }
@@ -1424,3 +1438,123 @@ html[data-theme="dunkel"] .mail-fehler { background: rgba(255,46,69,.12); }
 .kontoabgleich .pruefliste li.ok svg, .kontoabgleich .pos svg { color: #3a8a4f; }
 .kontoabgleich .pruefliste li.fehlt svg, .kontoabgleich .neg svg { color: #c0392b; }
 .kontoabgleich .pruefliste li.hinweis svg { color: #c98a1a; }
+
+/* ===== Datumsfeld mit Kalender (Monat/Jahr per Auswahlliste) und Jahresauswahl ===== */
+.datum-feld { position: relative; display: inline-flex; align-items: center; width: 100%; min-width: 150px; }
+label.inline .datum-feld, .row > .datum-feld { width: auto; }
+.datum-feld .datum-eingabe { width: 100%; padding-right: 34px; font-variant-numeric: tabular-nums; }
+label.inline .datum-feld .datum-eingabe { width: 150px; }
+.datum-feld .datum-eingabe::placeholder { color: #b5b0a6; }
+.datum-feld .datum-knopf { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); border: 0; background: transparent; padding: 4px 6px; color: var(--muted); border-radius: 6px; box-shadow: none; }
+.datum-feld .datum-knopf:hover { color: var(--accent-dark); background: var(--accent-soft); }
+.datum-feld.aus .datum-knopf { opacity: .45; }
+.datum-feld input.cell { padding-top: 4px; padding-bottom: 4px; }
+.datum-pop { position: fixed; z-index: 1000; width: 296px; background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 14px;
+  box-shadow: 0 18px 50px rgba(20,14,6,.22); padding: 10px; animation: nano-fade .14s ease both; }
+.datum-pop-kopf { display: flex; gap: 6px; align-items: center; margin-bottom: 8px; }
+.datum-pop-kopf select { width: auto; flex: 1; min-width: 0; padding: 6px 8px; }
+.datum-pop-kopf select[aria-label="Jahr"] { flex: 0 0 84px; }
+.datum-pfeil { padding: 5px 6px; border-radius: 8px; line-height: 0; box-shadow: none; }
+.datum-raster { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+.datum-wt { font-size: 11px; color: var(--muted); text-align: center; padding: 4px 0; font-weight: 700; }
+.datum-tag { padding: 0; height: 34px; justify-content: center; border: 0; background: transparent; border-radius: 8px; font-variant-numeric: tabular-nums; box-shadow: none; }
+.datum-tag:hover:not(:disabled) { background: var(--accent-soft); }
+.datum-tag.anders { color: var(--muted); opacity: .55; }
+.datum-tag.heute { box-shadow: inset 0 0 0 1.5px var(--accent); }
+.datum-tag.gewaehlt { background: var(--accent); color: #fff; font-weight: 700; }
+.datum-tag:disabled { opacity: .25; cursor: not-allowed; }
+.datum-pop-fuss { display: flex; justify-content: space-between; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); }
+.jahr-wahl-gruppe { display: inline-flex; align-items: center; gap: 4px; }
+.jahr-wahl-gruppe select.jahr-wahl { width: 92px; text-align: center; }
+
+/* ===== Einnahmen & Ausgaben: Suchleiste und Aktualisieren ===== */
+.ea-suchleiste { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 4px 0 12px; }
+.ea-suche { position: relative; display: inline-flex; align-items: center; flex: 1 1 420px; max-width: 640px; }
+.ea-suche > svg { position: absolute; left: 12px; color: var(--muted); pointer-events: none; }
+.ea-suche input { padding: 10px 36px 10px 38px; border-radius: 12px; font-size: 14px; background: var(--panel); }
+.ea-suche .icon-btn { position: absolute; right: 6px; }
+
+/* ===== Zahlung auf mehrere Personen oder die Gemeinschaft ===== */
+.modal.mehrfach-fenster { width: min(640px, 94vw); max-height: 90vh; overflow-y: auto; }
+.mz-zahlung { display: grid; grid-template-columns: auto 1fr auto; gap: 2px 12px; align-items: baseline; background: var(--accent-soft); border-radius: 12px; padding: 10px 14px; margin: 10px 0 14px; }
+.mz-zahlung small { grid-column: 1 / -1; }
+.mz-betrag { font-weight: 700; font-size: 16px; font-variant-numeric: tabular-nums; }
+.mz-art { margin-bottom: 10px; }
+.mz-art button { display: inline-flex; align-items: center; gap: 6px; }
+.feld-block { display: flex; flex-direction: column; gap: 4px; margin: 6px 0 12px; } .feld-block > span { font-size: 12px; color: var(--muted); }
+.mz-liste { border: 1px solid var(--line); border-radius: 12px; max-height: 340px; overflow-y: auto; }
+.mz-gruppe { position: sticky; top: 0; background: var(--head); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; color: var(--muted); padding: 6px 12px; }
+.mz-zeile { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 12px; border-top: 1px solid var(--line); min-height: 44px; }
+.mz-zeile.an { background: var(--accent-soft); }
+.mz-zeile label.check { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.mz-summe { margin: 10px 0; align-items: center; }
+.menge-feld.lang input { padding-right: 42px; } .menge-feld.zelle.lang input { padding-right: 38px; }
+.einheit-wahl { width: auto; padding: 2px 4px; font-size: 11px; margin-left: 6px; border-radius: 6px; }
+
+/* ===== Wirtschaftsplan: Prozentprognose ===== */
+.wp-prognose { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; background: var(--accent-soft); border-radius: 12px; padding: 10px 14px; margin: 4px 0 12px; }
+.wp-prognose > svg { color: var(--accent-dark); }
+.wp-prognose .menge-feld.zelle input { width: 96px; }
+.menge-feld.zelle input.wp-prozent { width: 78px; }
+
+/* ===== Bearbeiten-Fenster mit Kopf und Abschnitten (z. B. Eigentümer, Mieter) ===== */
+.modal .et-kopf { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.modal .et-kopf h3 { margin: 0; }
+.modal .et-kopf-text { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.modal.et-fenster { width: 820px; padding: 0; overflow: hidden; display: flex; flex-direction: column; max-height: 90vh; }
+.modal.et-fenster > .et-kopf { padding: 22px 26px 16px; margin: 0; background: linear-gradient(180deg, var(--accent-soft), transparent); border-bottom: 1px solid var(--line); }
+.modal.et-fenster > .et-abschnitte, .modal.et-fenster > .form, .modal.et-fenster > .error, .modal.et-fenster > .warn { margin-left: 26px; margin-right: 26px; }
+.modal.et-fenster { overflow-y: auto; }
+.et-abschnitte { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 18px; }
+.et-abschnitt { border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px 16px; background: var(--panel); }
+.et-abschnitt:first-child, .et-abschnitt:last-child { grid-column: 1 / -1; }
+.et-abschnitt h4 { margin: 0 0 10px; font-size: 11.5px; text-transform: uppercase; letter-spacing: .6px; color: var(--accent-dark); }
+.et-abschnitt .form { gap: 10px 14px; }
+.et-abschnitt:first-child .form { grid-template-columns: repeat(3, 1fr); }
+.et-abschnitt select, .et-abschnitt input:not([type=checkbox]) { min-height: 38px; }
+.modal.et-fenster > .et-fuss { position: sticky; bottom: 0; background: var(--panel); border-top: 1px solid var(--line); padding: 14px 26px; margin-top: 18px; z-index: 2; }
+.modal.et-fenster > :last-child:not(.et-fuss) { margin: 0 26px 22px; }
+.person-kopf { display: flex; align-items: center; gap: 14px; }
+.person-kuerzel { flex: none; width: 52px; height: 52px; border-radius: 16px; display: grid; place-items: center; font-weight: 700; font-size: 18px; letter-spacing: .5px;
+  color: #fff; background: linear-gradient(135deg, var(--accent), var(--accent-dark)); box-shadow: 0 6px 16px rgba(147,115,59,.3); }
+.person-kuerzel.mie { background: linear-gradient(135deg, #5b8db8, #3f6f99); box-shadow: 0 6px 16px rgba(63,111,153,.28); }
+.person-kopf-text { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.person-kopf-text h3 { font-size: 21px; overflow: hidden; text-overflow: ellipsis; }
+.person-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.person-chip { display: inline-flex; align-items: center; gap: 5px; padding: 2px 9px; border-radius: 99px; font-size: 12px; background: var(--head); color: var(--text); border: 1px solid var(--line); }
+a.person-chip.klick:hover { border-color: var(--accent); color: var(--accent-dark); }
+@media (max-width: 760px) { .et-abschnitte { grid-template-columns: 1fr; } .et-abschnitt:first-child .form { grid-template-columns: 1fr 1fr; } }
+.datum-feld input.datum-eingabe { text-align: left; }
+td .datum-feld { min-width: 0; } td .datum-feld input.cell { width: 140px; }
+
+/* ===== Einnahmen & Ausgaben: Kontostand-Leiste, Bankstatus, Kontoumsätze ===== */
+.ks-leiste { position: sticky; top: 76px; z-index: 4; display: grid; grid-template-columns: repeat(3, minmax(150px, auto)) 1fr; gap: 6px 26px; align-items: center;
+  background: rgba(255,255,255,.94); backdrop-filter: blur(10px); border: 1px solid var(--line); border-radius: 16px; padding: 12px 18px; margin: 0 0 16px;
+  box-shadow: var(--shadow); transition: box-shadow .3s var(--weich), border-color .3s; }
+.ks-leiste.frisch { border-color: #e2c48d; box-shadow: 0 0 0 4px rgba(176,138,74,.16), var(--shadow); }
+.ks-leiste.ks-leer { display: flex; gap: 10px; position: static; }
+.ks-wert span { display: block; font-size: 12px; color: var(--muted); }
+.ks-wert b { display: block; font-size: 20px; letter-spacing: -.3px; margin: 2px 0; }
+.ks-wert small { font-size: 11.5px; color: var(--muted); }
+.ks-diff.ok b { color: var(--pos); } .ks-diff.nein b { color: var(--neg); }
+.ks-gruende { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+.ks-chip { font-size: 12px; border-radius: 10px; padding: 4px 10px; border: 1px solid transparent; cursor: pointer; white-space: nowrap; font-weight: 500; }
+.ks-chip.rot { background: #fdecea; color: #c0392b; } .ks-chip.gelb { background: #fff4dc; color: #a66a00; }
+.ks-chip.grau { background: #eef0f3; color: #6b6f76; } .ks-chip.gruen { background: #e7f3e8; color: #2e7d32; cursor: default; }
+.ks-chip.an { border-color: currentColor; box-shadow: 0 0 0 3px rgba(176,138,74,.14); }
+.ks-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-top: 4px; }
+.ks-dot.gruen { background: #2e7d32; box-shadow: 0 0 0 3px #e7f3e8; } .ks-dot.rot { background: #c0392b; box-shadow: 0 0 0 3px #fdecea; }
+.ks-dot.gelb { background: #e0a21b; box-shadow: 0 0 0 3px #fff4dc; } .ks-dot.grau { background: #c9c4ba; } .ks-dot.leer { background: transparent; border: 1px solid #d9d3c8; }
+th.ks-dot-sp { width: 26px; }
+tr.ks-rot > td { background: #fff8f7; } tr.ks-gelb > td { background: #fffcf3; }
+.ks-hinweis { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; background: #fff4dc; border: 1px solid #f0d9a6; border-radius: 12px; padding: 10px 12px; color: #8a5a00; font-size: 13px; }
+.ks-hinweis b { color: #6e4800; }
+.pill.ks-pill-gruen { background: #e7f3e8; color: #2e7d32; } .pill.ks-pill-rot { background: #fdecea; color: #c0392b; }
+.pill.ks-pill-gelb { background: #fff4dc; color: #a66a00; } button.pill.ks-pill-grau { background: #eef0f3; color: #6b6f76; border: 0; padding: 2px 9px; cursor: pointer; }
+.ks-filterinfo { font-size: 12.5px; color: var(--accent-dark); }
+.ku-start td { background: var(--head); }
+.ku-summe { display: flex; gap: 30px; flex-wrap: wrap; margin-top: 12px; padding: 12px 16px; border-radius: 12px; background: #fbfaf8; border: 1px solid var(--line); }
+.ku-summe span { display: block; font-size: 12px; color: var(--muted); } .ku-summe b { font-size: 16px; }
+.zuordnen .hinweis-schon { background: #fff4dc; border: 1px solid #f0d9a6; border-radius: 10px; padding: 8px 10px; color: #8a5a00; font-size: 12.5px; }
+.bf-zahlweg button { padding: 6px 10px; font-size: 12.5px; }
+@media (max-width: 1100px) { .ks-leiste { grid-template-columns: repeat(3, 1fr); } .ks-gruende { grid-column: 1 / -1; justify-content: flex-start; } }
