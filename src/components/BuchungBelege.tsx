@@ -1,6 +1,7 @@
 // Belege (PDF, Bilder) zu einer Buchung: hochladen, öffnen, aus der Liste entfernen.
 // Dateien liegen in der Ablage unter <Liegenschaft>/Belege/<Jahr>, der Rechnungsbeleg wird mit angezeigt.
 import { useEffect, useRef, useState } from 'react';
+import { loeschen as inPapierkorb } from '../db/papierkorb';
 import { FileUp, Paperclip, Trash2 } from 'lucide-react';
 import { db, type Row } from '../db';
 import { oeffnen, speichern } from '../lib/dateien';
@@ -31,7 +32,7 @@ export function BuchungBelege({ buchung, onChange }: { buchung: Row; onChange?: 
   }
   async function entfernen(d: Row) {
     if (!confirm(`„${d.dateiname}“ von der Buchung lösen? Die Datei bleibt in der Ablage.`)) return;
-    await db.execute('DELETE FROM dokumente WHERE id = $1', [d.id]); await load(); onChange?.();
+    await inPapierkorb('dokumente', d.id); await load(); onChange?.();
   }
 
   return (

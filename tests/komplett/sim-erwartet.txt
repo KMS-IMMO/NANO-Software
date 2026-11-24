@@ -1,0 +1,34 @@
+{
+ "o": 3,
+ "ns": 48,
+ "imp": {
+  "neu": 102,
+  "doppelt": 0
+ },
+ "auto": {
+  "zugeordnet": 101,
+  "pruefen": 1
+ },
+ "offen": [
+  {
+   "datum": "2025-12-15",
+   "betrag": 300,
+   "gegenpartei": "Clara Conrad",
+   "verwendungszweck": "HG Januar 2026"
+  }
+ ],
+ "ohneKonto": [],
+ "opk": [
+  {
+   "person_id": 9,
+   "einheit": "EG rechts",
+   "art": "Hausgeld",
+   "offen": 200
+  }
+ ],
+ "parsed": 102
+}
+TEIL2 [{"datum":"2025-12-15","betrag":300,"buchungskonto_id":55,"text":"Überzahlung / Guthaben: Clara Conrad"}]
+TEIL3 {"erst":{"neu":2,"doppelt":0},"nochmal":{"neu":0,"doppelt":2},"csv":[{"datum":"2025-01-03","valuta":"2025-01-03","betrag":1250,"verwendungszweck":"Hausgeld 01/2025","gegenpartei":"Anna Albrecht","gegen_iban":"DE11370501981111111111"},{"datum":"2025-01-10","valuta":"2025-01-10","betrag":-40,"verwendungszweck":"Abschlag","gegenpartei":"RheinEnergie AG","gegen_iban":"DE90"}]}
+UI {"src":["blob:http://localhost:5179/b40d38a9-3a89-4478-b451-4bdfea8db0b6"],"pdf":true,"st":[{"objekt_id":3,"art":"WEG","jahr":2025,"status":"Abgeschlossen"}],"src2":["blob:http://localhost:5179/a811101d-085a-4041-b203-a70f341cc4b2"]}
+ERRS []

@@ -67,7 +67,7 @@ async function browserDriver(): Promise<Driver> {
 
 let ready: Promise<Driver> | null = null;
 
-/* =================== Mehrplatz: NANO-Server im Büronetz =================== */
+/* =================== Mehrplatz: NEOSS-Server im Büronetz =================== */
 const SERVER_KEY = 'nano-server';
 /** Web-Version: NANO wird vom NANO-Server selbst ausgeliefert und spricht immer mit diesem Server */
 export const WEB = import.meta.env.VITE_NANO_WEB === '1';
@@ -81,7 +81,7 @@ function serverAdresse(): string | null {
   try { const v = JSON.parse(localStorage.getItem(SERVER_KEY) || 'null'); return v?.url || null; } catch { return null; }
 }
 async function anfrage<T = any>(pfad: string, methode: 'GET' | 'POST' = 'POST', body?: unknown, basis = serverAdresse()): Promise<T> {
-  if (!basis) throw new Error('Kein NANO-Server eingerichtet.');
+  if (!basis) throw new Error('Kein NEOSS-Server eingerichtet.');
   const url = basis.replace(/\/+$/, '') + pfad;
   let status: number, text: string;
   if (isTauri) {
@@ -108,15 +108,15 @@ function serverDriver(): Driver {
   };
 }
 
-/** Mehrplatz-Betrieb: alle Arbeitsplätze arbeiten auf derselben Datenbank im NANO-Server */
+/** Mehrplatz-Betrieb: alle Arbeitsplätze arbeiten auf derselben Datenbank im NEOSS-Server */
 export const mehrplatz = {
   get aktiv() { return !!serverAdresse(); },
   adresse: serverAdresse,
   benutzer: () => ich,
-  /** Prüft, ob unter der Adresse ein NANO-Server antwortet */
+  /** Prüft, ob unter der Adresse ein NEOSS-Server antwortet */
   async testen(url: string) {
     const r = await anfrage<{ name: string; version: string }>('/api/info', 'GET', undefined, normalisieren(url));
-    if (r.name !== 'NANO-Server') throw new Error('Unter dieser Adresse antwortet kein NANO-Server.');
+    if (r.name !== 'NEOSS-Server' && r.name !== 'NANO-Server') throw new Error('Unter dieser Adresse antwortet kein NEOSS-Server.');
     return r;
   },
   einstellen(url: string | null) {
@@ -129,7 +129,7 @@ export const mehrplatz = {
     const d = serverDriver();
     ready = migrate(d).then(() => d).catch((e) => {
       ready = null;
-      throw new Error(/Administrator/.test(String(e?.message)) ? 'Die Datenbank auf dem Server muss für diese NANO-Version aktualisiert werden. Bitte einmal als Administrator anmelden.' : e?.message ?? String(e));
+      throw new Error(/Administrator/.test(String(e?.message)) ? 'Die Datenbank auf dem Server muss für diese NEOSS-Version aktualisiert werden. Bitte einmal als Administrator anmelden.' : e?.message ?? String(e));
     });
     await ready;
     const ablage = mehrplatz.ablageHier();
@@ -186,16 +186,21 @@ async function migrate(d: Driver) {
   await d.execute('CREATE TABLE IF NOT EXISTS _schema (version INTEGER NOT NULL)', []);
   const rows = await d.select('SELECT MAX(version) AS v FROM _schema', []);
   const current = Number(rows[0]?.v ?? 0);
+  // Jede Migration mit ihrem Versionseintrag in einer Transaktion: scheitert sie, bleibt die Datenbank wie vorher
   for (let i = current; i < MIGRATIONS.length; i++) {
-    await d.execute(MIGRATIONS[i], []);
-    await d.execute('INSERT INTO _schema (version) VALUES ($1)', [i + 1]);
+    try {
+      await d.execute(`BEGIN;\n${MIGRATIONS[i]}\nINSERT INTO _schema (version) VALUES (${i + 1});\nCOMMIT;`, []);
+    } catch (e) {
+      await d.execute('ROLLBACK', []).catch(() => {});
+      throw e;
+    }
   }
   if (!isTauri && !serverAdresse() && current === 0) await seedDemo(d);
 }
 
 function driver(): Promise<Driver> {
   if (!ready) {
-    if (serverAdresse()) return Promise.reject(new Error('Bitte am NANO-Server anmelden.'));
+    if (serverAdresse()) return Promise.reject(new Error('Bitte am NEOSS-Server anmelden.'));
     if (isTauri) return Promise.reject(new Error('Die Datenbank ist gesperrt.'));
     ready = browserDriver().then(async (d) => { await migrate(d); return d; });
   }
@@ -209,12 +214,36 @@ export const sicherheit = {
   async entsperren(passwort: string, neu: boolean) {
     await invoke(neu ? 'db_einrichten' : 'db_oeffnen', { passwort });
     const d = tauriDriver();
+    // Vor einer Datenbank-Aktualisierung (neue NEOSS-Version) immer zuerst eine Sicherung anlegen
+    if (!neu) {
+      const v = await d.select('SELECT MAX(version) AS v FROM _schema', []).then((r) => Number(r[0]?.v ?? 0)).catch(() => 0);
+      if (v > 0 && v < MIGRATIONS.length) await invoke('db_sicherung_erstellen', { ordnerPfad: null });
+    }
     ready = migrate(d).then(() => d);
     await ready;
     // Ablageordner aus den Einstellungen für Dateizugriff freigeben, tägliche Sicherung anlegen
     const a = (await d.select(`SELECT wert FROM einstellungen WHERE schluessel = 'ablage_pfad'`, []))[0]?.wert;
     if (a) await invoke('ablage_freigeben', { pfad: String(a) }).catch(() => {});
-    await invoke('db_auto_sicherung').catch(() => {});
+    await sicherheit.autoSichern().catch(() => null);
+    import('./papierkorb').then((m) => m.aufraeumen()).catch(() => {});
+  },
+  /** Tägliche Sicherung: im App-Ordner und, falls eingestellt, zusätzlich auf USB-Stick/NAS. Gibt eine Warnung zurück, wenn etwas nicht klappt. */
+  async autoSichern(): Promise<string | null> {
+    await invoke('db_auto_sicherung');
+    const e = Object.fromEntries((await db.select(`SELECT schluessel, wert FROM einstellungen WHERE schluessel IN ('sicherung_extern_pfad', 'sicherung_extern_letzte')`)).map((r) => [r.schluessel, r.wert]));
+    const pfad = String(e.sicherung_extern_pfad ?? '').trim();
+    const heute = new Date().toLocaleDateString('sv-SE');
+    if (!pfad || e.sicherung_extern_letzte === heute) return null;
+    const merken = (k: string, v: string) => db.execute(`INSERT INTO einstellungen (schluessel, wert) VALUES ($1, $2) ON CONFLICT (schluessel) DO UPDATE SET wert = excluded.wert`, [k, v]);
+    try {
+      await invoke('db_sicherung_extern', { ordnerPfad: pfad, behalten: 30 });
+      await merken('sicherung_extern_letzte', heute); await merken('sicherung_extern_fehler', '');
+      return null;
+    } catch (x) {
+      await merken('sicherung_extern_fehler', String((x as Error)?.message ?? x));
+      const tage = e.sicherung_extern_letzte ? Math.round((Date.parse(heute) - Date.parse(String(e.sicherung_extern_letzte))) / 864e5) : 0;
+      return tage >= 3 || !e.sicherung_extern_letzte ? `Sicherung auf USB-Stick/NAS nicht möglich${tage ? ` (seit ${tage} Tagen)` : ''}: Ordner nicht erreichbar` : null;
+    }
   },
   async sperren() {
     ready = null;
@@ -260,8 +289,10 @@ export async function update(table: string, id: number, values: Row) {
   const sql = `UPDATE ${table} SET ${keys.map((k, i) => `${k} = $${i + 1}`).join(', ')} WHERE id = $${keys.length + 1}`;
   await db.execute(sql, [...keys.map((k) => values[k]), id]);
 }
+/** Löschen über den Papierkorb: 30 Tage wiederherstellbar */
 export async function remove(table: string, id: number) {
-  await db.execute(`DELETE FROM ${table} WHERE id = $1`, [id]);
+  const { loeschen } = await import('./papierkorb');
+  await loeschen(table, id);
 }
 
 // Beispieldaten nur für die Browser-Vorschau

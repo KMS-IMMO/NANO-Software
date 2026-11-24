@@ -11,7 +11,11 @@ export function SicherheitKarte() {
   const [info, setInfo] = useState(''); const [fehler, setFehler] = useState('');
   const [wieder, setWieder] = useState<{ pfad: string; pw: string } | null>(null);
 
-  const laden = async () => { if (sicherheit.aktiv) setListe(await sicherheit.sicherungen().catch(() => [])); };
+  const [extern, setExtern] = useState<Record<string, string>>({});
+  const laden = async () => {
+    if (sicherheit.aktiv) setListe(await sicherheit.sicherungen().catch(() => []));
+    setExtern(Object.fromEntries((await db.select(`SELECT schluessel, wert FROM einstellungen WHERE schluessel LIKE 'sicherung_extern_%'`)).map((r) => [r.schluessel, String(r.wert ?? '')])));
+  };
   useEffect(() => {
     db.select(`SELECT wert FROM einstellungen WHERE schluessel = 'sperre_minuten'`).then((r) => r[0]?.wert != null && setMinuten(String(r[0].wert)));
     laden();
@@ -42,9 +46,25 @@ export function SicherheitKarte() {
       melde(`Sicherung erstellt: ${p}`); laden();
     } catch (e) { melde('', fehlerText(e)); }
   }
+  // Automatisch jeden Tag zusätzlich auf USB-Stick/NAS
+  async function externWaehlen(aus = false) {
+    let pfad = '';
+    if (!aus) {
+      const { open } = await import('@tauri-apps/plugin-dialog');
+      const r = await open({ directory: true, title: 'Ordner für die tägliche Sicherung (USB-Stick oder NAS)' });
+      if (!r) return; pfad = String(r);
+    }
+    for (const [k, v] of [['sicherung_extern_pfad', pfad], ['sicherung_extern_letzte', ''], ['sicherung_extern_fehler', '']])
+      await db.execute(`INSERT INTO einstellungen (schluessel, wert) VALUES ($1, $2) ON CONFLICT (schluessel) DO UPDATE SET wert = excluded.wert`, [k, v]);
+    if (pfad) {
+      const w = await sicherheit.autoSichern().catch((x) => String(x?.message ?? x));
+      if (w) melde('', w); else melde(`Ab jetzt wird jeden Tag zusätzlich nach ${pfad} gesichert (die letzten 30 bleiben dort erhalten).`);
+    } else melde('Die tägliche Sicherung auf USB-Stick/NAS ist ausgeschaltet.');
+    laden();
+  }
   async function dateiWaehlen() {
     const { open } = await import('@tauri-apps/plugin-dialog');
-    const r = await open({ title: 'Sicherung auswählen', filters: [{ name: 'NANO-Sicherung', extensions: ['nanosicherung'] }] });
+    const r = await open({ title: 'Sicherung auswählen', filters: [{ name: 'NEOSS-Sicherung', extensions: ['nanosicherung'] }] });
     if (r) setWieder({ pfad: String(r), pw: '' });
   }
   async function wiederherstellen() {
@@ -60,6 +80,13 @@ export function SicherheitKarte() {
     <section className="card"><div className="card-head"><h2 className="title-ico"><Lock size={22} />Sicherheit und Datensicherung</h2></div>
       <p className="muted">App-Passwort, Verschlüsselung und Datensicherung gibt es nur in der installierten App.</p></section>);
 
+  const letzte = (name?: string) => {
+    const m = name?.match(/(\d{4})-(\d{2})-(\d{2})_(\d{2})-(\d{2})/);
+    if (!m) return 'noch keine';
+    const tag = `${m[1]}-${m[2]}-${m[3]}`, heute = new Date().toLocaleDateString('sv-SE');
+    const gestern = new Date(Date.now() - 864e5).toLocaleDateString('sv-SE');
+    return `${tag === heute ? 'heute' : tag === gestern ? 'gestern' : `${m[3]}.${m[2]}.${m[1]}`}, ${m[4]}:${m[5]} Uhr`;
+  };
   const kb = (n: number) => n > 1048576 ? `${(n / 1048576).toLocaleString('de-DE', { maximumFractionDigits: 1 })} MB` : `${Math.ceil(n / 1024)} KB`;
   return (
     <section className="card">
@@ -81,7 +108,18 @@ export function SicherheitKarte() {
       </select> ohne Eingabe</label>
 
       <div className="sec"><DatabaseBackup size={16} /> Datensicherung</div>
-      <p className="muted small">Bei jeder ersten Anmeldung am Tag wird automatisch gesichert, die letzten 14 Sicherungen bleiben erhalten. Lege zusätzlich regelmäßig eine Sicherung auf einem USB-Stick oder NAS ab, damit bei einem Defekt des Rechners nichts verloren geht.</p>
+      <p className="muted small">Jeden Tag wird automatisch gesichert (beim Anmelden und, wenn die App über Nacht läuft, stündlich geprüft). Die letzten 14 Sicherungen bleiben im App-Ordner. Damit bei einem Defekt des Rechners nichts verloren geht, stelle zusätzlich einen USB-Stick oder ein NAS ein.</p>
+      <div className="sicherung-status">
+        <div><span className="muted small">Letzte Sicherung</span><b>{letzte(liste[0]?.name)}</b></div>
+        <div><span className="muted small">Täglich zusätzlich auf USB-Stick / NAS</span>
+          {extern.sicherung_extern_pfad
+            ? <><b title={extern.sicherung_extern_pfad}>{extern.sicherung_extern_pfad}</b>
+                <span className={'small ' + (extern.sicherung_extern_fehler ? 'neg' : 'muted')}>{extern.sicherung_extern_fehler ? 'Zuletzt nicht erreichbar. Stick einstecken bzw. NAS verbinden.' : extern.sicherung_extern_letzte ? `zuletzt ${extern.sicherung_extern_letzte.split('-').reverse().join('.')}` : 'noch keine'}</span></>
+            : <b className="neg">nicht eingerichtet</b>}
+          <span className="row"><button onClick={() => externWaehlen()}>{extern.sicherung_extern_pfad ? 'Ordner ändern …' : 'Ordner wählen …'}</button>
+            {extern.sicherung_extern_pfad && <button className="link" onClick={() => externWaehlen(true)}>ausschalten</button>}</span>
+        </div>
+      </div>
       <div className="row">
         <button onClick={() => sichern(false)}>Jetzt sichern</button>
         <button className="primary" onClick={() => sichern(true)}>Auf USB-Stick / NAS sichern …</button>
@@ -92,7 +130,7 @@ export function SicherheitKarte() {
         <div className="tablewrap"><table className="list" style={{ marginTop: 12 }}>
           <thead><tr><th>Sicherung</th><th className="num">Größe</th><th /></tr></thead>
           <tbody>{liste.map((s) => (
-            <tr key={s.pfad}><td>{s.name.replace('.nanosicherung', '').replace(/_/g, ' ')}</td><td className="num">{kb(s.groesse)}</td>
+            <tr key={s.pfad}><td>{s.name.replace(/^(NANO|NEOSS)-/, '').replace('.nanosicherung', '').replace(/_/g, ' ')}</td><td className="num">{kb(s.groesse)}</td>
               <td className="actions"><button className="link" onClick={() => setWieder({ pfad: s.pfad, pw: '' })}>Zurückspielen</button></td></tr>))}
           </tbody></table></div>)}
       {wieder && (

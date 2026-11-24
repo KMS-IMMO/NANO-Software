@@ -2,27 +2,31 @@
 // und zeigt die einzelnen Rechnungen und Buchungen, aus denen sich der Betrag zusammensetzt.
 // Der Verteilerschlüssel wird je Konto für das Abrechnungsjahr gewählt.
 // Beträge lassen sich hier direkt ändern, löschen und neu hinzufügen (als Buchung auf das Konto der Liegenschaft).
+import { BetragFeld } from './BetragFeld';
+import { loeschen as inPapierkorb } from '../db/papierkorb';
 import { Fragment, useEffect, useState, type ReactNode } from 'react';
-import { Check, ChevronDown, ChevronRight, Pencil, Plus, Trash2, X } from 'lucide-react';
+import { Check, ChevronDown, ChevronRight, Pencil, Plus, Trash2, Undo2, X } from 'lucide-react';
 import { db, type Row } from '../db';
 import { eur } from './EntityTable';
 import type { Position } from '../logic/verteilung';
-import { buchungLoeschen, loeschHinweis } from '../logic/buchung';
+import { BJ, buchungLoeschen, loeschHinweis } from '../logic/buchung';
+import { gesperrt, sperrText } from '../logic/abschluss';
+import { DatumFeld } from './DatumFeld';
 
 const datum = (d: string) => (d ? new Date(d + 'T00:00:00').toLocaleDateString('de-DE') : '');
 
 /** Einzelbelege je Buchungskonto, nach derselben Regel wie die Kostenermittlung (Buchungen plus noch nicht gebuchte Rechnungen) */
-async function belegeLaden(objekt: number, jahr: number): Promise<{ aus: Row[]; ein: Row[] }> {
+async function belegeLaden(objekt: number, jahr: number, nurBezahlt = false): Promise<{ aus: Row[]; ein: Row[] }> {
   const von = `${jahr}-01-01`, bis = `${jahr}-12-31`;
   const buch = await db.select(`SELECT b.id, b.datum, b.betrag, b.text, b.buchungskonto_id, k.art,
-      COALESCE(f.name, rf.name) AS firma, r.rechnungsnr, e.nummer AS einheit, b.bankumsatz_id, b.sollstellung_id, b.rechnung_id
+      COALESCE(f.name, rf.name) AS firma, COALESCE(b.rechnungsnr, r.rechnungsnr) AS rechnungsnr, e.nummer AS einheit, b.bankumsatz_id, b.sollstellung_id, b.rechnung_id
     FROM buchungen b JOIN buchungskonten k ON k.id = b.buchungskonto_id
     LEFT JOIN rechnungen r ON r.id = b.rechnung_id LEFT JOIN firmen f ON f.id = b.firma_id LEFT JOIN firmen rf ON rf.id = r.firma_id
     LEFT JOIN einheiten e ON e.id = b.einheit_id
-    WHERE b.objekt_id = $1 AND b.datum BETWEEN $2 AND $3 ORDER BY b.datum, b.id`, [objekt, von, bis]);
+    WHERE b.objekt_id = $1 AND ${BJ('b')} = CAST(substr($2, 1, 4) AS INTEGER) ORDER BY b.datum, b.id`, [objekt, von]);
   const rech = await db.select(`SELECT r.id, r.bezahlt_am, COALESCE(r.bezahlt_am, r.datum) AS datum, r.betrag, r.buchungskonto_id, r.rechnungsnr, f.name AS firma, e.nummer AS einheit, r.notiz
     FROM rechnungen r LEFT JOIN firmen f ON f.id = r.firma_id LEFT JOIN einheiten e ON e.id = r.einheit_id
-    WHERE r.objekt_id = $1 AND COALESCE(r.bezahlt_am, r.datum) BETWEEN $2 AND $3
+    WHERE r.objekt_id = $1 AND ${nurBezahlt ? 'r.bezahlt_am' : 'COALESCE(r.bezahlt_am, r.datum)'} BETWEEN $2 AND $3
       AND NOT EXISTS (SELECT 1 FROM buchungen b WHERE b.rechnung_id = r.id) ORDER BY 2`, [objekt, von, bis]);
   const aus: Row[] = [
     ...buch.filter((b) => b.art === 'Aufwand' || b.art === 'Ertrag').map((b) => ({ ...b, betrag: -Number(b.betrag),
@@ -46,7 +50,7 @@ async function belegSpeichern(b: Row, e: Entwurf, ausgabe: boolean) {
   else await db.execute('UPDATE buchungen SET betrag = $1, text = $2, datum = $3 WHERE id = $4', [ausgabe ? -betrag : betrag, e.text || null, e.datum, b.id]);
 }
 async function belegLoeschen(b: Row) {
-  if (keyVon(b)[0] === 'r') await db.execute('DELETE FROM rechnungen WHERE id = $1', [b.id]);
+  if (keyVon(b)[0] === 'r') await inPapierkorb('rechnungen', Number(b.id));
   else await buchungLoeschen(Number(b.id), { mitRechnung: true });   // Kosten verschwinden ganz aus der Abrechnung
 }
 
@@ -77,9 +81,9 @@ function Belege({ liste, ausgabe, kontoId, objekt, jahr, onChanged }: { liste: R
   }
   const zeile = (b: Row | null) => e && (
     <tr className="beleg-edit" key={'e' + (b ? keyVon(b) : 'neu')}>
-      <td><input type="date" className="cell" value={e.datum} onChange={(x) => setE({ ...e, datum: x.target.value })} /></td>
+      <td><DatumFeld className="cell" value={e.datum} onChange={(x) => setE({ ...e, datum: x.target.value })} /></td>
       <td colSpan={4}><input className="cell" style={{ width: '100%', textAlign: 'left' }} placeholder="Text, z. B. Korrektur oder Rechnung Hausmeister" value={e.text} onChange={(x) => setE({ ...e, text: x.target.value })} /></td>
-      <td className="num"><input className="cell" inputMode="decimal" autoFocus style={{ width: 110 }} value={e.betrag} onChange={(x) => setE({ ...e, betrag: x.target.value })}
+      <td className="num"><BetragFeld zelle className="cell" autoFocus style={{ width: 130 }} value={e.betrag} onChange={(x) => setE({ ...e, betrag: x.target.value })}
         onKeyDown={(x) => { if (x.key === 'Enter') speichern(b); if (x.key === 'Escape') setE(null); }} /></td>
       <td className="actions nowrap"><button className="icon-btn" title="Speichern" onClick={() => speichern(b)}><Check size={16} /></button>
         <button className="icon-btn" title="Abbrechen" onClick={() => { setE(null); setFehler(''); }}><X size={16} /></button></td>
@@ -104,29 +108,36 @@ function Belege({ liste, ausgabe, kontoId, objekt, jahr, onChanged }: { liste: R
   );
 }
 
-export function AbrechnungsUebersicht({ objekt, jahr, pos, schluessel, stand = 0, mitEinnahmen = true, titel, onChanged, nurUmlagefaehig = false }: {
+export function AbrechnungsUebersicht({ objekt, jahr, pos, schluessel, stand = 0, mitEinnahmen = true, titel, onChanged, nurUmlagefaehig = false, nurBezahlt = false, einnahmeKonten, einnahmenTitel }: {
   objekt: number; jahr: number; pos: Position[]; schluessel: (p: Position) => ReactNode; stand?: number; mitEinnahmen?: boolean; titel?: string;
   /** Wird nach Ändern, Löschen oder Hinzufügen eines Betrags aufgerufen; ohne diese Funktion ist die Übersicht nur lesbar */
-  onChanged?: (text: string) => void; nurUmlagefaehig?: boolean;
+  onChanged?: (text: string) => void; nurUmlagefaehig?: boolean; nurBezahlt?: boolean;
+  /** Nur diese Einnahmekonten zeigen (Nebenkostenabrechnung: nur Vorauszahlungen der Mieter, nie Hausgeld oder Rücklage der Eigentümer) */
+  einnahmeKonten?: string[]; einnahmenTitel?: string;
 }) {
   const [neu, setNeu] = useState<{ konto: string; datum: string; text: string; betrag: string } | null>(null);
   const [neuFehler, setNeuFehler] = useState('');
+  const [anp, setAnp] = useState<{ konto: number; betrag: string; grund: string; fehler?: string } | null>(null);
   const [intern, setIntern] = useState(0);
   const geaendert = onChanged && ((t: string) => { setIntern((x) => x + 1); onChanged(t); });
   const [belege, setBelege] = useState<{ aus: Row[]; ein: Row[] }>({ aus: [], ein: [] });
   const [konten, setKonten] = useState<Row[]>([]);
   const [eigeneJahr, setEigeneJahr] = useState<Set<number>>(new Set());
+  const [raus, setRaus] = useState<Row[]>([]);   // aus der Abrechnung genommene Kostenpositionen
   const [offen, setOffen] = useState<Set<string>>(new Set());
   useEffect(() => {
     if (!objekt || jahr < 1900) return;
-    belegeLaden(objekt, jahr).then(setBelege);
+    belegeLaden(objekt, jahr, nurBezahlt).then(setBelege);
     db.select(`SELECT id, nummer, name, art, umlagefaehig FROM buchungskonten ORDER BY nummer`).then(setKonten);
+    db.select(`SELECT a.*, k.nummer, k.name FROM abrechnung_betraege a JOIN buchungskonten k ON k.id = a.buchungskonto_id
+      WHERE a.objekt_id = $1 AND a.jahr = $2 AND a.ausgeschlossen = 1 ${nurUmlagefaehig ? 'AND k.umlagefaehig = 1' : ''} ORDER BY k.nummer`, [objekt, jahr]).then(setRaus);
     db.select('SELECT buchungskonto_id FROM objekt_schluessel_jahr WHERE objekt_id = $1 AND jahr = $2', [objekt, jahr])
       .then((r) => setEigeneJahr(new Set(r.map((x) => Number(x.buchungskonto_id)))));
   }, [objekt, jahr, stand, pos, intern]);
 
-  const umschalten = (k: string) => { const n = new Set(offen); n.has(k) ? n.delete(k) : n.add(k); setOffen(n); };
-  const einnahmen = [...new Set(belege.ein.map((b) => b.buchungskonto_id))].map((id) => {
+  const umschalten = (k: string) => { const n = new Set(offen); if (n.has(k)) n.delete(k); else n.add(k); setOffen(n); };
+  const einErlaubt = (id: number) => !einnahmeKonten || einnahmeKonten.includes(String(konten.find((x) => x.id === id)?.nummer ?? ''));
+  const einnahmen = [...new Set(belege.ein.map((b) => b.buchungskonto_id))].filter(einErlaubt).map((id) => {
     const k = konten.find((x) => x.id === id) ?? { nummer: '', name: 'ohne Konto' };
     const liste = belege.ein.filter((b) => b.buchungskonto_id === id);
     return { id, nummer: k.nummer, name: k.name, liste, betrag: liste.reduce((a, b) => a + b.betrag, 0) };
@@ -151,6 +162,46 @@ export function AbrechnungsUebersicht({ objekt, jahr, pos, schluessel, stand = 0
     geaendert?.(`Kostenposition ${k?.nummer ?? ''} ${k?.name ?? ''} mit ${eur(betrag)} hinzugefügt.`);
   }
 
+  // Gesamtkosten nur für die Abrechnung anpassen; die Buchungen bleiben, wie sie sind
+  async function anpassenSpeichern(p: Position, zuruecksetzen = false) {
+    if (!anp) return;
+    const sp = await gesperrt(objekt, `${jahr}-01-01`);
+    if (sp) { setAnp({ ...anp, fehler: sperrText(sp) }); return; }
+    if (zuruecksetzen) {
+      await db.execute('DELETE FROM abrechnung_betraege WHERE objekt_id = $1 AND jahr = $2 AND buchungskonto_id = $3', [objekt, jahr, p.konto_id]);
+      setAnp(null); geaendert?.(`${p.nummer} ${p.name}: wieder der gebuchte Betrag ${eur(p.gebucht ?? p.betrag)}.`); return;
+    }
+    const b = zahl(anp.betrag);
+    if (!anp.betrag.trim() || !Number.isFinite(b)) { setAnp({ ...anp, fehler: 'Bitte einen Betrag eintragen, z. B. 11.850,00.' }); return; }
+    const gebucht = p.gebucht ?? p.betrag;
+    if (Math.abs(b - gebucht) < 0.005) {   // gleich dem gebuchten Betrag: Anpassung entfernen
+      await db.execute('DELETE FROM abrechnung_betraege WHERE objekt_id = $1 AND jahr = $2 AND buchungskonto_id = $3', [objekt, jahr, p.konto_id]);
+    } else {
+      await db.execute(`INSERT INTO abrechnung_betraege (objekt_id, jahr, buchungskonto_id, betrag, grund) VALUES ($1, $2, $3, $4, $5)
+        ON CONFLICT (objekt_id, jahr, buchungskonto_id) DO UPDATE SET betrag = excluded.betrag, grund = excluded.grund`, [objekt, jahr, p.konto_id, Math.round(b * 100) / 100, anp.grund.trim() || null]);
+    }
+    setAnp(null);
+    geaendert?.(`${p.nummer} ${p.name}: Gesamtkosten für die Abrechnung ${jahr} ${eur(b)} (gebucht ${eur(gebucht)}).`);
+  }
+
+  // Kostenposition ganz aus der Abrechnung nehmen; die Buchungen bleiben in der Buchhaltung
+  async function herausnehmen(p: Position) {
+    const sp = await gesperrt(objekt, `${jahr}-01-01`);
+    if (sp) { onChanged?.(sperrText(sp)); return; }
+    if (!window.confirm(`${p.nummer} ${p.name} (${eur(p.betrag)}) aus der Abrechnung ${jahr} nehmen?\n\nDie Buchungen bleiben in der Buchhaltung. Unten unter „Aus der Abrechnung genommen“ holst du die Position jederzeit zurück.`)) return;
+    await db.execute(`INSERT INTO abrechnung_betraege (objekt_id, jahr, buchungskonto_id, betrag, grund, ausgeschlossen) VALUES ($1, $2, $3, $4, NULL, 1)
+      ON CONFLICT (objekt_id, jahr, buchungskonto_id) DO UPDATE SET ausgeschlossen = 1`, [objekt, jahr, p.konto_id, p.betrag]);
+    geaendert?.(`${p.nummer} ${p.name} ist nicht mehr in der Abrechnung ${jahr}.`);
+  }
+  async function zurueckholen(r: Row) {
+    const sp = await gesperrt(objekt, `${jahr}-01-01`);
+    if (sp) { onChanged?.(sperrText(sp)); return; }
+    // War vorher ein Betrag angepasst, bleibt er erhalten; sonst gilt wieder der gebuchte Betrag
+    if (r.grund) await db.execute('UPDATE abrechnung_betraege SET ausgeschlossen = 0 WHERE objekt_id = $1 AND jahr = $2 AND buchungskonto_id = $3', [objekt, jahr, r.buchungskonto_id]);
+    else await db.execute('DELETE FROM abrechnung_betraege WHERE objekt_id = $1 AND jahr = $2 AND buchungskonto_id = $3', [objekt, jahr, r.buchungskonto_id]);
+    geaendert?.(`${r.nummer} ${r.name} ist wieder in der Abrechnung ${jahr}.`);
+  }
+
   return (
     <section className="card abr-uebersicht">
       <div className="card-head"><h2>{titel ?? `Abrechnungsübersicht ${jahr}`}</h2>
@@ -166,34 +217,60 @@ export function AbrechnungsUebersicht({ objekt, jahr, pos, schluessel, stand = 0
             {pos.length > 0 && <optgroup label="Schon in der Abrechnung">{pos.map((p) => <option key={p.konto_id} value={p.konto_id}>{p.nummer} {p.name}</option>)}</optgroup>}
             <optgroup label="Weitere Konten">{neueKonten.map((k) => <option key={k.id} value={k.id}>{k.nummer} {k.name}</option>)}</optgroup>
           </select></label>
-          <label><span>Datum</span><input type="date" value={neu.datum} onChange={(x) => setNeu({ ...neu, datum: x.target.value })} /></label>
+          <label><span>Datum</span><DatumFeld value={neu.datum} onChange={(x) => setNeu({ ...neu, datum: x.target.value })} /></label>
           <label className="grow"><span>Text</span><input placeholder="z. B. Rechnung Hausmeister Dezember" value={neu.text} onChange={(x) => setNeu({ ...neu, text: x.target.value })} /></label>
-          <label><span>Betrag €</span><input inputMode="decimal" value={neu.betrag} onChange={(x) => setNeu({ ...neu, betrag: x.target.value })} onKeyDown={(x) => x.key === 'Enter' && neuSpeichern()} /></label>
+          <label><span>Betrag</span><BetragFeld value={neu.betrag} onChange={(x) => setNeu({ ...neu, betrag: x.target.value })} onKeyDown={(x) => x.key === 'Enter' && neuSpeichern()} /></label>
           <div className="row"><button onClick={() => { setNeu(null); setNeuFehler(''); }}>Abbrechen</button><button className="primary" onClick={neuSpeichern}>Hinzufügen</button></div>
           {neuFehler && <p className="error small">{neuFehler}</p>}
         </div>)}
       <h3 className="sec">Ausgaben</h3>
       {pos.length === 0 ? <p className="muted">Keine Ausgaben im Jahr {jahr}. Kosten kommen aus dem Bankimport und aus erfassten Rechnungen.</p> : (
         <table className="list">
-          <thead><tr><th style={{ width: 36 }} /><th>Konto</th><th>Kostenart</th><th>umlagefähig</th><th>Verteilerschlüssel {jahr}</th><th className="num">Belege</th><th className="num">Gesamtkosten</th></tr></thead>
-          <tbody>{pos.map((p) => {
+          <thead><tr><th style={{ width: 36 }} /><th>Konto</th><th>Kostenart</th><th>Verteilerschlüssel {jahr}</th><th className="num">Belege</th><th className="num">Gesamtkosten</th></tr></thead>
+          {([['Umlagefähige Kosten', pos.filter((p) => p.umlagefaehig), 'umlage'], ['Nicht umlagefähige Kosten', pos.filter((p) => !p.umlagefaehig), 'nicht']] as const).map(([gTitel, gPos, art]) => gPos.length > 0 && (
+          <tbody key={art} className={'abr-gruppe ' + art}>
+            <tr className="abr-gruppe-kopf"><td /><td colSpan={5}>{gTitel}<span className="muted small"> · {art === 'umlage' ? 'auf Mieter umlegbar (BetrKV)' : 'nicht auf Mieter umlegbar'}</span></td></tr>
+            {gPos.map((p) => {
             const k = 'a' + p.konto_id, liste = belege.aus.filter((b) => b.buchungskonto_id === p.konto_id);
             return (
               <Fragment key={k}>
                 <tr className={offen.has(k) ? 'auf' : ''}>
-                  <td><Pfeil k={k} n={liste.length} /></td><td>{p.nummer}</td><td>{p.name}{(p.hdl || p.hwl) && <div className="muted small">§ 35a {p.hdl ? 'HDL' : 'HWL'}: {eur(p.betrag35a ?? p.betrag)}</div>}</td><td>{p.umlagefaehig ? 'ja' : 'nein'}</td>
+                  <td><Pfeil k={k} n={liste.length} /></td><td>{p.nummer}</td><td>{p.name}{(p.hdl || p.hwl) && <div className="muted small">§ 35a {p.hdl ? 'HDL' : 'HWL'}: {eur(p.betrag35a ?? p.betrag)}</div>}</td>
                   <td>{schluessel(p)}{eigeneJahr.has(p.konto_id) && <span className="pill st-aktiv klein" title={`Eigener Schlüssel nur für ${jahr}`}>nur {jahr}</span>}</td>
-                  <td className="num">{liste.length}</td><td className="num"><b>{eur(p.betrag)}</b></td>
+                  <td className="num">{liste.length}</td>
+                  <td className="num abr-betrag"><span className="abr-betrag-zeile">
+                    {p.gebucht !== undefined && <span className="pill klein abr-angepasst" title={p.grund ?? 'Für die Abrechnung angepasst'}>angepasst</span>}
+                    <b>{eur(p.betrag)}</b>
+                    {geaendert && <button className="icon-btn" title="Gesamtkosten für die Abrechnung anpassen" onClick={() => setAnp({ konto: p.konto_id, betrag: String(p.betrag.toFixed(2)).replace('.', ','), grund: p.grund ?? '' })}><Pencil size={14} /></button>}
+                    {geaendert && <button className="icon-btn" title="Kostenposition aus der Abrechnung nehmen" onClick={() => herausnehmen(p)}><Trash2 size={14} /></button>}</span>
+                    {p.gebucht !== undefined && <div className="muted small">gebucht {eur(p.gebucht)}{p.grund ? ` · ${p.grund}` : ''}</div>}</td>
                 </tr>
-                {offen.has(k) && <tr className="belege-zeile"><td /><td colSpan={6}><Belege liste={liste} ausgabe kontoId={p.konto_id} objekt={objekt} jahr={jahr} onChanged={geaendert} />
-                  {Math.abs(liste.reduce((a, b) => a + b.betrag, 0) - p.betrag) > 0.005 && <p className="warn small">Die Belege ergeben {eur(liste.reduce((a, b) => a + b.betrag, 0))}, gebucht sind {eur(p.betrag)}.</p>}</td></tr>}
+                {anp?.konto === p.konto_id && <tr className="abr-anpassen"><td /><td colSpan={5}>
+                  <div className="abr-neu">
+                    <label><span>Gesamtkosten für die Abrechnung {jahr}</span><BetragFeld autoFocus value={anp.betrag} onChange={(x) => setAnp({ ...anp, betrag: x.target.value, fehler: undefined })} onKeyDown={(x) => x.key === 'Enter' && anpassenSpeichern(p)} /></label>
+                    <label className="grow"><span>Grund</span><input placeholder="z. B. Heizkostenabrechnung Messdienst statt Abschläge" value={anp.grund} onChange={(x) => setAnp({ ...anp, grund: x.target.value })} /></label>
+                    <div className="row">
+                      {p.gebucht !== undefined && <button onClick={() => anpassenSpeichern(p, true)}>Gebuchten Betrag nehmen</button>}
+                      <button onClick={() => setAnp(null)}>Abbrechen</button><button className="primary" onClick={() => anpassenSpeichern(p)}>Übernehmen</button></div>
+                    <p className="muted small" style={{ flexBasis: '100%', margin: 0 }}>Gebucht sind {eur(p.gebucht ?? p.betrag)}. Der neue Betrag gilt nur für die Abrechnung {jahr} dieser Liegenschaft. Die Buchhaltung bleibt unverändert.</p>
+                    {anp.fehler && <p className="error small">{anp.fehler}</p>}
+                  </div></td></tr>}
+                {offen.has(k) && <tr className="belege-zeile"><td /><td colSpan={5}><Belege liste={liste} ausgabe kontoId={p.konto_id} objekt={objekt} jahr={jahr} onChanged={geaendert} />
+                  {Math.abs(liste.reduce((a, b) => a + b.betrag, 0) - (p.gebucht ?? p.betrag)) > 0.005 && <p className="warn small">Die Belege ergeben {eur(liste.reduce((a, b) => a + b.betrag, 0))}, gebucht sind {eur(p.gebucht ?? p.betrag)}.</p>}</td></tr>}
               </Fragment>);
-          })}</tbody>
-          <tfoot><tr><td /><td colSpan={5}>Summe Ausgaben</td><td className="num">{eur(summeAus)}</td></tr></tfoot>
+          })}
+            <tr className="abr-zwischensumme"><td /><td colSpan={4}>Summe {gTitel.toLowerCase().replace('kosten', 'Kosten')}</td><td className="num">{eur(gPos.reduce((a, p) => a + p.betrag, 0))}</td></tr>
+          </tbody>))}
+          <tfoot><tr><td /><td colSpan={4}>Summe Ausgaben gesamt</td><td className="num">{eur(summeAus)}</td></tr></tfoot>
         </table>)}
+      {raus.length > 0 && <div className="abr-raus">
+        <div><b>Aus der Abrechnung genommen</b><span className="muted small"> · die Buchungen bleiben in der Buchhaltung</span></div>
+        {raus.map((r) => <div key={r.buchungskonto_id} className="abr-raus-zeile"><span>{r.nummer} {r.name}</span><span className="grow" />
+          {geaendert && <button className="link" onClick={() => zurueckholen(r)}><Undo2 size={14} /> Wieder aufnehmen</button>}</div>)}
+      </div>}
       {mitEinnahmen && <>
-        <h3 className="sec">Einnahmen</h3>
-        {einnahmen.length === 0 ? <p className="muted">Keine Einnahmen im Jahr {jahr} gebucht.</p> : (
+        <h3 className="sec">{einnahmenTitel ?? 'Einnahmen'}</h3>
+        {einnahmen.length === 0 ? <p className="muted">{einnahmeKonten ? `Keine Vorauszahlungen von Mietern im Jahr ${jahr} bei uns gebucht.` : `Keine Einnahmen im Jahr ${jahr} gebucht.`}</p> : (
           <table className="list">
             <thead><tr><th style={{ width: 36 }} /><th>Konto</th><th>Art</th><th className="num">Buchungen</th><th className="num">Gesamt</th></tr></thead>
             <tbody>{einnahmen.map((e) => {
@@ -210,7 +287,7 @@ export function AbrechnungsUebersicht({ objekt, jahr, pos, schluessel, stand = 0
       </>}
       <p className="muted small">Den Verteilerschlüssel wählst du je Buchungskonto. Er gilt nur für diese Liegenschaft und nur für {jahr}. Andere Jahre behalten ihren eigenen Schlüssel.
         Ohne eigene Wahl gilt der Standard unter „Umlageschlüssel“. Bei „Manuell“ trägst du den Betrag je Einheit selbst ein.
-        {geaendert && ' Beträge änderst oder löschst du in der aufgeklappten Zeile mit Stift und Papierkorb. Jede Änderung wird als Buchung gespeichert und gilt auch in der Buchhaltung.'}</p>
+        {geaendert && ' Beträge änderst oder löschst du in der aufgeklappten Zeile mit Stift und Papierkorb. Jede Änderung wird als Buchung gespeichert und gilt auch in der Buchhaltung. Mit dem Stift neben den Gesamtkosten passt du dagegen nur den Betrag für diese Abrechnung an, zum Beispiel Heizkosten laut Messdienst statt der Abschläge. Mit dem Papierkorb daneben nimmst du die ganze Kostenposition aus der Abrechnung. In beiden Fällen bleibt die Buchhaltung unverändert.'}</p>
     </section>
   );
 }

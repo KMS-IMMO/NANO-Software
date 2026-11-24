@@ -2,6 +2,7 @@
 // Kosten je Buchungskonto werden nach Umlageschlüssel auf Einheiten und innerhalb
 // der Einheit zeitanteilig auf die Nutzer (Mieter, Eigentümer, Leerstand) verteilt.
 import { db, type Row } from '../db';
+import { BJ } from './buchung';
 
 export type Schluessel = 'Fläche' | 'Personen' | 'Einheiten' | 'MEA' | 'Summe' | 'Verbrauch' | 'Direkt' | 'Messdienst';
 
@@ -31,11 +32,14 @@ export interface Nutzer {
 
 export interface Position {
   konto_id: number; nummer: string; name: string; gruppe: string;
-  umlagefaehig: boolean; hdl: boolean; hwl: boolean;
+  umlagefaehig: boolean; hdl: boolean; hwl: boolean; hbg?: boolean;   // § 35a Abs. 2 / Abs. 3 / Abs. 1 (Minijob)
+  euer?: boolean;         // Konto zählt in der Einnahmen-Überschuss-Rechnung (Schalter EÜR im Kontenrahmen)
   betrag: number;         // Kosten gesamt im Jahr (positiv = Kosten)
   betrag35a?: number;     // davon begünstigt nach § 35a (nur bei Konten mit HDL/HWL); ohne Angabe gilt der ganze Betrag
   schluessel: Schluessel;
   direkt?: Record<number, number>; // Kosten, die direkt einer Einheit zugeordnet sind
+  gebucht?: number;       // nur bei angepasstem Betrag: Summe laut Buchhaltung
+  grund?: string | null;  // nur bei angepasstem Betrag: Begründung
 }
 
 export interface Ergebnis {
@@ -43,7 +47,7 @@ export interface Ergebnis {
   einheit: Row;
   zeilen: { pos: Position; gesamtBasis: number; nutzerBasis: number; betrag: number }[];
   summe: number;
-  hdl: number; hwl: number;
+  hdl: number; hwl: number; hbg: number;
 }
 
 /**
@@ -58,7 +62,7 @@ export function verteilen(jahr: number, einheiten: Row[], nutzer: Nutzer[], posi
   werte: { verbrauch: Record<string, number>; messdienst: Record<number, number> }): Ergebnis[] {
   const T = tageImJahr(jahr);
   const res = new Map<string, Ergebnis>();
-  for (const n of nutzer) res.set(n.key, { nutzer: n, einheit: einheiten.find((e) => e.id === n.einheit_id)!, zeilen: [], summe: 0, hdl: 0, hwl: 0 });
+  for (const n of nutzer) res.set(n.key, { nutzer: n, einheit: einheiten.find((e) => e.id === n.einheit_id)!, zeilen: [], summe: 0, hdl: 0, hwl: 0, hbg: 0 });
 
   const basisEinheit = (e: Row, s: Schluessel, p: Position): number => {
     switch (s) {
@@ -77,25 +81,34 @@ export function verteilen(jahr: number, einheiten: Row[], nutzer: Nutzer[], posi
     if (Math.abs(p.betrag) < 0.005) continue;
     if (p.schluessel === 'Personen') {
       const gesamt = nutzer.reduce((a, n) => a + n.personen * n.tage, 0);
-      for (const n of nutzer) {
-        const nb = n.personen * n.tage;
-        add(res.get(n.key)!, p, gesamt, nb, gesamt ? (p.betrag * nb) / gesamt : 0);
-      }
+      centGenau(nutzer.map((n) => { const nb = n.personen * n.tage; return { r: res.get(n.key)!, gb: gesamt, nb, betrag: gesamt ? (p.betrag * nb) / gesamt : 0 }; }))
+        .forEach((z) => add(z.r, p, z.gb, z.nb, z.betrag));
       continue;
     }
     const gesamt = einheiten.reduce((a, e) => a + basisEinheit(e, p.schluessel, p), 0);
     // Bei Summe ist die Basis der eingetragene Betrag je Einheit und wird genau so übernommen;
     // bei Direkt werden die direkt zugeordneten Rechnungsbeträge auf die Kontosumme bezogen
     const faktor = p.schluessel === 'Direkt' && gesamt ? p.betrag / gesamt : 1;
-    for (const n of nutzer) {
+    centGenau(nutzer.map((n) => {
       const e = einheiten.find((x) => x.id === n.einheit_id)!;
       const eb = basisEinheit(e, p.schluessel, p);
       const nb = eb * (n.tage / T) * (n.anteil / 100);
       const betrag = (p.schluessel === 'Direkt' || p.schluessel === 'Summe') ? eb * faktor * (n.tage / T) * (n.anteil / 100) : gesamt ? (p.betrag * nb) / gesamt : 0;
-      add(res.get(n.key)!, p, gesamt, nb, betrag);
-    }
+      return { r: res.get(n.key)!, gb: gesamt, nb, betrag };
+    })).forEach((z) => add(z.r, p, z.gb, z.nb, z.betrag));
   }
   return [...res.values()];
+
+  /** Auf Cent runden, ohne dass die Summe abweicht: fehlende bzw. überzählige Cent bekommen die Anteile mit dem größten Rundungsrest */
+  function centGenau<Z extends { betrag: number }>(l: Z[]): Z[] {
+    const ziel = Math.round(l.reduce((a, z) => a + z.betrag, 0) * 100);
+    const out = l.map((z) => ({ ...z, betrag: Math.round(z.betrag * 100) }));
+    let diff = ziel - out.reduce((a, z) => a + z.betrag, 0);
+    const rang = l.map((z, i) => ({ i, rest: z.betrag * 100 - out[i].betrag })).filter((x) => l[x.i].betrag !== 0)
+      .sort((a, b) => (diff > 0 ? b.rest - a.rest : a.rest - b.rest));
+    for (const x of rang) { if (!diff) break; const d = diff > 0 ? 1 : -1; out[x.i].betrag += d; diff -= d; }
+    return out.map((z) => ({ ...z, betrag: z.betrag / 100 }));
+  }
 
   function add(r: Ergebnis, p: Position, gb: number, nb: number, betrag: number) {
     const b = Math.round(betrag * 100) / 100;
@@ -105,12 +118,13 @@ export function verteilen(jahr: number, einheiten: Row[], nutzer: Nutzer[], posi
     const f = p.betrag ? (p.betrag35a ?? p.betrag) / p.betrag : 0;
     if (p.hdl) r.hdl = Math.round((r.hdl + b * f) * 100) / 100;
     if (p.hwl) r.hwl = Math.round((r.hwl + b * f) * 100) / 100;
+    if (p.hbg) r.hbg = Math.round((r.hbg + b * f) * 100) / 100;
   }
 }
 
 /** Nutzer der Einheiten eines Objekts im Jahr: Mietverträge, Leerstand (Mietverwaltung) bzw. Eigentümer (WEG) */
 export async function nutzerErmitteln(objektId: number, jahr: number, modus: 'Mieter' | 'Eigentümer'): Promise<{ einheiten: Row[]; nutzer: Nutzer[] }> {
-  const einheiten = await db.select('SELECT * FROM einheiten WHERE objekt_id = $1 ORDER BY nummer', [objektId]);
+  const einheiten = await db.select('SELECT * FROM einheiten WHERE objekt_id = $1 ORDER BY lfd_nr, nummer', [objektId]);
   const nutzer: Nutzer[] = [];
   const name = (p: Row) => [p.firma, [p.nachname, p.vorname].filter(Boolean).join(', ')].filter(Boolean).join(', ');
   const T = tageImJahr(jahr);
@@ -157,30 +171,40 @@ export async function eigeneSchluessel(objektId: number, jahr: number): Promise<
  * gebuchte Bankausgänge plus erfasste Rechnungen, die (noch) keiner Bankbuchung zugeordnet sind.
  * Direkt einer Einheit zugeordnete Kosten werden zusätzlich je Einheit gemerkt.
  */
-export async function kostenErmitteln(objektId: number, jahr: number, nurUmlagefaehig: boolean): Promise<Position[]> {
+/** Kosten und Erträge je Konto im Jahr. Für Hausgeld- und Eigentümerabrechnung (nurUmlagefaehig = false) zählen nur Konten mit EÜR-Häkchen.
+ *  `nurBezahlt` (WEG-Hausgeldabrechnung, Abflussprinzip): Rechnungen zählen erst, wenn sie im Jahr bezahlt sind; offene Rechnungen bleiben draußen. */
+export async function kostenErmitteln(objektId: number, jahr: number, nurUmlagefaehig: boolean, opt: { nurBezahlt?: boolean } = {}): Promise<Position[]> {
   const von = `${jahr}-01-01`, bis = `${jahr}-12-31`;
   const konten = await db.select(`SELECT k.*, COALESCE(sj.schluessel, s.schluessel) AS objekt_schluessel FROM buchungskonten k
     LEFT JOIN objekt_schluessel s ON s.buchungskonto_id = k.id AND s.objekt_id = $1
     LEFT JOIN objekt_schluessel_jahr sj ON sj.buchungskonto_id = k.id AND sj.objekt_id = $1 AND sj.jahr = $2
-    WHERE k.art IN ('Aufwand', 'Ertrag') ${nurUmlagefaehig ? 'AND k.umlagefaehig = 1' : ''} ORDER BY k.nummer`, [objektId, jahr]);
+    WHERE k.art IN ('Aufwand', 'Ertrag') ${nurUmlagefaehig ? 'AND k.umlagefaehig = 1' : 'AND COALESCE(k.euer, 1) = 1'} ORDER BY k.nummer`, [objektId, jahr]);
   // § 35a: eingetragener Anteil an der Buchung, sonst Arbeitskosten der zugehörigen Rechnung, sonst der ganze Betrag
   const buch = await db.select(`SELECT b.buchungskonto_id, b.einheit_id, -SUM(b.betrag) AS kosten,
       SUM(COALESCE(b.anteil_35a, CASE WHEN r.anteil_lohn IS NOT NULL AND r.betrag <> 0 THEN r.anteil_lohn * (-b.betrag) / r.betrag END, -b.betrag)) AS k35a
     FROM buchungen b LEFT JOIN rechnungen r ON r.id = b.rechnung_id
-    WHERE b.objekt_id = $1 AND b.datum BETWEEN $2 AND $3 AND b.buchungskonto_id IS NOT NULL GROUP BY b.buchungskonto_id, b.einheit_id`, [objektId, von, bis]);
+    WHERE b.objekt_id = $1 AND ${BJ('b')} = CAST(substr($2, 1, 4) AS INTEGER) AND b.buchungskonto_id IS NOT NULL GROUP BY b.buchungskonto_id, b.einheit_id`, [objektId, von]);
   const rech = await db.select(`SELECT buchungskonto_id, einheit_id, SUM(betrag) AS kosten, SUM(COALESCE(anteil_lohn, betrag)) AS k35a FROM rechnungen r
-    WHERE objekt_id = $1 AND COALESCE(bezahlt_am, datum) BETWEEN $2 AND $3
+    WHERE objekt_id = $1 AND ${opt.nurBezahlt ? 'bezahlt_am' : 'COALESCE(bezahlt_am, datum)'} BETWEEN $2 AND $3
       AND NOT EXISTS (SELECT 1 FROM buchungen b WHERE b.rechnung_id = r.id) GROUP BY buchungskonto_id, einheit_id`, [objektId, von, bis]);
+  // Für die Abrechnung angepasste Gesamtkosten (Buchhaltung bleibt unverändert)
+  const anp = await db.select('SELECT buchungskonto_id, betrag, grund, ausgeschlossen FROM abrechnung_betraege WHERE objekt_id = $1 AND jahr = $2', [objektId, jahr]);
   const out: Position[] = [];
   for (const k of konten) {
     const zeilen = [...buch, ...rech].filter((x) => x.buchungskonto_id === k.id);
-    const betrag = Math.round(zeilen.reduce((a, x) => a + Number(x.kosten), 0) * 100) / 100;
-    if (Math.abs(betrag) < 0.005) continue;
+    const gebucht = Math.round(zeilen.reduce((a, x) => a + Number(x.kosten), 0) * 100) / 100;
+    const a = anp.find((x) => x.buchungskonto_id === k.id);
+    if (Math.abs(gebucht) < 0.005 && !a) continue;
+    if (a && Number(a.ausgeschlossen)) continue;   // aus der Abrechnung genommen
+    const betrag = a ? Math.round(Number(a.betrag) * 100) / 100 : gebucht;
+    // Angepasster Betrag: direkt zugeordnete Kosten und § 35a-Anteil im gleichen Verhältnis
+    const f = a ? (Math.abs(gebucht) >= 0.005 ? betrag / gebucht : 0) : 1;
     const direkt: Record<number, number> = {};
-    for (const z of zeilen) if (z.einheit_id) direkt[z.einheit_id] = (direkt[z.einheit_id] ?? 0) + Number(z.kosten);
-    const betrag35a = Math.round(zeilen.reduce((a, x) => a + Number(x.k35a ?? x.kosten), 0) * 100) / 100;
-    out.push({ konto_id: k.id, nummer: k.nummer, name: k.name, gruppe: k.gruppe ?? '', umlagefaehig: !!k.umlagefaehig, hdl: !!k.hdl, hwl: !!k.hwl,
-      betrag, betrag35a, schluessel: (k.objekt_schluessel ?? k.schluessel ?? 'Fläche') as Schluessel, direkt });
+    for (const z of zeilen) if (z.einheit_id) direkt[z.einheit_id] = (direkt[z.einheit_id] ?? 0) + Number(z.kosten) * f;
+    const k35 = zeilen.reduce((s, x) => s + Number(x.k35a ?? x.kosten), 0) * f;
+    const betrag35a = Math.round((a && Math.abs(gebucht) < 0.005 ? betrag : k35) * 100) / 100;
+    out.push({ konto_id: k.id, nummer: k.nummer, name: k.name, gruppe: k.gruppe ?? '', umlagefaehig: !!k.umlagefaehig, hdl: !!k.hdl, hwl: !!k.hwl, hbg: !!k.hbg, euer: Number(k.euer ?? 1) === 1,
+      betrag, betrag35a, schluessel: (k.objekt_schluessel ?? k.schluessel ?? 'Fläche') as Schluessel, direkt, ...(a ? { gebucht, grund: a.grund } : {}) });
   }
   return out;
 }
@@ -191,4 +215,12 @@ export async function vorauszahlungen(jahr: number, arten: string[]): Promise<Ro
     FROM sollstellungen s JOIN buchungen b ON b.sollstellung_id = s.id
     WHERE substr(s.monat, 1, 4) = $1 AND s.art IN (${arten.map((a) => `'${a}'`).join(',')})
     GROUP BY s.vertrag_id, s.einheit_id, s.person_id, s.art`, [String(jahr)]);
+}
+
+/** Positionen, deren Betrag nicht vollständig bei den Nutzern ankommt (z. B. Schlüssel Verbrauch oder Messdienst ohne Werte) */
+export function nichtVerteilteKosten(pos: Position[], erg: Ergebnis[]): { name: string; rest: number }[] {
+  return pos.map((p) => {
+    const verteilt = erg.reduce((a, r) => a + r.zeilen.filter((z) => z.pos.konto_id === p.konto_id).reduce((b, z) => b + z.betrag, 0), 0);
+    return { name: `${p.nummer} ${p.name}`, rest: Math.round((p.betrag - verteilt) * 100) / 100 };
+  }).filter((x) => Math.abs(x.rest) >= 0.01);
 }

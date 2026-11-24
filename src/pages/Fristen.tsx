@@ -6,6 +6,7 @@ import { db, insert, update, type Row } from '../db';
 import { EntityTable, datum } from '../components/EntityTable';
 import { useObjektKontext } from '../logic/objektKontext';
 import { plusMonate } from '../logic/wiederkehrend';
+import { DatumFeld } from '../components/DatumFeld';
 
 export const FRIST_VORLAGEN: { titel: string; art: string; monate: number | null }[] = [
   { titel: 'Rauchmelder-Wartung', art: 'Wartung', monate: 12 },
@@ -128,7 +129,7 @@ export function FristenPage() {
             <div className="form">
               <label><span>Liegenschaft</span><select value={vorlage.objekt} disabled={!!fix} onChange={(e) => setVorlage({ ...vorlage, objekt: e.target.value ? Number(e.target.value) : '' })}>
                 <option value="">alle / ohne</option>{objekte.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}</select></label>
-              <label><span>Erste Fälligkeit</span><input type="date" value={vorlage.ab} onChange={(e) => setVorlage({ ...vorlage, ab: e.target.value })} /></label>
+              <label><span>Erste Fälligkeit</span><DatumFeld value={vorlage.ab} onChange={(e) => setVorlage({ ...vorlage, ab: e.target.value })} /></label>
             </div>
             <div className="vorlagen-liste">{FRIST_VORLAGEN.map((x) => (
               <label key={x.titel} className="inline"><input type="checkbox" checked={vorlage.auswahl.includes(x.titel)}

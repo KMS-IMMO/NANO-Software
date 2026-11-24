@@ -1,6 +1,7 @@
 // Soll-Stellung: erzeugt die monatlichen Forderungen (offene Posten)
 // für Mietverträge (inkl. Staffel-/Index-/Erhöhungen und USt) und für Hausgeld (WEG).
 import { db, type Row } from '../db';
+import { gesperrt, sperrText } from './abschluss';
 
 export function monate(von: string, bis: string): string[] {
   const out: string[] = [];
@@ -45,14 +46,14 @@ export async function soll(row: Row): Promise<number> {
 
 /** Legt alle fehlenden Soll-Stellungen bis einschließlich `bisMonat` an (optional erst ab `von` und nur für eine Liegenschaft).
  *  Gibt die Anzahl neuer Posten zurück. Vorhandene Posten bleiben unverändert. */
-export async function sollStellen(bisMonat: string, opt: { von?: string; objektId?: number; nurHausgeld?: boolean } = {}): Promise<number> {
+export async function sollStellen(bisMonat: string, opt: { von?: string; objektId?: number; nurHausgeld?: boolean; vertragId?: number } = {}): Promise<number> {
   let n = 0;
   const imZeitraum = (m: string) => !opt.von || m >= opt.von;
   const nurObjekt = opt.objektId ? ` AND einheit_id IN (SELECT id FROM einheiten WHERE objekt_id = ${Number(opt.objektId)})` : '';
 
   // Mieten
   // Zahlt der Mieter an den Eigentümer (vermietete WEG-Einheit), entstehen bei uns keine Soll-Stellungen
-  const vertraege = opt.nurHausgeld ? [] : await db.select(`SELECT * FROM mietvertraege WHERE COALESCE(zahlung_an, 'Verwaltung') <> 'Eigentümer'${nurObjekt}`);
+  const vertraege = opt.nurHausgeld ? [] : await db.select(`SELECT * FROM mietvertraege WHERE COALESCE(zahlung_an, 'Verwaltung') <> 'Eigentümer'${nurObjekt}${opt.vertragId ? ` AND id = ${Number(opt.vertragId)}` : ''}`);
   const alleAnp = await db.select('SELECT * FROM mietanpassungen');
   for (const v of vertraege) {
     const anp = alleAnp.filter((a) => a.vertrag_id === v.id);
@@ -69,7 +70,7 @@ export async function sollStellen(bisMonat: string, opt: { von?: string; objektI
   }
 
   // Hausgeld (WEG): Schuldner ist der jeweilige Eigentümer im Monat
-  const hg = await db.select(`SELECT h.*, e.objekt_id, o.ruecklage_zahlweise FROM hausgeld h JOIN einheiten e ON e.id = h.einheit_id
+  const hg = opt.vertragId ? [] : await db.select(`SELECT h.*, e.objekt_id, o.ruecklage_zahlweise FROM hausgeld h JOIN einheiten e ON e.id = h.einheit_id
     JOIN objekte o ON o.id = e.objekt_id WHERE o.verwaltungsart = 'WEG'${opt.objektId ? ` AND o.id = ${Number(opt.objektId)}` : ''} ORDER BY h.gueltig_ab`);
   const eig = await db.select('SELECT * FROM eigentum ORDER BY anteil DESC');
   const einheiten = [...new Set(hg.map((h) => h.einheit_id))];
@@ -142,13 +143,28 @@ export async function stammdatenPosten(einheitIds: number[], monateListe: string
 /** Hausgeld-Posten einer Liegenschaft ab `abMonat` neu stellen, z. B. nach geändertem Hausgeld, Rücklage oder Zahlweise.
  *  Nur unbezahlte Posten werden ersetzt; bereits (teilweise) bezahlte bleiben unverändert. Gibt die Zahl neuer Posten zurück. */
 export async function hausgeldNeuStellen(objektId: number, abMonat: string): Promise<number> {
-  const bis = (await db.select(`SELECT MAX(s.monat) AS m FROM sollstellungen s JOIN einheiten e ON e.id = s.einheit_id
-    WHERE e.objekt_id = $1 AND s.art IN ('Hausgeld', 'Rücklage') AND s.monat >= $2`, [objektId, abMonat]))[0]?.m;
+  const r = (await db.select(`SELECT MIN(s.monat) AS a, MAX(s.monat) AS m FROM sollstellungen s JOIN einheiten e ON e.id = s.einheit_id
+    WHERE e.objekt_id = $1 AND s.art IN ('Hausgeld', 'Rücklage') AND s.monat >= $2`, [objektId, abMonat]))[0];
+  const bis = r?.m;
   if (!bis) return 0;
+  // Nie Monate vor dem ersten vorhandenen Posten neu anlegen (z. B. wenn die Sollstellung erst ab einem bestimmten Monat begonnen wurde)
+  if (r.a > abMonat) abMonat = r.a;
   await db.execute(`DELETE FROM sollstellungen WHERE art IN ('Hausgeld', 'Rücklage') AND monat >= $2 AND vertrag_id IS NULL
     AND einheit_id IN (SELECT id FROM einheiten WHERE objekt_id = $1)
     AND NOT EXISTS (SELECT 1 FROM buchungen b WHERE b.sollstellung_id = sollstellungen.id)`, [objektId, abMonat]);
   return sollStellen(bis, { von: abMonat, objektId, nurHausgeld: true });
+}
+
+/** Miet-Posten eines Vertrags neu stellen, z. B. nach einer Mietanpassung oder neuen Vorauszahlung.
+ *  Noch nicht (teilweise) bezahlte Posten werden mit den Beträgen gestellt, die im jeweiligen Monat gelten. Bezahlte bleiben unverändert. */
+export async function mieteNeuStellen(vertragId: number): Promise<number> {
+  const bis = (await db.select(`SELECT MAX(monat) AS m FROM sollstellungen WHERE vertrag_id = $1 AND art IN ('Kaltmiete', 'NK', 'HK', 'USt')`, [vertragId]))[0]?.m;
+  if (!bis) return 0;
+  const offen = `vertrag_id = $1 AND art IN ('Kaltmiete', 'NK', 'HK', 'USt') AND NOT EXISTS (SELECT 1 FROM buchungen b WHERE b.sollstellung_id = sollstellungen.id)`;
+  const vorher = (await db.select(`SELECT COUNT(*) AS n FROM sollstellungen WHERE ${offen}`, [vertragId]))[0]?.n ?? 0;
+  await db.execute(`DELETE FROM sollstellungen WHERE ${offen}`, [vertragId]);
+  await sollStellen(bis, { vertragId });
+  return Number(vorher);
 }
 
 /** Buchungskonto (Einnahme) je Art des offenen Postens */
@@ -159,7 +175,7 @@ export const KONTO_FUER_ART: Record<string, string> = {
 /** Offene Posten mit bezahltem Betrag, Objekt, Einheit und Schuldner */
 export const OP_SQL = `
   SELECT s.*, COALESCE((SELECT SUM(b.betrag) FROM buchungen b WHERE b.sollstellung_id = s.id), 0) AS bezahlt,
-    o.id AS objekt_id, o.name AS objekt, o.verwaltungsart, e.nummer AS einheit,
+    o.id AS objekt_id, o.name AS objekt, o.verwaltungsart, e.nummer AS einheit, e.lfd_nr AS einheit_lfd,
     TRIM(COALESCE(p.firma, '') || CASE WHEN p.firma IS NOT NULL AND p.nachname IS NOT NULL THEN ', ' ELSE '' END ||
       COALESCE(p.nachname, '') || CASE WHEN p.vorname IS NOT NULL THEN ', ' || p.vorname ELSE '' END) AS schuldner
   FROM sollstellungen s
@@ -167,11 +183,38 @@ export const OP_SQL = `
   JOIN objekte o ON o.id = e.objekt_id
   LEFT JOIN personen p ON p.id = s.person_id`;
 
+/** Zahldatum für „Als bezahlt buchen“: Posten aus einem früheren Jahr gelten am Fälligkeitstag als bezahlt, sonst heute.
+ *  Sonst stünde z. B. Hausgeld 2025, das erst im November 2026 nachgetragen wird, zum 31.12.2025 noch als offene Forderung im Vermögensbericht. */
+export function zahldatumFuer(r: Row, heute = new Date().toISOString().slice(0, 10)): string {
+  const f = String(r.faellig ?? '').slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(f) && f.slice(0, 4) < heute.slice(0, 4) ? f : heute;
+}
+
 /** Restbetrag eines offenen Postens als Zahlung buchen (z. B. bar oder ohne Bankumsatz) */
-export async function zahlungBuchen(r: Row, datum = new Date().toISOString().slice(0, 10)) {
+export async function zahlungBuchen(r: Row, datum = zahldatumFuer(r)) {
+  const sp = await gesperrt(r.objekt_id, datum);
+  if (sp) throw new Error(sperrText(sp));
   const konto = (await db.select('SELECT id FROM buchungskonten WHERE nummer = $1', [KONTO_FUER_ART[r.art] ?? '1000']))[0];
-  await db.execute(`INSERT INTO buchungen (datum, betrag, buchungskonto_id, objekt_id, einheit_id, sollstellung_id, text) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-    [datum, Math.round((r.betrag - r.bezahlt) * 100) / 100, konto?.id ?? null, r.objekt_id, r.einheit_id, r.id, `Zahlung ${r.art} ${r.monat} (manuell)`]);
+  const jahr = /^\d{4}-\d{2}$/.test(String(r.monat)) ? Number(String(r.monat).slice(0, 4)) : Number(datum.slice(0, 4));
+  await db.execute(`INSERT INTO buchungen (datum, betrag, buchungskonto_id, objekt_id, einheit_id, sollstellung_id, text, jahr) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+    [datum, Math.round((r.betrag - r.bezahlt) * 100) / 100, konto?.id ?? null, r.objekt_id, r.einheit_id, r.id, `Zahlung ${r.art} ${r.monat} (manuell)`, jahr]);
+}
+
+/** Von Hand als bezahlt gebuchte Posten eines Jahres, deren Zahldatum erst nach dem 31.12. liegt (früher: Datum des Klicks) */
+export async function spaeteHandzahlungen(objekt: number, jahr: number): Promise<Row[]> {
+  return db.select(`SELECT b.id, b.datum, b.betrag, s.faellig, s.monat, s.art, e.nummer AS einheit FROM buchungen b JOIN sollstellungen s ON s.id = b.sollstellung_id
+      JOIN einheiten e ON e.id = s.einheit_id
+    WHERE e.objekt_id = $1 AND b.bankumsatz_id IS NULL AND b.text LIKE 'Zahlung % (manuell)' AND substr(s.monat, 1, 4) = $2 AND b.datum > $3 AND s.faellig <= $3
+    ORDER BY e.lfd_nr, e.nummer, s.monat`, [objekt, String(jahr), `${jahr}-12-31`]);
+}
+
+/** Diese Handzahlungen auf den Fälligkeitstag des Postens datieren. Ist das Jahr abgeschlossen, bricht es ohne Änderung ab. */
+export async function handzahlungenDatieren(objekt: number, jahr: number): Promise<number> {
+  const sp = await gesperrt(objekt, `${jahr}-12-31`);
+  if (sp) throw new Error(sperrText(sp));
+  const l = await spaeteHandzahlungen(objekt, jahr);
+  for (const b of l) await db.execute('UPDATE buchungen SET datum = $1, jahr = $2 WHERE id = $3', [b.faellig, jahr, b.id]);
+  return l.length;
 }
 
 /** Status eines Postens: bezahlt, erwartet (noch nicht fällig), fällig (überfällig in der Frist), mahnen, gemahnt */
