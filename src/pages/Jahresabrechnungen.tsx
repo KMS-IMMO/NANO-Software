@@ -14,6 +14,8 @@ import { ZahlungenOhnePostenKarte } from '../components/ZahlungenOhnePostenKarte
 import { zahlungenOhnePosten, type ZahlungOhnePosten } from '../logic/zahlungenOhnePosten';
 import { handzahlungenDatieren, spaeteHandzahlungen } from '../logic/soll';
 import { kontoabgleich } from '../logic/kontoabgleich';
+import { bankStart } from '../logic/kontostart';
+import { gruendeText, kontoentwicklung, type Kontoentwicklung } from '../logic/kontoentwicklung';
 import { useObjektKontext } from '../logic/objektKontext';
 import { eur, farbe, num, datum } from '../components/EntityTable';
 import { eigeneSchluessel, kostenErmitteln, nichtVerteilteKosten, nutzerErmitteln, verteilen, type Ergebnis, type Position } from '../logic/verteilung';
@@ -194,6 +196,9 @@ export function WegAbrechnungPage() {
         COALESCE((SELECT SUM(u.betrag) FROM bankumsaetze u WHERE u.bankkonto_id = b.id AND u.betrag > 0 AND u.datum BETWEEN $2 AND $3 AND (b.saldo_datum IS NULL OR u.datum > b.saldo_datum)), 0) AS ein,
         COALESCE((SELECT SUM(u.betrag) FROM bankumsaetze u WHERE u.bankkonto_id = b.id AND u.betrag < 0 AND u.datum BETWEEN $2 AND $3 AND (b.saldo_datum IS NULL OR u.datum > b.saldo_datum)), 0) AS aus
       FROM bankkonten b WHERE b.objekt_id = $1 ORDER BY b.id`, [objekt, anfang, ende]);
+    // Stand 01.01. wie unter „Einnahmen & Ausgaben“ und im Kontoabgleich: mit dem Stand von Hand, wenn er für die Bank gilt
+    for (const b of entwicklung) b.start = await bankStart(b, anfang);
+    for (const b of banken) { const e = entwicklung.find((x) => x.id === b.id); if (e) b.saldo = r2(Number(e.start) + Number(e.ein) + Number(e.aus)); }
     const zahlungsEin = r2(entwicklung.reduce((a, b) => a + Number(b.ein), 0));
     const einSumme = r2(einnahmen.reduce((a, x) => a + Number(x.betrag), 0));
     setOhnePosten(await zahlungenOhnePosten(Number(objekt), jahr));
@@ -473,6 +478,8 @@ export function EigentuemerAbrechnungPage() {
   const [eig, setEig] = useState<Row[]>([]);
   const [bank, setBank] = useState<{ n: number; anfang: number; ende: number }>({ n: 0, anfang: 0, ende: 0 });
   const [stand, setStand] = useState(0);
+  const [ke, setKe] = useState<Kontoentwicklung | null>(null);
+  const [gruendeAuf, setGruendeAuf] = useState(false);
 
   useEffect(() => {
     if (objekt === '') return;
@@ -481,15 +488,16 @@ export function EigentuemerAbrechnungPage() {
         WHERE b.objekt_id = $1 AND k.art = 'Einnahme' AND COALESCE(k.euer, 1) = 1 AND ${BJ('b')} = CAST($2 AS INTEGER) GROUP BY k.id ORDER BY k.nummer`, [objekt, String(jahr)]));
       // Nur Konten mit Haken „EÜR“ gehören in die Einnahmen-Überschuss-Rechnung des Eigentümers
       setAus((await kostenErmitteln(Number(objekt), jahr, false)).filter((p) => p.euer));
-      setOffen(Number((await db.select(`SELECT COALESCE(SUM(s.betrag - COALESCE((SELECT SUM(b.betrag) FROM buchungen b WHERE b.sollstellung_id = s.id), 0)), 0) AS x
+      // Stichtag 31.12.: nur Zahlungen bis zum 31.12. zählen (wie im Vermögensbericht der WEG)
+      setOffen(Number((await db.select(`SELECT COALESCE(SUM(s.betrag - COALESCE((SELECT SUM(b.betrag) FROM buchungen b WHERE b.sollstellung_id = s.id AND b.datum <= $2), 0)), 0) AS x
         FROM sollstellungen s JOIN einheiten e ON e.id = s.einheit_id WHERE e.objekt_id = $1 AND s.faellig <= $2`, [objekt, `${jahr}-12-31`]))[0].x));
       // Auszahlungen an / Einzahlungen vom Eigentümer: keine Einnahmen oder Kosten, nur Kontobewegung
       setEig(await db.select(`SELECT b.datum, b.betrag, b.text, k.nummer, k.name FROM buchungen b JOIN buchungskonten k ON k.id = b.buchungskonto_id
         WHERE b.objekt_id = $1 AND k.art = 'Eigentümer' AND ${BJ('b')} = CAST($2 AS INTEGER) ORDER BY k.nummer, b.datum`, [objekt, String(jahr)]));
-      const saldo = async (bis: string) => Number((await db.select(`SELECT COALESCE(SUM(k.anfangssaldo + COALESCE((SELECT SUM(u.betrag) FROM bankumsaetze u WHERE u.bankkonto_id = k.id
-        AND u.datum <= $2 AND (k.saldo_datum IS NULL OR u.datum > k.saldo_datum)), 0)), 0) AS s, COUNT(*) AS n FROM bankkonten k WHERE k.objekt_id = $1`, [objekt, bis]))[0]?.s ?? 0);
-      const n = Number((await db.select('SELECT COUNT(*) AS n FROM bankkonten WHERE objekt_id = $1', [objekt]))[0]?.n ?? 0);
-      setBank({ n, anfang: n ? await saldo(`${jahr - 1}-12-31`) : 0, ende: n ? await saldo(`${jahr}-12-31`) : 0 });
+      // Kontostand 01.01. (von Hand oder laut Bank), Stand laut Bank 31.12. und die Gründe einer Differenz
+      const k = await kontoentwicklung(Number(objekt), jahr);
+      setKe(k);
+      setBank({ n: k.n, anfang: k.anfang, ende: k.ende });
     })();
   }, [objekt, jahr, stand]);
 
@@ -525,7 +533,7 @@ export function EigentuemerAbrechnungPage() {
       b.platz(kz.length * 8 + 34);   // Kontoentwicklung mit Abgleich nicht über zwei Seiten
       b.tabelle(['Kontoentwicklung', 'Betrag'], kz, [[bank.n ? `Kontostand am 31.12.${jahr} (rechnerisch)` : 'Veränderung des Kontostands', geld(bank.n ? endeRechnerisch : ueberschuss + sEig)]]);
       if (bank.n) b.absatz(Math.abs(differenz) < 0.01 ? `Der Kontostand stimmt mit dem Kontoauszug zum 31.12.${jahr} überein (${geld(bank.ende)}).`
-        : `Kontostand laut Kontoauszug zum 31.12.${jahr}: ${geld(bank.ende)}. Differenz ${geld(differenz)}, z. B. durch Kautionen, offene Rechnungen oder Buchungen ohne Bankumsatz.`, 4);
+        : `Kontostand laut Kontoauszug zum 31.12.${jahr}: ${geld(bank.ende)}. Differenz ${geld(differenz)}${ke?.gruende.length ? `. Sie ergibt sich aus: ${gruendeText(ke.gruende, geld)}.` : ', z. B. durch Kautionen, offene Rechnungen oder Buchungen ohne Bankumsatz.'}`, 4);
       if (eig.length) b.absatz(EIGENTUEMER_HINWEIS, 6);
     }
     b.tabelle(['Weitere Angaben', 'Betrag'], [['Offene Mietforderungen zum 31.12.', geld(offen)], ['Arbeitskosten § 35a Abs. 2 (haushaltsnahe Dienstleistungen)', geld(hdl)], ['Arbeitskosten § 35a Abs. 3 (Handwerkerleistungen)', geld(hwl)]]);
@@ -578,7 +586,17 @@ export function EigentuemerAbrechnungPage() {
             <tr className="sum"><td>{bank.n > 0 ? `Kontostand am 31.12.${jahr} (rechnerisch)` : 'Veränderung des Kontostands'}</td><td className={'num ' + ((bank.n ? endeRechnerisch : ueberschuss + sEig) < 0 ? 'neg' : '')}>{eur(bank.n ? endeRechnerisch : ueberschuss + sEig)}</td></tr>
             {bank.n > 0 && <tr><td>Kontostand laut Bank am 31.12.{jahr}</td><td className="num">{eur(bank.ende)}{Math.abs(differenz) < 0.01 ? ' ✓' : ''}</td></tr>}
           </tbody></table>
-          {bank.n > 0 && Math.abs(differenz) >= 0.01 && <p className="muted small">Differenz {eur(differenz)}, z. B. durch Kautionen, offene Rechnungen oder Buchungen ohne Bankumsatz.</p>}
+          {bank.n > 0 && Math.abs(differenz) >= 0.01 && (ke?.gruende.length ? <div className="diff-gruende">
+            <p className="small"><b>Differenz {eur(differenz)}</b> zwischen Kontostand laut Bank und rechnerischem Kontostand. Sie setzt sich so zusammen:</p>
+            <table className="list"><tbody>
+              {ke.gruende.map((g) => <tr key={g.schluessel}><td>{g.text}{g.posten.length ? <span className="muted"> · {g.posten.length} Posten</span> : null}</td><td className="num">{eur(g.betrag)}</td></tr>)}
+              {Math.abs(ke.rest) >= 0.01 && <tr><td className="muted">Nicht erklärter Rest</td><td className="num">{eur(ke.rest)}</td></tr>}
+              <tr className="sum"><td>Differenz</td><td className="num">{eur(differenz)}</td></tr>
+            </tbody></table>
+            {ke.gruende.some((g) => g.posten.length) && <button className="link small" onClick={() => setGruendeAuf(!gruendeAuf)}>{gruendeAuf ? 'Einzelposten ausblenden' : 'Einzelposten anzeigen'}</button>}
+            {gruendeAuf && <table className="list belege"><thead><tr><th>Grund</th><th>Datum</th><th>Text</th><th>Konto</th><th className="num">Betrag</th></tr></thead>
+              <tbody>{ke.gruende.flatMap((g) => g.posten.slice(0, 50).map((x) => <tr key={g.schluessel + x.id}><td className="small">{g.text.replace(/ \(.*\)$/, '')}</td><td>{datum(x.datum)}</td><td className="small">{x.text}{x.einheit ? ` · ${x.einheit}` : ''}</td><td className="small">{x.konto}</td><td className="num">{eur(x.betrag)}</td></tr>))}</tbody></table>}
+          </div> : <p className="muted small">Differenz {eur(differenz)}, z. B. durch Kautionen, offene Rechnungen oder Buchungen ohne Bankumsatz.</p>)}
         </section>}
         {objekt !== '' && <KontoabgleichKarte objekt={Number(objekt)} jahr={jahr} stand={stand} />}
         <section className="card">
