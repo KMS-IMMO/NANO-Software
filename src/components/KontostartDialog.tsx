@@ -43,7 +43,7 @@ export function KontostartDialog({ objekt, jahr, k, onClose, onDone }: {
           Er ist der Anfang von „Stand laut Buchungen“ und fließt in die Differenz ein. Leer lassen heißt: der Stand kommt aus Anfangssaldo und Kontoumsätzen.</p>
         <div className="ks-start-liste" onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); speichern(); } }}>
           {k.konten.map((z, i) => {
-            const spaet = !!z.saldoDatum && z.saldoDatum >= `${jahr}-01-01`;
+            const spaet = !!z.saldoDatum && z.saldoDatum >= `${jahr}-02-01`;
             return (
               <div key={z.id} className="ks-start-zeile">
                 <div className="ks-start-konto"><b>{z.name}</b>{z.iban ? <div className="muted small">{ibanAnzeige(z.iban)}</div> : null}</div>
