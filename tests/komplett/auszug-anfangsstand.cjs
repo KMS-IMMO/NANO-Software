@@ -52,6 +52,13 @@ const ZEILEN = [
   ok('Nachher: Kontostand laut Bank 1.120,00 €, Stand 01.01. 1.000,00 €', /Kontostand laut Bank\s*1\.120,00 €/.test(t) && /Stand 01\.01\. 1\.000,00 €/.test(t), (t.match(/Kontostand laut Bank[^\n]*\n[^\n]*/) ?? [''])[0]);
   const k = await p.evaluate(async (bk) => { const { db } = await import('/src/db/index.ts'); return (await db.select('SELECT anfangssaldo, saldo_datum, (SELECT COUNT(*) FROM bankumsaetze WHERE bankkonto_id = $1) AS n FROM bankkonten WHERE id = $1', [bk]))[0]; }, ids.bk);
   ok('Anfangssaldo 1.000 zum 02.01.2025, keine doppelten Umsätze', k.anfangssaldo === 1000 && k.saldo_datum === '2025-01-02' && Number(k.n) === 3, JSON.stringify(k));
+  // Stand 01.01. von Hand übersteuert den Wert aus dem Auszug (Bank und Buchungen)
+  await p.locator('.ks-start-knopf').click(); await p.waitForTimeout(600);
+  ok('Fenster zeigt den Wert aus dem Auszug als Vorschlag', /Laut Kontoumsätzen: 1\.000,00 €/.test((await p.locator('.modal').innerText()).replace(/[\u00a0\u202f]/g, ' ')));
+  await p.getByLabel('Stand 01.01.2025 Hausgeldkonto').fill('1.010,00');
+  await p.getByRole('button', { name: 'Speichern' }).click(); await p.waitForTimeout(1800);
+  t = await txt();
+  ok('Von Hand 1.010,00 €: Bank 1.130,00 €, Stand 01.01. 1.010,00 € (von Hand)', /Kontostand laut Bank\s*1\.130,00 €/.test(t) && /Stand 01\.01\. 1\.010,00 € \(von Hand\)/.test(t), (t.match(/Kontostand laut Bank[^\n]*\n[^\n]*/) ?? [''])[0]);
   // Ein früherer, von Hand eingetragener Anfangssaldo bleibt
   const bleibt = await p.evaluate(async (bk) => { const { db } = await import('/src/db/index.ts'); const bank = await import('/src/logic/bank.ts');
     await db.execute("UPDATE bankkonten SET anfangssaldo = 999, saldo_datum = '2024-12-31' WHERE id = $1", [bk]);

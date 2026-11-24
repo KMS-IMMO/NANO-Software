@@ -4,8 +4,8 @@
 // Ohne Eingabe gilt wie bisher: Anfangssaldo des Bankkontos (zum „Saldo zum“-Tag) + alle Kontoumsätze danach bis zum 31.12. des Vorjahres.
 // Mit Eingabe gilt die Eingabe als Stand 01.01.
 //   • Stand laut Buchungen beginnt immer mit der Eingabe; Buchungen vor dem Beginn der Kontoumsätze zählen dann mit.
-//   • Stand laut Bank beginnt mit der Eingabe, solange der Anfangssaldo des Kontos vor dem 01.01. liegt. Beginnen die
-//     Kontoumsätze erst im Lauf des Jahres (Anfangssaldo zu einem späteren Tag), bleibt der Stand laut Bank beim Anfangssaldo,
+//   • Stand laut Bank beginnt mit der Eingabe, solange der Anfangssaldo des Kontos spätestens im Januar gilt (auch ein aus dem Auszug übernommener). Beginnen die
+//     Kontoumsätze erst später im Jahr (Anfangssaldo ab Februar), bleibt der Stand laut Bank beim Anfangssaldo,
 //     denn der kommt vom echten Kontoauszug. Die Differenz zeigt dann, ob die Buchungen bis dahin aufgehen.
 import { db, type Row } from '../db';
 import { gesperrt, sperrText } from './abschluss';
@@ -25,8 +25,10 @@ export async function startLautUmsaetzen(bankkontoId: number, von: string): Prom
     FROM bankkonten k WHERE k.id = $1`, [bankkontoId, von]))[0]?.s ?? 0));
 }
 
-/** Gilt die Eingabe von Hand auch für den Stand laut Bank? Nur wenn die Kontoumsätze vor dem 01.01. beginnen (oder kein Saldotag gesetzt ist). */
-export const startGiltFuerBank = (k: Row, jahr: number) => !k.saldo_datum || String(k.saldo_datum) < `${jahr}-01-01`;
+/** Gilt die Eingabe von Hand auch für den Stand laut Bank? Ja, wenn kein Saldotag gesetzt ist oder der Anfangssaldo spätestens im Januar gilt
+ *  (z. B. aus dem Kontoauszug übernommen, Saldotag = Tag vor dem ersten Umsatz). Dann übersteuert die Eingabe den übernommenen Wert.
+ *  Beginnen die Kontoumsätze erst später im Jahr, bleibt der Stand laut Bank beim Anfangssaldo vom Kontoauszug. */
+export const startGiltFuerBank = (k: Row, jahr: number) => !k.saldo_datum || String(k.saldo_datum) < `${jahr}-02-01`;
 
 /** Stand eines Bankkontos laut Bank zu Beginn des Tages `von` (im Jahr von `von`), mit Eingabe von Hand, wenn sie für die Bank gilt */
 export async function bankStart(k: Row, von: string): Promise<number> {
