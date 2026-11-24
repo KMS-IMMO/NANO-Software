@@ -2,7 +2,7 @@
 // Hausgeld anpassen, Zahlungen und offene Posten, Mieter der Wohnung (bzw. Wohnung vermieten)
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Coins, IdCard, KeyRound, ReceiptText } from 'lucide-react';
+import { Check, Coins, IdCard, KeyRound, Pencil, ReceiptText, Trash2, X } from 'lucide-react';
 import { db, type Row } from '../db';
 import { datum, eur, num } from '../components/EntityTable';
 import { BetragFeld } from '../components/BetragFeld';
@@ -12,6 +12,7 @@ import { StammdatenKarte, personFelder, personWerte, personAenderungen, type SGr
 import { OP_SQL, hausgeldNeuStellen } from '../logic/soll';
 import { personLabel, widSql } from '../db/labels';
 import { DatumFeld } from '../components/DatumFeld';
+import { hausgeldAendern, hausgeldLoeschen, hausgeldSperre, type HausgeldErgebnis } from '../logic/hausgeld';
 
 export function EigentumDetailPage({ objektId, eigentumId }: { objektId: number; eigentumId: number }) {
   const [ei, setEi] = useState<Row | null | undefined>(undefined);
@@ -181,6 +182,7 @@ function HausgeldAnpassen({ einheitId, objektId, aktuell, verlauf, nk, onSaved }
     if (!ab) { setFehler('Bitte das Datum angeben, ab dem das Hausgeld gilt.'); return; }
     if (g <= 0) { setFehler('Bitte das monatliche Hausgeld eintragen.'); return; }
     if (r < 0 || r > g) { setFehler('Die Rücklage muss zwischen 0 und dem Hausgeld liegen.'); return; }
+    const sp = await hausgeldSperre(objektId, ab); if (sp) { setFehler(sp); return; }
     const vorhanden = (await db.select('SELECT id FROM hausgeld WHERE einheit_id = $1 AND gueltig_ab = $2', [einheitId, ab]))[0];
     if (vorhanden) await db.execute('UPDATE hausgeld SET betrag = $1, davon_ruecklage = $2 WHERE id = $3', [g, r, vorhanden.id]);
     else await db.execute('INSERT INTO hausgeld (einheit_id, gueltig_ab, betrag, davon_ruecklage) VALUES ($1, $2, $3, $4)', [einheitId, ab, g, r]);
@@ -199,8 +201,62 @@ function HausgeldAnpassen({ einheitId, objektId, aktuell, verlauf, nk, onSaved }
         {rest < -0.005 ? ' – die NK-Vorauszahlung des Mieters ist höher als das Hausgeld ohne Rücklage.' : ''}</p>}
       {fehler && <p className="error">{fehler}</p>}
       <div className="row"><button className="primary" onClick={speichern}>Neues Hausgeld speichern</button></div>
-      {verlauf.length > 0 && <table className="list kompakt"><thead><tr><th>gilt ab</th><th className="num">Hausgeld</th><th className="num">davon Rücklage</th></tr></thead>
-        <tbody>{verlauf.map((h) => <tr key={h.id}><td>{datum(h.gueltig_ab)}</td><td className="num">{eur(h.betrag)}</td><td className="num">{eur(h.davon_ruecklage ?? 0)}</td></tr>)}</tbody></table>}
+      {verlauf.length > 0 && <HausgeldVerlauf objektId={objektId} verlauf={verlauf} onSaved={onSaved} />}
     </section>
   );
+}
+
+const folgeText = (e: HausgeldErgebnis) => [
+  e.neu ? `${e.neu === 1 ? '1 offener Posten wurde' : `${e.neu} offene Posten wurden`} neu gestellt.` : '',
+  e.bezahlt ? `${e.bezahlt === 1 ? '1 bereits bezahlter Posten bleibt' : `${e.bezahlt} bereits bezahlte Posten bleiben`} unverändert – bitte prüfen, ob dort eine Nachforderung oder Erstattung nötig ist.` : '',
+].filter(Boolean).join(' ');
+
+/** Liste der Hausgeld-Stände mit Bearbeiten (in der Zeile) und Löschen (mit Rückfrage) */
+function HausgeldVerlauf({ objektId, verlauf, onSaved }: { objektId: number; verlauf: Row[]; onSaved: (t: string) => void }) {
+  const [edit, setEdit] = useState<Row | null>(null);
+  const [w, setW] = useState({ ab: '', g: '', r: '' });
+  const [fehler, setFehler] = useState('');
+  const [laeuft, setLaeuft] = useState(false);
+  function bearbeiten(h: Row) { setFehler(''); setEdit(h); setW({ ab: String(h.gueltig_ab).slice(0, 10), g: txt(h.betrag), r: txt(h.davon_ruecklage ?? 0) }); }
+  async function speichern() {
+    if (!edit) return;
+    setFehler(''); setLaeuft(true);
+    try {
+      const g = betragZahl(w.g) ?? 0, r = betragZahl(w.r) ?? 0;
+      const e = await hausgeldAendern(edit.id, objektId, { gueltig_ab: w.ab, betrag: g, davon_ruecklage: r });
+      setEdit(null);
+      onSaved(`Hausgeld-Stand geändert: ${eur(g)} (davon Rücklage ${eur(r)}) ab ${datum(w.ab)}. ${folgeText(e)}`.trim());
+    } catch (err: any) { setFehler(String(err?.message ?? err)); } finally { setLaeuft(false); }
+  }
+  async function loeschen(h: Row) {
+    const i = verlauf.findIndex((x) => x.id === h.id);
+    const vorher = verlauf[i + 1];
+    const folge = vorher ? `Ab dann gilt wieder ${eur(vorher.betrag)} (Stand vom ${datum(vorher.gueltig_ab)}).` : 'Davor gibt es keinen Stand: ab dann wird kein Hausgeld mehr gefordert.';
+    if (!window.confirm(`Hausgeld-Stand ab ${datum(h.gueltig_ab)} (${eur(h.betrag)}) löschen?\n\n${folge}\nOffene Hausgeld-Posten ab ${datum(h.gueltig_ab)} werden neu gestellt, bezahlte bleiben unverändert.`)) return;
+    setFehler('');
+    try {
+      const e = await hausgeldLoeschen(h.id, objektId);
+      if (edit?.id === h.id) setEdit(null);
+      onSaved(`Hausgeld-Stand ab ${datum(h.gueltig_ab)} gelöscht. ${folgeText(e)}`.trim());
+    } catch (err: any) { setFehler(String(err?.message ?? err)); }
+  }
+  return <>
+    {fehler && <p className="error">{fehler}</p>}
+    <table className="list kompakt hausgeld-verlauf"><thead><tr><th>gilt ab</th><th className="num">Hausgeld</th><th className="num">davon Rücklage</th><th className="num">Aktionen</th></tr></thead>
+      <tbody>{verlauf.map((h) => edit?.id === h.id ? (
+        <tr key={h.id} className="hg-edit">
+          <td><DatumFeld value={w.ab} onChange={(e) => setW({ ...w, ab: e.target.value })} /></td>
+          <td className="num"><BetragFeld value={w.g} onChange={(e) => setW({ ...w, g: e.target.value })} /></td>
+          <td className="num"><BetragFeld value={w.r} onChange={(e) => setW({ ...w, r: e.target.value })} /></td>
+          <td className="num hg-aktionen">
+            <button className="icon-btn" title="Änderung speichern" disabled={laeuft} onClick={speichern}><Check size={16} /></button>
+            <button className="icon-btn" title="Abbrechen" onClick={() => { setEdit(null); setFehler(''); }}><X size={16} /></button></td>
+        </tr>) : (
+        <tr key={h.id}>
+          <td>{datum(h.gueltig_ab)}</td><td className="num">{eur(h.betrag)}</td><td className="num">{eur(h.davon_ruecklage ?? 0)}</td>
+          <td className="num hg-aktionen">
+            <button className="icon-btn" title="Bearbeiten" onClick={() => bearbeiten(h)}><Pencil size={15} /></button>
+            <button className="icon-btn" title="Löschen" onClick={() => loeschen(h)}><Trash2 size={15} /></button></td>
+        </tr>))}</tbody></table>
+  </>;
 }

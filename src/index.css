@@ -1289,6 +1289,11 @@ button.link.klick-neu { display: inline-flex; align-items: center; gap: 4px; fon
 table.list.kompakt td, table.list.kompakt th { padding-top: 6px; padding-bottom: 6px; }
 .unter-titel { font-size: 14px; margin: 18px 0 6px; }
 .hausgeld-anpassen .form { margin-bottom: 8px; }
+.hausgeld-verlauf .hg-aktionen { white-space: nowrap; width: 1%; }
+.hausgeld-verlauf .hg-aktionen .icon-btn + .icon-btn { margin-left: 2px; }
+.hausgeld-verlauf .hg-aktionen .icon-btn[title="Löschen"]:hover { color: var(--neg); }
+.hausgeld-verlauf tr.hg-edit td { padding-top: 4px; padding-bottom: 4px; vertical-align: middle; }
+.hausgeld-verlauf tr.hg-edit input { min-width: 0; width: 100%; }
 
 /* Rechnung erfassen im Stil des Buchen-Fensters */
 .rerf .card-head { justify-content: space-between; }
