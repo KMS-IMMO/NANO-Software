@@ -915,4 +915,14 @@ ALTER TABLE versammlung_tops ADD COLUMN beschluss_text TEXT;
   `
 ALTER TABLE buchungen ADD COLUMN zahlweg TEXT;
 `,
+  // 37: Einnahmen & Ausgaben – Kontostand zum 01.01. je Bankkonto und Jahr von Hand (z. B. wenn das ganze Jahr ohne Kontoauszüge gebucht wird)
+  `
+CREATE TABLE kontostart (
+  bankkonto_id INTEGER NOT NULL REFERENCES bankkonten(id) ON DELETE CASCADE,
+  jahr INTEGER NOT NULL,
+  betrag REAL NOT NULL,
+  erfasst_am TEXT,
+  PRIMARY KEY (bankkonto_id, jahr)
+);
+`,
 ];

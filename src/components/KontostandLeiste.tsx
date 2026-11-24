@@ -1,10 +1,11 @@
 // Kontostand-Leiste unter „Einnahmen & Ausgaben“: bleibt beim Scrollen oben stehen und rechnet nach jeder Änderung neu
 // (jeder Schreibvorgang in der Datenbank löst das aus). Stand laut Bank gegen Stand laut Buchungen, darunter die Gründe einer Differenz.
 import { useEffect, useRef, useState } from 'react';
-import { Landmark } from 'lucide-react';
+import { Landmark, Pencil } from 'lucide-react';
 import { DATEN_EVENT } from '../db';
 import { kontostand, type Kontostand } from '../logic/kontostand';
 import { datum, eur } from './EntityTable';
+import { KontostartDialog } from './KontostartDialog';
 
 export type StatusFilter = '' | 'bank' | 'ohne' | 'bar';
 
@@ -14,6 +15,7 @@ export function KontostandLeiste({ objekt, jahr, monat, version, filter, onFilte
 }) {
   const [k, setK] = useState<Kontostand | null | undefined>(undefined);
   const [frisch, setFrisch] = useState(false);
+  const [startOffen, setStartOffen] = useState(false);
   const lauf = useRef(0);
   const laden = async () => {
     const nr = ++lauf.current;
@@ -40,7 +42,10 @@ export function KontostandLeiste({ objekt, jahr, monat, version, filter, onFilte
     <div className={'ks-leiste' + (frisch ? ' frisch' : '')} aria-live="polite">
       <div className="ks-wert"><span>Kontostand laut Bank</span><b>{eur(k.bank)}</b>
         <small>{k.konten.length > 1 ? `${k.konten.length} Konten · ` : ''}{k.letzterUmsatz ? `Umsätze bis ${datum(k.letzterUmsatz)}` : 'noch keine Umsätze'}</small></div>
-      <div className="ks-wert"><span>Stand laut Buchungen</span><b>{eur(k.buchungen)}</b><small>Stand 01.01. {eur(k.start)} + Buchungen</small></div>
+      <div className="ks-wert"><span>Stand laut Buchungen</span><b>{eur(k.buchungen)}</b><small>
+        <button className="ks-start-knopf" onClick={() => setStartOffen(true)}
+          title={k.manuell ? 'Stand 01.01. von Hand eingegeben. Klicken zum Ändern.' : 'Stand 01.01. aus Anfangssaldo und Kontoumsätzen. Klicken, um ihn von Hand einzugeben.'}>
+          Stand 01.01. {eur(k.startBuchungen)}{k.manuell ? ' (von Hand)' : ''}<Pencil size={11} /></button> + Buchungen</small></div>
       <div className={'ks-wert ks-diff ' + (stimmt ? 'ok' : 'nein')}><span>Differenz</span><b>{stimmt ? 'stimmt' : eur(k.differenz)}</b>
         <small>{stimmt ? 'Bank und Buchungen passen zusammen' : 'Gründe rechts, zum Prüfen anklicken'}</small></div>
       <div className="ks-gruende">
@@ -48,11 +53,15 @@ export function KontostandLeiste({ objekt, jahr, monat, version, filter, onFilte
         {k.offen.length > 0 && <button className="ks-chip gelb" title="Kontoumsätze, die noch keiner Buchung zugeordnet sind" onClick={onUmsaetze}>● {k.offen.length} Kontoumsätze offen · {eur(k.offenSumme)}</button>}
         {k.abweichend.length > 0 && <button className="ks-chip gelb" onClick={onUmsaetze} title="Kontoumsätze, deren Buchungen nicht genau den Umsatzbetrag ergeben">● {k.abweichend.length} Umsätze anders gebucht · {eur(k.abweichendSumme)}</button>}
         {k.ignoriert > 0 && <button className="ks-chip grau" onClick={onUmsaetze} title="Ignorierte Kontoumsätze ändern den Kontostand, haben aber keine Buchung">{k.ignoriert} ignoriert · {eur(k.ignoriertSumme)}</button>}
+        {k.vorher.length > 0 && <span className="ks-chip grau" title="Gebucht vor dem ersten eingelesenen Kontoumsatz. Zählt im Stand laut Buchungen mit, weil der Stand 01.01. von Hand eingegeben ist.">
+          {k.vorher.length} vor Beginn der Kontoumsätze · {eur(k.vorherSumme)}</span>}
         {k.bar > 0 && chip('bar', 'grau', `${k.bar} bar / ohne Bank · ${eur(k.barSumme)}`, 'Bewusst ohne Bankkonto gebucht, zählt nicht im Kontostand. Klick filtert.')}
         {stimmt && !k.ohne.length && !k.offen.length && <span className="ks-chip gruen">✓ alles verbunden</span>}
         {auszugDiff !== null && <span className={'ks-chip ' + (Math.abs(auszugDiff) < 0.005 ? 'gruen' : 'rot')} title="Kontostand laut Kontoauszug zum 31.12. aus dem Kontoabgleich der Jahresabrechnung">
           Kontoauszug 31.12.: {eur(k.auszug!)}{Math.abs(auszugDiff) < 0.005 ? ' ✓' : ` · fehlt ${eur(auszugDiff)}`}</span>}
       </div>
+      {startOffen && <KontostartDialog objekt={objekt} jahr={jahr} k={k} onClose={() => setStartOffen(false)}
+        onDone={() => { setStartOffen(false); laden(); }} />}
     </div>
   );
 }

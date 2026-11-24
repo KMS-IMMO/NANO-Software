@@ -4,6 +4,7 @@
 //  2. Stand 31.12. laut echtem Kontoauszug (von Hand eingetragen) gegen den errechneten Stand: so fallen fehlende Umsätze auf
 //  3. Jeder Umsatz des Jahres ist gebucht (oder bewusst ignoriert), und die Buchungen ergeben genau den Umsatzbetrag
 //  4. Monate ohne einen einzigen Umsatz (Hinweis auf fehlende Kontoauszüge)
+import { bankStart } from './kontostart';
 import { db, type Row } from '../db';
 import type { Pruefung } from './abschluss';
 
@@ -42,8 +43,8 @@ export async function kontoabgleich(objekt: number, jahr: number): Promise<Konto
   for (const k of konten) {
     // Umsätze am oder vor dem Saldotag stecken schon im Anfangssaldo und zählen nicht doppelt
     const nach = '(k.saldo_datum IS NULL OR u.datum > k.saldo_datum)';
-    const start = Number((await db.select(`SELECT k.anfangssaldo + COALESCE((SELECT SUM(u.betrag) FROM bankumsaetze u WHERE u.bankkonto_id = k.id AND u.datum < $2 AND ${nach}), 0) AS s
-      FROM bankkonten k WHERE k.id = $1`, [k.id, von]))[0]?.s ?? 0);
+    // Stand 01.01. von Hand (Einnahmen & Ausgaben) gilt auch hier, sofern die Kontoumsätze vor dem 01.01. beginnen
+    const start = await bankStart(k, von);
     const u: Row[] = await db.select(`SELECT u.*, (SELECT SUM(b.betrag) FROM buchungen b WHERE b.bankumsatz_id = u.id) AS gebucht
       FROM bankumsaetze u JOIN bankkonten k ON k.id = u.bankkonto_id WHERE u.bankkonto_id = $1 AND u.datum BETWEEN $2 AND $3 AND ${nach} ORDER BY u.datum, u.id`, [k.id, von, bis]);
     const ein = r2(u.filter((x) => x.betrag > 0).reduce((a, x) => a + Number(x.betrag), 0));

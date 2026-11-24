@@ -1552,6 +1552,17 @@ tr.ks-rot > td { background: #fff8f7; } tr.ks-gelb > td { background: #fffcf3; }
 .pill.ks-pill-gruen { background: #e7f3e8; color: #2e7d32; } .pill.ks-pill-rot { background: #fdecea; color: #c0392b; }
 .pill.ks-pill-gelb { background: #fff4dc; color: #a66a00; } button.pill.ks-pill-grau { background: #eef0f3; color: #6b6f76; border: 0; padding: 2px 9px; cursor: pointer; }
 .ks-filterinfo { font-size: 12.5px; color: var(--accent-dark); }
+.ks-start-knopf { border: 0; background: none; padding: 0 2px; margin: 0 -2px; font: inherit; color: var(--accent-dark); cursor: pointer; display: inline-flex; align-items: center; gap: 3px; border-radius: 6px; }
+.ks-start-knopf:hover { background: var(--accent-soft); text-decoration: underline; text-underline-offset: 2px; }
+.ks-start-knopf:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(176,138,74,.25); }
+.modal.ks-start { width: 620px; }
+.ks-start-liste { display: flex; flex-direction: column; gap: 12px; margin-top: 12px; }
+.ks-start-zeile { display: grid; grid-template-columns: 1fr 220px; gap: 6px 16px; align-items: end; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: #fcfbf8; }
+.ks-start-feld span { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+.ks-start-feld input { width: 100%; text-align: right; font-variant-numeric: tabular-nums; }
+.ks-start-vorschlag { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; }
+.ks-start-hinweis { grid-column: 1 / -1; margin: 2px 0 0; background: #fff4dc; border: 1px solid #f0d9a6; border-radius: 10px; padding: 8px 10px; color: #8a5a00; }
+@media (max-width: 640px) { .ks-start-zeile { grid-template-columns: 1fr; } }
 .ku-start td { background: var(--head); }
 .ku-summe { display: flex; gap: 30px; flex-wrap: wrap; margin-top: 12px; padding: 12px 16px; border-radius: 12px; background: #fbfaf8; border: 1px solid var(--line); }
 .ku-summe span { display: block; font-size: 12px; color: var(--muted); } .ku-summe b { font-size: 16px; }
