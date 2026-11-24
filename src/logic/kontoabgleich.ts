@@ -30,7 +30,8 @@ export interface KontoAbgleich {
   regelmaessig: { name: string; betrag: number; anzahl: number; fehlt: string[]; doppelt: string[] }[];
   /** Gelöschte Umsätze dieses Jahres (laut Änderungsprotokoll), die nicht wieder eingelesen wurden */
   geloescht: (Umsatz & { geloeschtAm: string })[];
-  /** Buchungen der Liegenschaft ohne Kontoumsatz, deren Betrag genau der Differenz entspricht (z. B. unter „Einnahmen & Ausgaben“ gebucht).
+  /** Buchungen der Liegenschaft ohne Kontoumsatz, deren Betrag genau der Differenz entspricht (z. B. unter „Einnahmen & Ausgaben“ gebucht
+   *  oder bei den Sollstellungen mit „Als bezahlt buchen“ erledigt). Bar gekennzeichnete Buchungen zählen nicht.
    *  Sie ändern den Kontostand nicht, weil der nur aus den Kontoauszügen kommt. */
   ohneUmsatz: { id: number; datum: string; betrag: number; text: string; konto: string; einheit: string }[];
   ok: boolean;
@@ -100,13 +101,21 @@ export async function kontoabgleich(objekt: number, jahr: number): Promise<Konto
       const wieder = u.some((y) => y.datum === x.datum && Math.abs(Number(y.betrag) - Number(x.betrag)) < 0.005 && String(y.gegenpartei ?? '') === String(x.gegenpartei ?? ''));
       if (!wieder) geloescht.push({ id: x.id, datum: x.datum, betrag: Number(x.betrag), gegenpartei: x.gegenpartei ?? '', zweck: x.zweck ?? '', geloeschtAm: String(x.zeit ?? '') });
     }
-    const ohneUmsatz: KontoAbgleich['ohneUmsatz'] = differenz !== null && Math.abs(differenz) >= 0.005
-      ? (await db.select(`SELECT b.id, b.datum, b.betrag, COALESCE(b.text, '') AS text, COALESCE(kk.nummer || ' ' || kk.name, '') AS konto, COALESCE(e.nummer, '') AS einheit
+    // Buchungen ohne Kontoumsatz, die genau die Differenz erklären: einzeln oder zusammen am selben Tag für dieselbe Einheit
+    // (z. B. „Als bezahlt buchen“ legt für Kaltmiete und Nebenkosten je eine Buchung an)
+    let ohneUmsatz: KontoAbgleich['ohneUmsatz'] = [];
+    if (differenz !== null && Math.abs(differenz) >= 0.005) {
+      const kand = (await db.select(`SELECT b.id, b.datum, b.betrag, b.einheit_id, COALESCE(b.text, '') AS text, COALESCE(kk.nummer || ' ' || kk.name, '') AS konto, COALESCE(e.nummer, '') AS einheit
           FROM buchungen b LEFT JOIN buchungskonten kk ON kk.id = b.buchungskonto_id LEFT JOIN einheiten e ON e.id = b.einheit_id
-          WHERE b.objekt_id = $1 AND b.bankumsatz_id IS NULL AND b.rechnung_id IS NULL AND b.datum BETWEEN $2 AND $3 AND ABS(b.betrag - $4) < 0.005
-            AND COALESCE(b.text, '') NOT LIKE 'Zahlung % (manuell)' AND ($5 IS NULL OR b.datum > $5) ORDER BY b.id DESC LIMIT 10`, [objekt, von, bis, differenz, k.saldo_datum ?? null]))
-        .map((x) => ({ id: x.id, datum: x.datum, betrag: Number(x.betrag), text: x.text, konto: x.konto, einheit: x.einheit }))
-      : [];
+          WHERE b.objekt_id = $1 AND b.bankumsatz_id IS NULL AND b.rechnung_id IS NULL AND b.datum BETWEEN $2 AND $3
+            AND COALESCE(b.zahlweg, '') <> 'bar' AND ($4 IS NULL OR b.datum > $4) ORDER BY b.id DESC`, [objekt, von, bis, k.saldo_datum ?? null]));
+      const einzeln = kand.filter((x) => Math.abs(Number(x.betrag) - differenz) < 0.005);
+      const gruppen = new Map<string, Row[]>();
+      for (const x of kand) { const g = `${x.datum}|${x.einheit_id ?? ''}`; gruppen.set(g, [...(gruppen.get(g) ?? []), x]); }
+      const zusammen = [...gruppen.values()].filter((l) => l.length > 1 && Math.abs(r2(l.reduce((a, x) => a + Number(x.betrag), 0)) - differenz) < 0.005).flat();
+      ohneUmsatz = [...einzeln, ...zusammen.filter((x) => !einzeln.includes(x))].slice(0, 10)
+        .map((x) => ({ id: x.id, datum: x.datum, betrag: Number(x.betrag), text: x.text, konto: x.konto, einheit: x.einheit }));
+    }
     out.push({
       id: k.id, name: k.name, regelmaessig, geloescht, ohneUmsatz, iban: k.iban ?? '', erfasstAb, start: r2(start), ein, aus, ende, auszug, notiz: ab?.notiz ?? '', differenz,
       anzahl: u.length, gebucht: u.filter((x) => x.status === 'zugeordnet').length, ignoriert: ign.length, ignoriertSumme: r2(ign.reduce((a, x) => a + Number(x.betrag), 0)),
