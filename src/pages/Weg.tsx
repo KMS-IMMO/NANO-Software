@@ -4,7 +4,7 @@ import { BetragFeld, MengeFeld } from '../components/BetragFeld';
 import { betragZahl } from '../lib/betrag';
 import { einheitLabel } from '../db/labels';
 import { useEffect, useState } from 'react';
-import { CalendarDays, ClipboardList, Gavel, PiggyBank, Wrench } from 'lucide-react';
+import { BarChart3, CalendarDays, ClipboardList, Gavel, Pencil, PiggyBank, Wrench } from 'lucide-react';
 import { EntityTable, datum, eur, num } from '../components/EntityTable';
 import { db, type Row } from '../db';
 import { kostenErmitteln, tageImJahr, verteilen, type Ergebnis, type Nutzer, type Position } from '../logic/verteilung';
@@ -13,7 +13,9 @@ import { oeffnen, speichern as dateiSpeichern } from '../lib/dateien';
 import { personLabel } from '../db/labels';
 import { Eye, FileDown, Percent } from 'lucide-react';
 import { OsaPlanVorschlag } from '../components/OsaPlanVorschlag';
-import { ruecklageJahr, ruecklageStand } from '../logic/ruecklage';
+import { differenzBuchen, ruecklageAbgleich, ruecklageJahr, ruecklageJahre } from '../logic/ruecklage';
+import { RuecklageAuszugDialog } from '../components/RuecklageAuszugDialog';
+import { useNavigate } from 'react-router-dom';
 import { DatumFeld, JahrWahl } from '../components/DatumFeld';
 
 const pill = (v: any, map: Record<string, string>) => v ? <span className={'pill ' + (map[v] ?? '')}>{v}</span> : '';
@@ -157,70 +159,155 @@ export function BeschluessePage() {
 /* =================== Erhaltungsrücklage =================== */
 
 export function RuecklagenTab({ objektId }: { objektId: number }) {
+  const nav = useNavigate();
   const [jahr, setJahr] = useState(new Date().getFullYear());
   const [j, setJ] = useState<Row>({});
-  const [verlauf, setVerlauf] = useState<{ jahr: number; bestand: number }[]>([]);
+  const [g, setG] = useState<Awaited<ReturnType<typeof ruecklageAbgleich>> | null>(null);
+  const [jahre, setJahre] = useState<Awaited<ReturnType<typeof ruecklageJahre>>>([]);
   const [basis, setBasis] = useState({ anfang: '', stichtag: '' });
   const [meaGes, setMeaGes] = useState(0);
   const [info, setInfo] = useState('');
+  const [fehler, setFehler] = useState('');
+  const [offen, setOffen] = useState(false);
+  const [busy, setBusy] = useState(false);
 
   const load = async () => {
     setJ(await ruecklageJahr(objektId, jahr));
-    const v = [];
-    for (let y = jahr - 4; y <= jahr; y++) v.push({ jahr: y, bestand: await ruecklageStand(objektId, `${y}-12-31`) });
-    setVerlauf(v);
+    setG(await ruecklageAbgleich(objektId, jahr));
+    setJahre(await ruecklageJahre(objektId, jahr, 4));
     const o = (await db.select('SELECT ruecklage_anfang, ruecklage_stichtag, gesamt_mea FROM objekte WHERE id = $1', [objektId]))[0] ?? {};
     setBasis({ anfang: o.ruecklage_anfang ? String(o.ruecklage_anfang).replace('.', ',') : '', stichtag: o.ruecklage_stichtag ?? '' });
     const m = (await db.select('SELECT SUM(mea) AS m FROM einheiten WHERE objekt_id = $1', [objektId]))[0]?.m;
     setMeaGes(Number(o.gesamt_mea) || Number(m) || 0);
   };
-  useEffect(() => { load(); }, [objektId, jahr]);
+  useEffect(() => { setInfo(''); setFehler(''); load(); }, [objektId, jahr]);
 
   async function basisSpeichern() {
     await db.execute('UPDATE objekte SET ruecklage_anfang = $1, ruecklage_stichtag = $2 WHERE id = $3', [zahl(basis.anfang), basis.stichtag || null, objektId]);
     setInfo('Übernahmebestand gespeichert.');
     load();
   }
+  async function nachbuchen() {
+    setBusy(true); setFehler(''); setInfo('');
+    try {
+      const r = await differenzBuchen(objektId, jahr);
+      setInfo(`Gebucht: ${eur(r.betrag)} auf Konto ${r.konto} (${r.konto === '1261' ? 'Entnahme / Kosten' : 'Zinsen / Zugang'}) zum ${datum(g!.bis)}, ohne Bank. Die Buchung findest du unter Einnahmen & Ausgaben.`);
+      await load();
+    } catch (e: any) { setFehler(String(e?.message ?? e)); }
+    setBusy(false);
+  }
 
-  const max = Math.max(1, ...verlauf.map((v) => v.bestand));
+  const a = g?.auszug;
+  const stimmt = g?.endeDiff !== null && g?.endeDiff !== undefined && Math.abs(g.endeDiff) < 0.005;
+  const diffKlasse = (d: number | null | undefined) => (d === null || d === undefined ? '' : Math.abs(d) < 0.005 ? 'pos' : 'neg');
+  const vorjahrEnde = jahre.find((x) => x.jahr === jahr - 1);
+  const balken = jahre.map((x) => ({ jahr: x.jahr, wert: x.ende ?? x.buchungen, auszug: x.ende !== null, datum: x.endeDatum }));
+  const max = Math.max(1, ...balken.map((v) => v.wert));
+  const bisText = g ? (g.bis.endsWith('-12-31') ? `31.12.${jahr}` : datum(g.bis)) : '';
   return (
     <>
-      <div className="grid2">
+      <div className="card row rl-kopf">
+        <h2 className="title-ico" style={{ margin: 0 }}><PiggyBank size={22} />Rücklagen</h2>
+        <label className="inline">Jahr <JahrWahl value={jahr} onChange={setJahr} /></label>
+        {g?.bank ? <span className="muted small">{g.bank.name}{g.bank.iban ? ' · ' + String(g.bank.iban).replace(/\s/g, '').replace(/(.{4})/g, '$1 ').trim() : ''}</span> : null}
+        <span className="grow" />
+        <button className="primary" onClick={() => setOffen(true)}><Pencil size={15} />Bestände laut Kontoauszug</button>
+      </div>
+
+      {g && <div className="ks-leiste rl-leiste" aria-live="polite">
+        <div className="ks-wert"><span>Anfangsbestand 01.01.{jahr} laut Auszug</span><b>{a?.anfang !== null && a ? eur(a.anfang) : '–'}</b><small>
+          <button className="ks-start-knopf" onClick={() => setOffen(true)}>{a?.anfang !== null && a ? `${a.anfangAuszug ? 'Auszug Nr. ' + a.anfangAuszug + ' ' : ''}(von Hand)` : 'noch nicht eingegeben'}<Pencil size={11} /></button></small></div>
+        <div className="ks-wert"><span>Endbestand laut Kontoauszug</span><b>{a?.ende !== null && a ? eur(a.ende) : '–'}</b><small>
+          <button className="ks-start-knopf" onClick={() => setOffen(true)}>{a?.ende !== null && a ? `${a.endeAuszug ? 'Auszug Nr. ' + a.endeAuszug + ' ' : ''}vom ${datum(a.endeDatum)} (von Hand)` : 'noch nicht eingegeben'}<Pencil size={11} /></button></small></div>
+        <div className="ks-wert"><span>Stand laut Buchungen {bisText}</span><b>{eur(g.endeBuchungen)}</b>
+          <small>{a?.anfang !== null && a ? 'Anfangsbestand laut Auszug' : 'Endstand Vorjahr'} + Buchungen auf 1260–1262</small></div>
+        <div className={'ks-wert ks-diff ' + (g.endeDiff === null ? '' : stimmt ? 'ok' : 'nein')}><span>Differenz</span>
+          <b>{g.endeDiff === null ? '–' : stimmt ? 'stimmt' : eur(g.endeDiff)}</b>
+          <small>{g.endeDiff === null ? 'Endbestand eingeben, dann wird verglichen' : stimmt ? 'Auszug und Buchungen passen zusammen' : g.endeDiff < 0 ? 'Auszug liegt unter den Buchungen' : 'Auszug liegt über den Buchungen'}</small></div>
+        <div className="ks-gruende">
+          {!g.bank && <span className="ks-chip grau" title="Kein Bankkonto mit „Rücklage“ im Namen angelegt">Rücklagenkonto ohne Kontoumsätze</span>}
+          {g.offen > 0 && <button className="ks-chip gelb" onClick={() => nav(`/objekte/${objektId}/bank`)} title="Kontoumsätze des Rücklagenkontos, die noch keiner Buchung zugeordnet sind">● {g.offen} Umsätze ohne Buchung · {eur(g.offenSumme)}</button>}
+          {stimmt && <span className="ks-chip gruen">✓ alles gebucht</span>}
+        </div>
+      </div>}
+
+      <div className="grid2 rl-grid">
         <section className="card">
-          <div className="card-head"><h2 className="title-ico"><PiggyBank size={22} />Rücklagenkonto {jahr}</h2>
-            <label className="inline">Jahr <JahrWahl value={jahr} onChange={setJahr} /></label></div>
-          <table className="list"><tbody>
-            <tr><td>Anfangsbestand (01.01.{jahr})</td><td className="num">{eur(j.anfangsbestand ?? 0)}</td></tr>
-            {j.uebernahme ? <tr><td>+ Übernahmebestand</td><td className="num">{eur(j.uebernahme)}</td></tr> : null}
-            <tr><td>+ Zuführungen (Hausgeld-Soll)</td><td className="num">{eur(j.zufuehrung ?? 0)}</td></tr>
-            {j.sonder ? <tr><td>+ Sonderzuführungen (Konto 1260)</td><td className="num">{eur(j.sonder)}</td></tr> : null}
-            <tr><td>− Entnahmen (Konto 1261)</td><td className="num">{eur(j.entnahme ?? 0)}</td></tr>
-            <tr><td>+ Zinsen (Konto 1262)</td><td className="num">{eur(j.zinsen ?? 0)}</td></tr>
-            <tr className="sum"><td>= Bestand 31.12.{jahr}</td><td className="num">{eur(j.bestand ?? 0)}</td></tr>
-            <tr><td className="muted">Rücklage je MEA</td><td className="num muted">{meaGes ? eur((j.bestand ?? 0) / meaGes) : '–'}</td></tr>
-          </tbody></table>
-          <div className="row" style={{ marginTop: 14 }}>
-            <label className="inline small">Bestand bei Übernahme <input className="cell" value={basis.anfang} onChange={(e) => setBasis({ ...basis, anfang: e.target.value })} /> €</label>
-            <label className="inline small">am <DatumFeld style={{ width: 150 }} value={basis.stichtag} onChange={(e) => setBasis({ ...basis, stichtag: e.target.value })} /></label>
-            <button onClick={basisSpeichern}>Speichern</button>
-          </div>
+          <div className="card-head"><h2 className="title-ico"><PiggyBank size={22} />Rücklagenkonto {jahr}</h2></div>
+          {g && <table className="list rl-tabelle">
+            <thead><tr><th>Position</th><th className="num">laut Buchungen</th><th className="num">laut Kontoauszug</th><th className="num">Differenz</th></tr></thead>
+            <tbody>
+              <tr className="rl-auszug-zeile"><td>Anfangsbestand 01.01.{jahr}</td><td className="num">{eur(g.anfangBuchungen)}</td>
+                <td className="num">{a?.anfang !== null && a ? <>{eur(a.anfang)}<span className="rl-hand">von Hand</span></> : <span className="muted">–</span>}</td>
+                <td className={'num ' + diffKlasse(g.anfangDiff)}>{g.anfangDiff === null ? '' : eur(g.anfangDiff)}</td></tr>
+              {g.uebernahme ? <tr><td>+ Übernahmebestand ({datum(basis.stichtag)})</td><td className="num">{eur(g.uebernahme)}</td><td /><td /></tr> : null}
+              <tr><td>+ Zuführungen gezahlt (Hausgeld-Anteil)<div className="muted small">Soll {eur(g.zufuehrung)}{Math.abs(g.zufuehrung - g.zufuehrungIst) > 0.005 ? `, offen ${eur(g.zufuehrung - g.zufuehrungIst)}` : ''}</div></td>
+                <td className="num">{eur(g.zufuehrungIst)}</td><td className="num muted">–</td><td /></tr>
+              {g.sonder ? <tr><td>+ Sonderzuführungen (Konto 1260)</td><td className="num">{eur(g.sonder)}</td><td className="num muted">–</td><td /></tr> : null}
+              <tr><td>+ Zinsen (Konto 1262)</td><td className="num">{eur(g.zinsen)}</td><td className="num muted">–</td><td /></tr>
+              <tr><td>− Entnahmen (Konto 1261)</td><td className={'num' + (g.entnahme ? ' neg' : '')}>{eur(-g.entnahme)}</td><td className="num muted">–</td><td /></tr>
+              <tr className="sum"><td>= Endbestand {bisText}</td><td className="num">{eur(g.endeBuchungen)}</td>
+                <td className="num">{a?.ende !== null && a ? eur(a.ende) : '–'}</td><td className={'num ' + diffKlasse(g.endeDiff)}>{g.endeDiff === null ? '' : eur(g.endeDiff)}</td></tr>
+              <tr><td className="muted">Rücklage je MEA{meaGes ? ` (${num(meaGes, 0)} MEA)` : ''}</td><td className="num muted">{meaGes ? eur(g.endeBuchungen / meaGes) : '–'}</td>
+                <td className="num muted">{meaGes && a?.ende !== null && a ? eur(a.ende / meaGes) : ''}</td><td /></tr>
+            </tbody>
+          </table>}
+          {g && g.endeDiff !== null && !stimmt && <div className="ks-hinweis rl-hinweis">
+            <span><b>{eur(Math.abs(g.endeDiff))} {g.endeDiff < 0 ? 'fehlen in den Buchungen' : 'mehr auf dem Konto als gebucht'}.</b> {g.endeDiff < 0
+              ? 'Auf dem Kontoauszug steht weniger als laut Buchungen, z. B. Kontoführungsentgelt oder eine Entnahme, die noch nicht gebucht ist.'
+              : 'Auf dem Kontoauszug steht mehr als laut Buchungen, z. B. Zinsen oder eine Zuführung, die noch nicht gebucht ist.'} Bitte prüfen und buchen, dann stimmt die Rücklage.</span>
+            <span className="row" style={{ gap: 8 }}>
+              <button className="primary small" disabled={busy} onClick={nachbuchen}>{eur(g.endeDiff)} jetzt buchen ({g.endeDiff < 0 ? '1261' : '1262'})</button>
+              <button className="small" onClick={() => nav(`/objekte/${objektId}/buchungen`)}>Zu Einnahmen &amp; Ausgaben</button>
+            </span>
+          </div>}
+          {g && stimmt && <p className="rl-ok">✓ Rücklage stimmt mit dem Kontoauszug vom {datum(g.bis)} überein.</p>}
+          {Math.abs((j.offen ?? 0)) > 0.005 && <p className="muted small">Laut Hausgeld-Soll wäre die Rücklage am 31.12.{jahr} {eur(j.bestand ?? 0)}; {eur(j.offen)} davon haben Eigentümer noch nicht gezahlt.</p>}
           {info && <p className="info">{info}</p>}
+          {fehler && <p className="error">{fehler}</p>}
+          <details className="rl-uebernahme">
+            <summary className="muted small">Bestand bei Übernahme der Verwaltung</summary>
+            <div className="row" style={{ marginTop: 10 }}>
+              <label className="inline small">Bestand <input className="cell" value={basis.anfang} onChange={(e) => setBasis({ ...basis, anfang: e.target.value })} /> €</label>
+              <label className="inline small">am <DatumFeld style={{ width: 150 }} value={basis.stichtag} onChange={(e) => setBasis({ ...basis, stichtag: e.target.value })} /></label>
+              <button onClick={basisSpeichern}>Speichern</button>
+            </div>
+          </details>
         </section>
         <section className="card">
-          <div className="card-head"><h2>Entwicklung Rücklage</h2></div>
-          <svg viewBox="0 0 500 220" width="100%" role="img" aria-label="Entwicklung der Rücklage">
-            {verlauf.map((v, i) => {
-              const h = Math.max(0, (v.bestand / max) * 160);
+          <div className="card-head"><h2 className="title-ico"><BarChart3 size={22} />Jahre im Überblick</h2></div>
+          <p className="muted small" style={{ marginTop: -6 }}>Anfangs- und Endbestand laut Kontoauszug</p>
+          <table className="list">
+            <thead><tr><th>Jahr</th><th className="num">Anfang 01.01.</th><th className="num">Ende laut Auszug</th><th className="num">Differenz</th></tr></thead>
+            <tbody>{jahre.map((x) => (
+              <tr key={x.jahr} className={x.jahr === jahr ? 'rl-aktiv' : ''} onClick={() => setJahr(x.jahr)} style={{ cursor: 'pointer' }}>
+                <td>{x.jahr === jahr ? <b>{x.jahr}</b> : x.jahr}{x.ende !== null && x.endeDatum && !x.endeDatum.endsWith('-12-31') ? <div className="muted small">Stand {datum(x.endeDatum)}</div> : null}</td>
+                <td className="num">{x.anfang !== null ? eur(x.anfang) : <span className="muted">–</span>}</td>
+                <td className="num">{x.ende !== null ? eur(x.ende) : <span className="muted">–</span>}</td>
+                <td className="num">{x.endeDiff === null ? <span className="muted">–</span> : Math.abs(x.endeDiff) < 0.005 ? <span className="pill bezahlt">stimmt</span> : <span className="pill offen">{eur(x.endeDiff)}</span>}</td>
+              </tr>))}
+            </tbody>
+          </table>
+          {vorjahrEnde && vorjahrEnde.ende !== null && a?.anfang !== null && a && Math.abs(vorjahrEnde.ende - a.anfang) > 0.005 && <p className="ks-hinweis small" style={{ marginTop: 10 }}>
+            Endbestand {jahr - 1} laut Auszug ({eur(vorjahrEnde.ende)}) und Anfangsbestand {jahr} ({eur(a.anfang)}) passen nicht zusammen.</p>}
+          <svg viewBox="0 0 500 200" width="100%" role="img" aria-label="Entwicklung der Rücklage" style={{ marginTop: 10 }}>
+            <defs><linearGradient id="rlGold" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#B08A4A" /><stop offset="1" stopColor="#E2C48D" /></linearGradient>
+              <pattern id="rlStreifen" width="10" height="10" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="10" height="10" fill="#EFDDBA" /><rect width="5" height="10" fill="#E2C48D" /></pattern></defs>
+            {balken.map((v, i) => {
+              const h = Math.max(0, (v.wert / max) * 140), x = 40 + i * (440 / Math.max(1, balken.length));
               return (
                 <g key={v.jahr}>
-                  <rect x={30 + i * 94} y={185 - h} width={56} height={h} rx={4} fill="#2e7d32" />
-                  <text x={58 + i * 94} y={205} textAnchor="middle" fontSize="12" fill="#6b6f76">{v.jahr}</text>
-                  <text x={58 + i * 94} y={178 - h} textAnchor="middle" fontSize="11" fill="#1f2328">{eur(v.bestand)}</text>
+                  <rect x={x} y={165 - h} width={60} height={h} rx={6} fill={v.auszug ? 'url(#rlGold)' : 'url(#rlStreifen)'} />
+                  <text x={x + 30} y={185} textAnchor="middle" fontSize="12" fill="#6b6f76">{v.jahr}{v.auszug && v.datum && !v.datum.endsWith('-12-31') ? ` (${datum(v.datum).slice(0, 6)})` : ''}</text>
+                  <text x={x + 30} y={158 - h} textAnchor="middle" fontSize="11" fill="currentColor">{eur(v.wert)}</text>
                 </g>);
             })}
           </svg>
+          <p className="muted small">Gold: Endbestand laut Kontoauszug. Gestreift: noch kein Auszug eingegeben, Stand laut Buchungen. Klick auf ein Jahr wählt es aus.</p>
         </section>
       </div>
+      {offen && g && <RuecklageAuszugDialog objektId={objektId} jahr={jahr} g={g} endeAbschluss={vorjahrEnde?.ende ?? null}
+        onClose={() => setOffen(false)} onDone={() => { setOffen(false); setInfo('Bestände laut Kontoauszug gespeichert.'); load(); }} />}
       <EntityTable
         title="Geplante Maßnahmen aus der Rücklage"
         icon={<ClipboardList size={22} />}
