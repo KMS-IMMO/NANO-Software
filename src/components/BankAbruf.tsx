@@ -1,9 +1,11 @@
 // Bankabruf per FinTS mit Freigabe in der Banking-App (pushTAN). Nur in der installierten App.
 // Auf Wunsch bleibt die Verbindung bestehen: PIN im Schlüsselbund, automatischer Abruf beim Start.
 import { useEffect, useRef, useState } from 'react';
-import { KeyRound, Landmark, RefreshCw, ShieldCheck, X } from 'lucide-react';
+import { KeyRound, Landmark, Pencil, RefreshCw, ShieldCheck, Trash2, X } from 'lucide-react';
 import { db, type Row } from '../db';
 import { abholen, invoke, isTauri, kontoIban, pinGespeichert, produktId, starten } from '../logic/bankAbruf';
+import { ibanAnzeige } from '../logic/bankkonto';
+import { BankkontoVerwalten } from './BankkontoDialoge';
 
 type Phase = 'eingabe' | 'freigabe' | 'fertig';
 
@@ -103,9 +105,10 @@ export function BankAbruf({ konto, onDone, label }: { konto: Row; onDone: (info:
   );
 }
 
-/** Verbindungsstatus aller Bankkonten mit den passenden Knöpfen (verbinden, neu verbinden, abrufen) */
+/** Verbindungsstatus aller Bankkonten mit den passenden Knöpfen (verbinden, neu verbinden, abrufen, bearbeiten, löschen) */
 export function BankVerbindungen({ konten, onDone }: { konten: Row[]; onDone: (info: string) => void }) {
   const [pins, setPins] = useState<Record<number, boolean>>({});
+  const [verwalten, setVerwalten] = useState<{ konto: Row; modus: 'bearbeiten' | 'loeschen' } | null>(null);
   useEffect(() => { Promise.all(konten.map(async (k) => [k.id, await pinGespeichert(k.id)] as const)).then((r) => setPins(Object.fromEntries(r))); }, [konten]);
   if (!konten.length) return null;
   return (
@@ -116,15 +119,20 @@ export function BankVerbindungen({ konten, onDone }: { konten: Row[]; onDone: (i
         const status = !verbunden ? 'nicht verbunden' : k.abruf_hinweis ? 'neu verbinden' : 'verbunden';
         return (
           <tr key={k.id}>
-            <td>{k.name}<div className="muted small">{[k.bank, k.iban].filter(Boolean).join(' · ')}</div></td>
+            <td>{k.name}<div className="muted small">{[k.bank, k.iban && ibanAnzeige(k.iban)].filter(Boolean).join(' · ')}</div></td>
             <td><span className={'pill ' + (status === 'verbunden' ? 'st-aktiv' : status === 'neu verbinden' ? 'st-mahnen' : '')}>{status === 'verbunden' ? 'Verbunden' : status === 'neu verbinden' ? 'Neu verbinden nötig' : 'Nicht verbunden'}</span>
               {k.abruf_hinweis && <div className="small neg">{k.abruf_hinweis}</div>}</td>
             <td className="small muted">{k.letzter_abruf ? `Letzter Abruf ${new Date(String(k.letzter_abruf).replace(' ', 'T')).toLocaleString('de-DE')}` : 'Noch nie abgerufen'}
               {verbunden && <div>{k.auto_abruf ? 'Automatischer Abruf beim Start an' : 'Automatischer Abruf aus'}</div>}</td>
-            <td className="actions"><BankAbruf konto={k} onDone={onDone} label={status === 'verbunden' ? 'Jetzt abrufen' : status === 'neu verbinden' ? 'Neu verbinden' : 'Verbinden'} /></td>
+            <td className="actions">
+              <button className="icon-btn" title="Kontodaten bearbeiten" aria-label="Kontodaten bearbeiten" onClick={() => setVerwalten({ konto: k, modus: 'bearbeiten' })}><Pencil size={17} /></button>
+              <button className="icon-btn" title="Konto löschen" aria-label="Konto löschen" onClick={() => setVerwalten({ konto: k, modus: 'loeschen' })}><Trash2 size={17} /></button>
+              <BankAbruf konto={k} onDone={onDone} label={status === 'verbunden' ? 'Jetzt abrufen' : status === 'neu verbinden' ? 'Neu verbinden' : 'Verbinden'} /></td>
           </tr>);
       })}</tbody></table>
       {!isTauri() && <p className="muted small">Die Verbindung zur Bank funktioniert nur in der installierten App.</p>}
+      {verwalten && <BankkontoVerwalten konto={verwalten.konto} modus={verwalten.modus} onClose={() => setVerwalten(null)}
+        onDone={(m) => { setVerwalten(null); onDone(m); }} />}
     </section>
   );
 }
