@@ -106,7 +106,7 @@ export function BankkontoLoeschen({ konto, onClose, onDone }: { konto: Row; onCl
           <label><span>Zur Bestätigung <b>{WORT}</b> eintippen</span>
             <input value={text} autoFocus onChange={(e) => setText(e.target.value)} placeholder={WORT} onKeyDown={(e) => e.key === 'Enter' && los()} /></label>
         </>}
-        <p className="muted small">Eine gespeicherte Online-Banking-PIN wird aus dem Schlüsselbund entfernt.{sicherheit.aktiv ? ' Vor dem Löschen wird automatisch eine Sicherung erstellt, mit der du alles zurückholen kannst.' : ''}</p>
+        <p className="muted small">Das Konto liegt danach 30 Tage im Papierkorb und lässt sich dort wiederherstellen. Eine gespeicherte Online-Banking-PIN wird aus dem Schlüsselbund entfernt.{sicherheit.aktiv ? ' Vor dem Löschen wird zusätzlich automatisch eine Sicherung erstellt.' : ''}</p>
         {fehler && <p className="error">{fehler}</p>}
         <div className="row end" style={{ marginTop: 14 }}>
           <span className="grow" />

@@ -1,5 +1,6 @@
 // Bankkonto bearbeiten und löschen (mit Rücksicht auf Umsätze, Buchungen und die Online-Banking-Verbindung)
 import { db, sicherheit, type Row } from '../db';
+import { ablegen, erfassen } from '../db/papierkorb';
 import { invoke, isTauri, kontoBlz, pinGespeichert } from './bankAbruf';
 
 /** IBAN ohne Leerzeichen, in Großbuchstaben */
@@ -62,6 +63,16 @@ export async function bankkontoLoeschen(kontoId: number, buchungenMit: boolean):
   if (sicherheit.aktiv) sicherung = await sicherheit.sicherungErstellen();
   const U = `(SELECT id FROM bankumsaetze WHERE bankkonto_id = ${id})`;
   const B = `(SELECT id FROM buchungen WHERE bankumsatz_id IN ${U})`;
+  // Für den Papierkorb festhalten, was gleich verschwindet (Umsätze und Kontoabgleich löscht die Datenbank mit)
+  const name = (await db.select('SELECT name FROM bankkonten WHERE id = $1', [id]))[0]?.name ?? '';
+  const inhalt = await erfassen([
+    ...(buchungenMit ? [{ t: 'buchungen', where: `id IN ${B}` }, { t: 'dokumente', where: `bezug = 'Buchung' AND bezug_id IN ${B}` }] : []),
+    { t: 'bankkonten', where: `id = ${id}` }]);
+  const verknuepft = await db.select(`SELECT id, bankumsatz_id, rechnung_id FROM buchungen WHERE bankumsatz_id IN ${U}`);
+  const bezahlt = buchungenMit ? await db.select(`SELECT id, bezahlt_am FROM rechnungen WHERE id IN (SELECT rechnung_id FROM buchungen WHERE bankumsatz_id IN ${U})`) : [];
+  inhalt.wieder = buchungenMit
+    ? bezahlt.map((r) => ({ sql: 'UPDATE rechnungen SET bezahlt_am = $1 WHERE id = $2', params: [r.bezahlt_am, r.id] }))
+    : verknuepft.map((b) => ({ sql: 'UPDATE buchungen SET bankumsatz_id = $1 WHERE id = $2', params: [b.bankumsatz_id, b.id] }));
   const buchungen = buchungenMit
     ? `UPDATE rechnungen SET bezahlt_am = NULL WHERE id IN (SELECT rechnung_id FROM buchungen WHERE bankumsatz_id IN ${U} AND rechnung_id IS NOT NULL);
        DELETE FROM dokumente WHERE bezug = 'Buchung' AND bezug_id IN ${B};
@@ -74,6 +85,7 @@ export async function bankkontoLoeschen(kontoId: number, buchungenMit: boolean):
     COMMIT;`;
   try { await db.execute(sql); }
   catch (e) { await db.execute('ROLLBACK').catch(() => {}); throw e; }
+  await ablegen('Bankkonto', name, inhalt).catch(() => {});
   if (isTauri()) await invoke('bank_pin_loeschen', { konto: id }).catch(() => {});
   return sicherung;
 }
