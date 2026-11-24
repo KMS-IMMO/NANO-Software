@@ -35,7 +35,7 @@ export function AuszugImport({ objektId, onDone, kompakt, kontoId }: { objektId:
   async function lesen(files: FileList | File[]) {
     setFehler(''); setInfo(null); setBusy(true);
     const umsaetze: Umsatz[] = [], hinweise: string[] = [], namen: string[] = [], uebersprungen: string[] = [];
-    let anfang: number | undefined, ende: number | undefined, mitSaldo = 0;
+    let anfang: number | undefined, ende: number | undefined, mitSaldo = 0, anfangAb = '';
     try {
       const alle = Array.from(files), bilder = alle.filter(istBild);
       const gruppen: { name: string; lesen: () => Promise<{ umsaetze: Umsatz[]; hinweis?: string; anfang?: number; ende?: number; uebersprungen?: string[] }> }[] = [
@@ -46,7 +46,9 @@ export function AuszugImport({ objektId, onDone, kompakt, kontoId }: { objektId:
         const r = await g.lesen();
         umsaetze.push(...r.umsaetze); namen.push(g.name);
         for (const z of r.uebersprungen ?? []) uebersprungen.push(gruppen.length > 1 ? `${g.name}: ${z}` : z);
-        if (r.anfang !== undefined && anfang === undefined) { anfang = r.anfang; ende = r.ende; }
+        // Mehrere Auszüge: der Anfangsstand gehört zur Datei mit dem frühesten Umsatz
+        const erster = r.umsaetze.map((u) => u.datum).sort()[0] ?? '';
+        if (r.anfang !== undefined && (anfang === undefined || erster < anfangAb)) { anfang = r.anfang; ende = r.ende; anfangAb = erster; }
         if (r.anfang !== undefined) mitSaldo++;
         if (r.hinweis) hinweise.push(`${g.name}: ${r.hinweis}`);
       }
@@ -54,7 +56,7 @@ export function AuszugImport({ objektId, onDone, kompakt, kontoId }: { objektId:
       if (!umsaetze.length) setFehler('In der Datei wurden keine Umsätze gefunden.' + (uebersprungen.length ? ` Nicht lesbar: ${uebersprungen.slice(0, 5).join(' ')}` : ''));
       else {
         const saldo = gruppen.length === 1 && mitSaldo === 1 && anfang !== undefined ? { anfang, ende } : undefined;
-        setVorschau({ umsaetze, uebersprungen, hinweise: saldo ? hinweise.filter((h) => !/Kontostand|Anfangssaldo/.test(h)) : hinweise, dateien: namen, saldo, anfang });
+        setVorschau({ umsaetze, uebersprungen, hinweise: saldo ? hinweise.filter((h) => !/: (Kontostand passt|Kontostand nicht gefunden|Anfangssaldo |Achtung: Alter Kontostand)/.test(h)) : hinweise, dateien: namen, saldo, anfang });
         const erstes = umsaetze[0].datum;
         setNeu((n) => ({ ...n, saldo: n.saldo || (anfang !== undefined ? String(anfang).replace('.', ',') : ''), datum: n.datum || new Date(new Date(erstes + 'T12:00:00').getTime() - 864e5).toISOString().slice(0, 10) }));
       }

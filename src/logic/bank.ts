@@ -49,7 +49,7 @@ export function parseDatei(name: string, text: string): Umsatz[] {
 }
 
 /** Wie parseDatei, nennt aber zusätzlich die Zeilen, die nicht als Umsatz übernommen wurden (mit Grund) */
-export function parseDateiDetail(name: string, text: string): { umsaetze: Umsatz[]; uebersprungen: string[] } {
+export function parseDateiDetail(name: string, text: string): { umsaetze: Umsatz[]; uebersprungen: string[]; anfang?: number; ende?: number; hinweis?: string } {
   const t = text.trimStart();
   if (t.startsWith('<') || /\.xml$/i.test(name)) return { umsaetze: parseCamt(t), uebersprungen: [] };
   return parseCsvDetail(text);
@@ -109,7 +109,7 @@ export function parseCsv(text: string): Umsatz[] {
   return parseCsvDetail(text).umsaetze;
 }
 
-export function parseCsvDetail(text: string): { umsaetze: Umsatz[]; uebersprungen: string[] } {
+export function parseCsvDetail(text: string): { umsaetze: Umsatz[]; uebersprungen: string[]; anfang?: number; ende?: number; hinweis?: string } {
   text = text.replace(/^\uFEFF/, '');
   const roh = text.split(/\r?\n/).filter((l) => l.trim());
   const sep = (roh.find((l) => /buchung|betrag|datum/i.test(l)) ?? roh[0] ?? '').split(';').length > 2 ? ';' : ',';
@@ -126,6 +126,7 @@ export function parseCsvDetail(text: string): { umsaetze: Umsatz[]; uebersprunge
   const cZweck = col(/verwendungszweck/, /buchungstext/, /^text/);
   const cName = col(/beguenstigter|begünstigter|zahlungspflichtiger|auftraggeber|empfänger|name/);
   const cIban = col(/^iban/, /kontonummer\/iban/, /iban/, /kontonummer/);
+  const cSaldo = col(/^saldo/, /^kontostand/);
   const datum = (s: string) => {
     const m = s.match(/(\d{1,2})\.(\d{1,2})\.(\d{2,4})/);
     if (m) { const y = m[3].length === 2 ? '20' + m[3] : m[3]; return `${y}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`; }
@@ -146,9 +147,16 @@ export function parseCsvDetail(text: string): { umsaetze: Umsatz[]; uebersprunge
     return Number.isFinite(n) ? (neg ? -n : n) : null;
   };
   const out: Umsatz[] = [], uebersprungen: string[] = [];
+  const marken: { datum: string; saldo: number }[] = [];   // Kontostand laut Bank an einem Tag (Rechnungsabschluss)
+  const saldoNach: { datum: string; betrag: number; saldo: number }[] = [];   // Spalte „Saldo“ je Umsatz (z. B. ING, DKB)
   const zeigen = (c: string[]) => c.filter(Boolean).join(' · ').slice(0, 140);
   for (const c of saetze.slice(hIdx + 1)) {
     if (c.filter(Boolean).length < 2) continue;              // Leer- oder Fußzeile ohne Inhalt
+    // Sparkasse und andere: Der Rechnungsabschluss (Betrag 0,00) nennt den Kontostand, z. B. „Kontostand am 30.12.2025 3.690,23 +“
+    for (const m of c.join(' ').matchAll(/Kontostand(?:\/Rechnungsabschluss)? am (\d{1,2}\.\d{1,2}\.\d{4}) (-?[\d.]+,\d{2}) ?([+-]|S\b|H\b)?/g)) {
+      const w = zahl(m[2]);
+      if (w !== null) marken.push({ datum: datum(m[1]), saldo: m[3] === '-' || m[3] === 'S' ? -Math.abs(w) : w });
+    }
     const d = datum(c[cDatum] ?? '');
     const b = cBetrag >= 0 ? zahl(c[cBetrag]) : (zahl(c[cHaben]) ?? 0) - (zahl(c[cSoll]) ?? 0);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) {
@@ -159,14 +167,45 @@ export function parseCsvDetail(text: string): { umsaetze: Umsatz[]; uebersprunge
     if (b === null) { if (!/saldo|kontostand/i.test(c.join(' '))) uebersprungen.push(`Kein Betrag lesbar: „${zeigen(c)}“`); continue; }
     let betrag = b;
     if (cBetrag >= 0 && /^s$/i.test(c[cBetrag + 1] ?? '')) betrag = -Math.abs(betrag);
-    if (betrag === 0) { uebersprungen.push(`Betrag 0,00 €: „${zeigen(c)}“`); continue; }
+    if (betrag === 0) { if (!/abschluss/i.test(c.join(' '))) uebersprungen.push(`Betrag 0,00 €: „${zeigen(c)}“`); continue; }
+    const sw = cSaldo >= 0 ? zahl(c[cSaldo] ?? '') : null;
+    if (sw !== null) saldoNach.push({ datum: d, betrag, saldo: sw });
     out.push({
       datum: d, valuta: cValuta >= 0 && c[cValuta] ? datum(c[cValuta]) : undefined, betrag,
       verwendungszweck: cZweck >= 0 ? c[cZweck] ?? '' : '', gegenpartei: cName >= 0 ? c[cName] ?? '' : '',
       gegen_iban: cIban >= 0 ? (c[cIban] ?? '').replace(/\s/g, '') : '',
     });
   }
-  return { umsaetze: out, uebersprungen };
+  return { umsaetze: out, uebersprungen, ...csvSaldo(out, marken, saldoNach) };
+}
+
+const r2b = (n: number) => Math.round(n * 100) / 100;
+
+/** Anfangs- und Endstand aus einer CSV ohne eigene Saldo-Zeile: aus den Kontoständen der Rechnungsabschlüsse oder aus einer Spalte „Saldo“.
+ *  Anfang = Kontostand am frühesten Abschlusstag − alle Umsätze bis zu diesem Tag. Die späteren Abschlüsse dienen als Prüfung. */
+export function csvSaldo(umsaetze: Umsatz[], marken: { datum: string; saldo: number }[], saldoNach: { datum: string; betrag: number; saldo: number }[] = []):
+  { anfang?: number; ende?: number; hinweis?: string } {
+  const bis = (d: string) => umsaetze.filter((u) => u.datum <= d).reduce((a, u) => a + u.betrag, 0);
+  const summe = umsaetze.reduce((a, u) => a + u.betrag, 0);
+  if (marken.length) {
+    const m = [...new Map(marken.map((x) => [x.datum, x])).values()].sort((a, b) => a.datum.localeCompare(b.datum));
+    const anfang = r2b(m[0].saldo - bis(m[0].datum));
+    const letzte = m[m.length - 1];
+    const ende = r2b(letzte.saldo + summe - bis(letzte.datum));
+    const falsch = m.find((x) => Math.abs(anfang + bis(x.datum) - x.saldo) > 0.005);
+    const dT = (d: string) => d.split('-').reverse().join('.');
+    const hinweis = falsch
+      ? `Achtung: Laut Rechnungsabschluss war der Kontostand am ${dT(falsch.datum)} ${eurText(falsch.saldo)}, laut den eingelesenen Umsätzen ${eurText(r2b(anfang + bis(falsch.datum)))}. Zwischen ${dT(m[0].datum)} und ${dT(falsch.datum)} fehlt wahrscheinlich ein Umsatz.`
+      : `Anfangsstand ${eurText(anfang)} aus ${m.length === 1 ? 'dem Rechnungsabschluss' : `${m.length} Rechnungsabschlüssen`} berechnet (Kontostand am ${dT(m[0].datum)} ${eurText(m[0].saldo)} abzüglich der Umsätze bis dahin).`;
+    return { anfang, ende, hinweis };
+  }
+  if (saldoNach.length) {
+    // Reihenfolge der Datei: auf- oder absteigend nach Datum
+    const ab = saldoNach[0].datum > saldoNach[saldoNach.length - 1].datum;
+    const erste = ab ? saldoNach[saldoNach.length - 1] : saldoNach[0], letzte = ab ? saldoNach[0] : saldoNach[saldoNach.length - 1];
+    return { anfang: r2b(erste.saldo - erste.betrag), ende: r2b(letzte.saldo) };
+  }
+  return {};
 }
 
 /** Kurzbeschreibung eines Umsatzes für Hinweise („02.01.2026 Maria Neumann 320,00 €“) */
@@ -509,12 +548,24 @@ export async function umsaetzeLoeschen(ids: number[]) {
   await ablegen(u.length > 1 ? `Bankumsätze (${u.length})` : 'Bankumsatz', u.length === 1 ? [u[0].gegenpartei, u[0].verwendungszweck].filter(Boolean).join(' · ') : `${u.length} Umsätze`, inhalt);
 }
 
-/** Startsaldo aus dem Kontoauszug übernehmen, wenn das Konto noch keine Umsätze hat (erster Import oder nach dem Löschen) */
+/** Startsaldo aus dem Kontoauszug übernehmen: beim ersten Import, nach dem Löschen aller Umsätze oder wenn der Auszug
+ *  mindestens so früh beginnt wie die schon vorhandenen Umsätze (z. B. dieselbe Jahresdatei erneut eingelesen) und kein
+ *  früherer Anfangssaldo eingetragen ist. */
 export async function startsaldoUebernehmen(kontoId: number, anfang: number | undefined, ersterTag: string | undefined) {
   if (anfang === undefined || !ersterTag) return false;
-  const da = await db.select('SELECT 1 FROM bankumsaetze WHERE bankkonto_id = $1 LIMIT 1', [kontoId]);
-  if (da.length) return false;
   const vortag = new Date(new Date(ersterTag + 'T12:00:00').getTime() - 864e5).toISOString().slice(0, 10);
+  const k = (await db.select(`SELECT k.anfangssaldo, k.saldo_datum,
+      (SELECT MIN(u.datum) FROM bankumsaetze u WHERE u.bankkonto_id = k.id AND (k.saldo_datum IS NULL OR u.datum > k.saldo_datum)) AS erster
+    FROM bankkonten k WHERE k.id = $1`, [kontoId]))[0];
+  if (!k) return false;
+  const da = (await db.select('SELECT 1 FROM bankumsaetze WHERE bankkonto_id = $1 LIMIT 1', [kontoId])).length > 0;
+  if (da) {
+    // Vorhandene Umsätze beginnen früher als dieser Auszug: der Anfangssaldo des Auszugs liegt mittendrin, nicht übernehmen
+    if (k.erster && String(k.erster) < ersterTag) return false;
+    // Ein früherer Anfangssaldo (z. B. von Hand eingetragen) bleibt
+    if (k.saldo_datum && String(k.saldo_datum) < vortag) return false;
+  }
+  if (k.saldo_datum === vortag && Math.abs(Number(k.anfangssaldo ?? 0) - anfang) < 0.005) return false;
   await db.execute('UPDATE bankkonten SET anfangssaldo = $1, saldo_datum = $2 WHERE id = $3', [anfang, vortag, kontoId]);
   return true;
 }
