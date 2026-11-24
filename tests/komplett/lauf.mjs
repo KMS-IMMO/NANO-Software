@@ -65,6 +65,12 @@ try {
     const okN = (r.aus.match(/^OK /gm) ?? []).length, fail = r.aus.split('\n').filter((z) => /^(FAIL|FEHL)/.test(z));
     melde('PDF-Export nur Einnahmen und nur Ausgaben', r.code === 0 && okN > 0 && !fail.length, `${okN} Prüfungen grün${fail.length ? `, ${fail.length} rot: ${fail.join(' | ').slice(0, 300)}` : ''}${r.code ? `, Abbruch (Code ${r.code})` : ''}`);
   }
+  // 5) Bankkonten bearbeiten und löschen (eigene Zeile, damit weitere Prüflisten oben ohne Konflikt dazukommen)
+  {
+    const r = await lauf('bankkonten.cjs'); writeFileSync(join(AUS, 'bankkonten.txt'), r.aus);
+    const okN = (r.aus.match(/^OK /gm) ?? []).length, fail = r.aus.split('\n').filter((z) => /^(FAIL|FEHL)/.test(z));
+    melde('Bankkonten bearbeiten und löschen (Papierkorb, Buchungen behalten)', r.code === 0 && okN > 0 && !fail.length, `${okN} Prüfungen grün${fail.length ? `, ${fail.length} rot: ${fail.join(' | ').slice(0, 300)}` : ''}${r.code ? `, Abbruch (Code ${r.code})` : ''}`);
+  }
 } catch { /* Ergebnis steht unten */ }
 const rot = ergebnis.filter((e) => !e.gut);
 const text = `Komplettest ${new Date().toLocaleString('de-DE')}: ${rot.length ? `${rot.length} von ${ergebnis.length} ROT` : `alle ${ergebnis.length} Teile grün`}\n` + ergebnis.map((e) => `${e.gut ? 'OK  ' : 'FAIL'} ${e.name}${e.info ? ' – ' + e.info : ''}`).join('\n') + '\n';
