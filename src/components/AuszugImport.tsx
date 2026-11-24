@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { FileUp, Landmark } from 'lucide-react';
 import { db, insert, type Row } from '../db';
-import { auszugLesen, automatischZuordnen, bilderLesen, importieren, saldoHinweis, startsaldoUebernehmen, type Umsatz } from '../logic/bank';
+import { auszugLesen, automatischZuordnen, bilderLesen, importieren, saldoHinweis, umsatzKurz, startsaldoUebernehmen, type Umsatz } from '../logic/bank';
 import { istBild } from '../logic/ocr';
 import { datum, eur } from './EntityTable';
 import { DatumFeld } from './DatumFeld';
@@ -19,7 +19,7 @@ export function AuszugImport({ objektId, onDone, kompakt, kontoId }: { objektId:
   const [stand, setStand] = useState('');
   const [info, setInfo] = useState<{ text: string; offen: number } | null>(null);
   const [fehler, setFehler] = useState('');
-  const [vorschau, setVorschau] = useState<{ umsaetze: Umsatz[]; hinweise: string[]; dateien: string[]; saldo?: { anfang: number; ende?: number }; anfang?: number } | null>(null);
+  const [vorschau, setVorschau] = useState<{ umsaetze: Umsatz[]; hinweise: string[]; uebersprungen: string[]; dateien: string[]; saldo?: { anfang: number; ende?: number }; anfang?: number } | null>(null);
   const [konten, setKonten] = useState<Row[]>([]);
   const [konto, setKonto] = useState<number | ''>('');
   const [neu, setNeu] = useState({ name: 'Bankkonto', iban: '', saldo: '', datum: '' });
@@ -34,26 +34,27 @@ export function AuszugImport({ objektId, onDone, kompakt, kontoId }: { objektId:
 
   async function lesen(files: FileList | File[]) {
     setFehler(''); setInfo(null); setBusy(true);
-    const umsaetze: Umsatz[] = [], hinweise: string[] = [], namen: string[] = [];
+    const umsaetze: Umsatz[] = [], hinweise: string[] = [], namen: string[] = [], uebersprungen: string[] = [];
     let anfang: number | undefined, ende: number | undefined, mitSaldo = 0;
     try {
       const alle = Array.from(files), bilder = alle.filter(istBild);
-      const gruppen: { name: string; lesen: () => Promise<{ umsaetze: Umsatz[]; hinweis?: string; anfang?: number; ende?: number }> }[] = [
+      const gruppen: { name: string; lesen: () => Promise<{ umsaetze: Umsatz[]; hinweis?: string; anfang?: number; ende?: number; uebersprungen?: string[] }> }[] = [
         ...alle.filter((f) => !istBild(f)).map((f) => ({ name: f.name, lesen: () => auszugLesen(f, setStand) })),
         ...(bilder.length ? [{ name: bilder.length === 1 ? bilder[0].name : `${bilder.length} Fotos`, lesen: () => bilderLesen(bilder, setStand) }] : []),
       ];
       for (const g of gruppen) {
         const r = await g.lesen();
         umsaetze.push(...r.umsaetze); namen.push(g.name);
+        for (const z of r.uebersprungen ?? []) uebersprungen.push(gruppen.length > 1 ? `${g.name}: ${z}` : z);
         if (r.anfang !== undefined && anfang === undefined) { anfang = r.anfang; ende = r.ende; }
         if (r.anfang !== undefined) mitSaldo++;
         if (r.hinweis) hinweise.push(`${g.name}: ${r.hinweis}`);
       }
       umsaetze.sort((a, b) => a.datum.localeCompare(b.datum));
-      if (!umsaetze.length) setFehler('In der Datei wurden keine Umsätze gefunden.');
+      if (!umsaetze.length) setFehler('In der Datei wurden keine Umsätze gefunden.' + (uebersprungen.length ? ` Nicht lesbar: ${uebersprungen.slice(0, 5).join(' ')}` : ''));
       else {
         const saldo = gruppen.length === 1 && mitSaldo === 1 && anfang !== undefined ? { anfang, ende } : undefined;
-        setVorschau({ umsaetze, hinweise: saldo ? hinweise.filter((h) => !/Kontostand|Anfangssaldo/.test(h)) : hinweise, dateien: namen, saldo, anfang });
+        setVorschau({ umsaetze, uebersprungen, hinweise: saldo ? hinweise.filter((h) => !/Kontostand|Anfangssaldo/.test(h)) : hinweise, dateien: namen, saldo, anfang });
         const erstes = umsaetze[0].datum;
         setNeu((n) => ({ ...n, saldo: n.saldo || (anfang !== undefined ? String(anfang).replace('.', ',') : ''), datum: n.datum || new Date(new Date(erstes + 'T12:00:00').getTime() - 864e5).toISOString().slice(0, 10) }));
       }
@@ -77,7 +78,7 @@ export function AuszugImport({ objektId, onDone, kompakt, kontoId }: { objektId:
       const r = await importieren(Number(kid), vorschau.umsaetze);
       const a = await automatischZuordnen();
       const offen = Number((await db.select(`SELECT COUNT(*) AS n FROM bankumsaetze WHERE bankkonto_id = $1 AND status = 'offen'`, [kid]))[0]?.n ?? 0);
-      setInfo({ text: `${r.neu} Umsätze übernommen${r.doppelt ? `, ${r.doppelt} waren schon vorhanden` : ''}. ${a.zugeordnet} automatisch gebucht.${start ? ` Startsaldo ${eur(vorschau.anfang!)} aus dem Auszug übernommen.` : ''}`, offen });
+      setInfo({ text: `${r.neu} Umsätze übernommen${r.doppelt ? `, ${r.doppelt} waren schon vorhanden und wurden nicht doppelt angelegt (${r.schonDa.slice(0, 5).map(umsatzKurz).join('; ')}${r.doppelt > 5 ? ' …' : ''})` : ''}. ${a.zugeordnet} automatisch gebucht.${start ? ` Startsaldo ${eur(vorschau.anfang!)} aus dem Auszug übernommen.` : ''}`, offen });
       setVorschau(null); kontenLaden(); onDone();
     } catch (e: any) { setFehler(String(e?.message ?? e)); }
     finally { setBusy(false); }
@@ -113,6 +114,12 @@ export function AuszugImport({ objektId, onDone, kompakt, kontoId }: { objektId:
               {vorschau.saldo && (() => { const h = saldoHinweis(vorschau.umsaetze, vorschau.saldo.anfang, vorschau.saldo.ende);
                 return <p className={/Achtung/.test(h) ? 'warn' : 'info'}>{h}</p>; })()}
               {vorschau.umsaetze.some((u) => u.pruefen) && <p className="muted small">Gelb markierte Zeilen bitte prüfen. Mit ± drehst du das Vorzeichen um, der Kontostand-Abgleich rechnet sofort neu.</p>}
+              {vorschau.uebersprungen.length > 0 && (
+                <details className="warn auszug-uebersprungen" open={vorschau.uebersprungen.length <= 10}>
+                  <summary>{vorschau.uebersprungen.length === 1 ? '1 Zeile der Datei wurde nicht als Umsatz übernommen' : `${vorschau.uebersprungen.length} Zeilen der Datei wurden nicht als Umsatz übernommen`}. Bitte mit dem Auszug vergleichen und fehlende Umsätze danach von Hand buchen.</summary>
+                  <ul className="small">{vorschau.uebersprungen.slice(0, 50).map((z, i) => <li key={i}>{z}</li>)}</ul>
+                  {vorschau.uebersprungen.length > 50 && <p className="muted small">… und {vorschau.uebersprungen.length - 50} weitere.</p>}
+                </details>)}
               {vorschau.hinweise.map((h) => <p key={h} className={/Achtung|nicht gefunden/.test(h) ? 'warn' : 'info'}>{h}</p>)}
               <div className="form auszug-konto">
                 {konten.length ? <label><span>Bankkonto</span><select value={konto} onChange={(e) => setKonto(e.target.value === '' ? '' : Number(e.target.value))}>
