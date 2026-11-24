@@ -6,6 +6,8 @@ import { useObjektKontext } from '../logic/objektKontext';
 import { useEffect, useState } from 'react';
 import { Paperclip } from 'lucide-react';
 import { RechnungErfassen } from '../components/RechnungErfassen';
+import { BankkontoLoeschen } from '../components/BankkontoDialoge';
+import type { Row } from '../db';
 import { oeffnen } from '../lib/dateien';
 import { SCHLUESSEL, einheitLabel, kontoOptions } from '../db/labels';
 import { DATEV_EINST } from '../logic/datev';
@@ -98,6 +100,9 @@ const EINST: [string, string][] = [
 export function EinstellungenPage() {
   const [w, setW] = useState<Record<string, string>>({});
   const [saved, setSaved] = useState(false);
+  const [bkLoeschen, setBkLoeschen] = useState<Row | null>(null);
+  const [bkVersion, setBkVersion] = useState(0);
+  const [bkInfo, setBkInfo] = useState('');
   useEffect(() => { db.select('SELECT * FROM einstellungen').then((r) => setW(Object.fromEntries(r.map((x) => [x.schluessel, x.wert ?? ''])))); }, []);
   async function save() {
     for (const [k] of EINST.filter(([k]) => !(mehrplatz.aktiv && k === 'ablage_pfad'))) await db.execute(`INSERT INTO einstellungen (schluessel, wert) VALUES ($1, $2)
@@ -134,7 +139,12 @@ export function EinstellungenPage() {
         ]}
         listSql={`SELECT b.*, o.name AS objekt_id_label FROM bankkonten b LEFT JOIN objekte o ON o.id = b.objekt_id ORDER BY o.name`}
         emptyText="Noch kein Bankkonto. Jedes Objekt bekommt sein eigenes Konto."
+        onDelete={(r) => { setBkInfo(''); setBkLoeschen(r); }}
+        version={bkVersion}
       />
+      {bkInfo && <p className="info">{bkInfo}</p>}
+      {bkLoeschen && <BankkontoLoeschen konto={bkLoeschen} onClose={() => setBkLoeschen(null)}
+        onDone={(m) => { setBkLoeschen(null); setBkInfo(m); setBkVersion((v) => v + 1); }} />}
       <EntityTable
         title="Ordnervorlagen für die Ablage"
         table="ordnervorlagen"

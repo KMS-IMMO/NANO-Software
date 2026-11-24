@@ -111,7 +111,12 @@ export function BankPage() {
         {k && <BankAbruf konto={k} onDone={(m) => { setInfo(m); load(); ladeKonten(); }} />}
         {k?.auto_abruf ? <span className="pill pos-pill" title={k.letzter_abruf ? `Letzter Abruf ${new Date(String(k.letzter_abruf).replace(' ', 'T')).toLocaleString('de-DE')}` : ''}>Automatischer Abruf an</span> : null}
       </div>
-      <BankVerbindungen konten={konten} onDone={(m) => { setInfo(m); load(); ladeKonten(); }} />
+      <BankVerbindungen konten={konten} onDone={async (m) => {
+        setInfo(m);
+        const neu = await ladeKonten();
+        if (!neu.some((x) => x.id === konto)) setKonto(neu[0]?.id ?? '');
+        else load();
+      }} />
       <div className="kpis">
         <div className="kpi"><span>Kontostand laut Import</span><b>{eur(saldo)}</b></div>
         <div className="kpi"><span>Zum Prüfen</span><b className={anzahl('offen') ? 'neg' : ''}>{anzahl('offen')}</b></div>
