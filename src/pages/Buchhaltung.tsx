@@ -10,6 +10,7 @@ import { EntityTable, datum, eur, num } from '../components/EntityTable';
 import { db, insert, remove, update, type Row } from '../db';
 import { einheitLabel, einheitPerson, personLabel } from '../db/labels';
 import { OP_SQL } from '../logic/soll';
+import { tabellenSchluessel } from '../logic/nebenkosten';
 import { csv, dDatum, einnahmenAusgabenPdf, einnahmenOderAusgabenPdf, geld, listePdf } from '../lib/pdf';
 import { oeffnen, speichern } from '../lib/dateien';
 import { useObjektKontext } from '../logic/objektKontext';
@@ -92,6 +93,7 @@ export function JournalPage() {
   const [wahl, setWahl] = useState<Set<number>>(new Set());
   const [pdfMenue, setPdfMenue] = useState(false);
   const [einheiten, setEinheiten] = useState<Row[]>([]);
+  const [schl, setSchl] = useState<Record<number, string>>({});   // Verteilerschlüssel je Konto für „Alle Einheiten“
   const [proSeite, setProSeite] = useState(100);
   const [seiteNr, setSeiteNr] = useState(0);
 
@@ -165,6 +167,12 @@ export function JournalPage() {
     if (objekt === '') { setEinheiten([]); return; }
     db.select(`SELECT e.id, e.nummer, ${einheitLabel('e')} AS label FROM einheiten e WHERE e.objekt_id = $1 ORDER BY e.lfd_nr, e.nummer`, [Number(objekt)]).then(setEinheiten);
   }, [objekt]);
+  useEffect(() => {
+    if (objekt === '') { setSchl({}); return; }
+    tabellenSchluessel(Number(objekt), Number(jahr)).then(setSchl).catch(() => setSchl({}));
+  }, [objekt, jahr]);
+  /** „Alle Einheiten“ mit dem Schlüssel, nach dem die Abrechnung den Betrag verteilt */
+  const alleText = (r: Row) => (r.buchungskonto_id && schl[r.buchungskonto_id] ? `Alle · ${schl[r.buchungskonto_id]}` : 'Alle Einheiten');
   // Seitenweise anzeigen (0 = alle)
   const seiten = proSeite ? Math.max(1, Math.ceil(rows.length / proSeite)) : 1;
   const seiteJetzt = Math.min(seiteNr, seiten - 1);
@@ -401,8 +409,8 @@ export function JournalPage() {
                 {!fix && <td className="ea-kurz-zelle" title={r.objekt ?? ''}>{r.objekt}</td>}
                 <td className="nowrap">{fix && !r.aufteilung && !r.sollstellung_id
                   ? <select className={'ea-einheit' + (r.einheit_id ? ' einzeln' : '')} value={r.einheit_id ?? ''} title="Einheit ändern" onChange={(e) => einheitSetzen(r, e.target.value)}>
-                      <option value="">Alle Einheiten</option>{einheiten.map((e) => <option key={e.id} value={e.id}>{e.label}</option>)}</select>
-                  : <span className={'ea-einheit fest' + (r.einheit_id ? ' einzeln' : '')}>{r.einheit ?? 'Alle Einheiten'}</span>}
+                      <option value="">{alleText(r)}</option>{einheiten.map((e) => <option key={e.id} value={e.id}>{e.label}</option>)}</select>
+                  : <span className={'ea-einheit fest' + (r.einheit_id ? ' einzeln' : '')}>{r.einheit ?? alleText(r)}</span>}
                   {r.aufteilung ? <span className="tag teil-tag" title={`Teil ${r.teil_nr} von ${r.teile_n} einer Aufteilung über ${eur(Math.abs(Number(r.teile_summe)))}`}>Teil {r.teil_nr}/{r.teile_n}</span> : ''}</td>
                 <td className="nowrap">{r.mwst_satz == null ? <span className="muted">–</span> : Number(r.mwst_satz) ? `${String(r.mwst_satz).replace('.', ',')} % MwSt` : 'ohne MwSt'}</td>
                 <td className="nowrap">{r.zeitraum_von || r.zeitraum_bis ? `${datum(r.zeitraum_von) || '…'} – ${datum(r.zeitraum_bis) || '…'}` : ''}</td>
@@ -445,7 +453,7 @@ export function JournalPage() {
             <span className="ea-summe">Einnahmen <b className="pos">{eur(haben)}</b></span>
             <span className="ea-summe">Saldo <b className={haben - soll < 0 ? 'neg' : 'pos'}>{eur(haben - soll)}</b></span>
           </div></>)}
-        <p className="muted small">Mit dem Stift änderst du eine Buchung, mit dem Papierkorb löschst du sie. Über „Kein Beleg“ hängst du einen Beleg an, über das Feld „Einheiten“ ordnest du die Buchung einer Einheit zu. Neue Einnahmen und Ausgaben buchst du über „Buchen“, Rechnungen mit Beleg über „Rechnung erfassen“.
+        <p className="muted small">Mit dem Stift änderst du eine Buchung, mit dem Papierkorb löschst du sie. Über „Kein Beleg“ hängst du einen Beleg an, über das Feld „Einheiten“ ordnest du die Buchung einer Einheit zu. Eine Buchung für eine Einheit trägt in der Abrechnung nur diese Einheit; „Alle“ wird nach dem angezeigten Schlüssel verteilt (z. B. „Alle · MEA“). Neue Einnahmen und Ausgaben buchst du über „Buchen“, Rechnungen mit Beleg über „Rechnung erfassen“.
           Mit den Häkchen wählst du mehrere Buchungen zum Löschen aus. Gelöschte Bankbuchungen stehen danach wieder oben unter „Aus dem Kontoauszug“ zum Buchen bereit.</p>
       </section>)}
       {edit && (

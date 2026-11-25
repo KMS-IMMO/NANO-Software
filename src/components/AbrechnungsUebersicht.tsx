@@ -8,7 +8,7 @@ import { Fragment, useEffect, useState, type ReactNode } from 'react';
 import { Check, ChevronDown, ChevronRight, Pencil, Plus, Trash2, Undo2, X } from 'lucide-react';
 import { db, type Row } from '../db';
 import { eur } from './EntityTable';
-import type { Position } from '../logic/verteilung';
+import { belegAnteile, type Position } from '../logic/verteilung';
 import { BJ, buchungLoeschen, loeschHinweis } from '../logic/buchung';
 import { gesperrt, sperrText } from '../logic/abschluss';
 import { DatumFeld } from './DatumFeld';
@@ -19,12 +19,12 @@ const datum = (d: string) => (d ? new Date(d + 'T00:00:00').toLocaleDateString('
 async function belegeLaden(objekt: number, jahr: number, nurBezahlt = false): Promise<{ aus: Row[]; ein: Row[] }> {
   const von = `${jahr}-01-01`, bis = `${jahr}-12-31`;
   const buch = await db.select(`SELECT b.id, b.datum, b.betrag, b.text, b.buchungskonto_id, k.art,
-      COALESCE(f.name, rf.name) AS firma, COALESCE(b.rechnungsnr, r.rechnungsnr) AS rechnungsnr, e.nummer AS einheit, b.bankumsatz_id, b.sollstellung_id, b.rechnung_id
+      COALESCE(f.name, rf.name) AS firma, COALESCE(b.rechnungsnr, r.rechnungsnr) AS rechnungsnr, e.nummer AS einheit, b.einheit_id, b.bankumsatz_id, b.sollstellung_id, b.rechnung_id
     FROM buchungen b JOIN buchungskonten k ON k.id = b.buchungskonto_id
     LEFT JOIN rechnungen r ON r.id = b.rechnung_id LEFT JOIN firmen f ON f.id = b.firma_id LEFT JOIN firmen rf ON rf.id = r.firma_id
     LEFT JOIN einheiten e ON e.id = b.einheit_id
     WHERE b.objekt_id = $1 AND ${BJ('b')} = CAST(substr($2, 1, 4) AS INTEGER) ORDER BY b.datum, b.id`, [objekt, von]);
-  const rech = await db.select(`SELECT r.id, r.bezahlt_am, COALESCE(r.bezahlt_am, r.datum) AS datum, r.betrag, r.buchungskonto_id, r.rechnungsnr, f.name AS firma, e.nummer AS einheit, r.notiz
+  const rech = await db.select(`SELECT r.id, r.bezahlt_am, COALESCE(r.bezahlt_am, r.datum) AS datum, r.betrag, r.buchungskonto_id, r.rechnungsnr, f.name AS firma, e.nummer AS einheit, r.einheit_id, r.notiz
     FROM rechnungen r LEFT JOIN firmen f ON f.id = r.firma_id LEFT JOIN einheiten e ON e.id = r.einheit_id
     WHERE r.objekt_id = $1 AND ${nurBezahlt ? 'r.bezahlt_am' : 'COALESCE(r.bezahlt_am, r.datum)'} BETWEEN $2 AND $3
       AND NOT EXISTS (SELECT 1 FROM buchungen b WHERE b.rechnung_id = r.id) ORDER BY 2`, [objekt, von, bis]);
@@ -54,7 +54,11 @@ async function belegLoeschen(b: Row) {
   else await buchungLoeschen(Number(b.id), { mitRechnung: true });   // Kosten verschwinden ganz aus der Abrechnung
 }
 
-function Belege({ liste, ausgabe, kontoId, objekt, jahr, onChanged }: { liste: Row[]; ausgabe: boolean; kontoId: number; objekt: number; jahr: number; onChanged?: (t: string) => void }) {
+/** Verteilung der Belege auf die Einheiten (nur in Abrechnungen mit Einheiten) */
+export type BelegVerteilung = { einheiten: Row[]; jeEinheit: (kontoId: number) => Record<number, number> };
+type VtBelege = { einheiten: Row[]; anteile: Record<number, number>[]; abrechnung: Record<number, number>; betrag: number };
+
+function Belege({ liste, ausgabe, kontoId, objekt, jahr, onChanged, vt }: { liste: Row[]; ausgabe: boolean; kontoId: number; objekt: number; jahr: number; onChanged?: (t: string) => void; vt?: VtBelege }) {
   const [e, setE] = useState<Entwurf | null>(null);
   const [fehler, setFehler] = useState('');
   const bearbeitbar = !!onChanged;
@@ -82,7 +86,7 @@ function Belege({ liste, ausgabe, kontoId, objekt, jahr, onChanged }: { liste: R
   const zeile = (b: Row | null) => e && (
     <tr className="beleg-edit" key={'e' + (b ? keyVon(b) : 'neu')}>
       <td><DatumFeld className="cell" value={e.datum} onChange={(x) => setE({ ...e, datum: x.target.value })} /></td>
-      <td colSpan={4}><input className="cell" style={{ width: '100%', textAlign: 'left' }} placeholder="Text, z. B. Korrektur oder Rechnung Hausmeister" value={e.text} onChange={(x) => setE({ ...e, text: x.target.value })} /></td>
+      <td colSpan={4 + (vt?.einheiten.length ?? 0)}><input className="cell" style={{ width: '100%', textAlign: 'left' }} placeholder="Text, z. B. Korrektur oder Rechnung Hausmeister" value={e.text} onChange={(x) => setE({ ...e, text: x.target.value })} /></td>
       <td className="num"><BetragFeld zelle className="cell" autoFocus style={{ width: 130 }} value={e.betrag} onChange={(x) => setE({ ...e, betrag: x.target.value })}
         onKeyDown={(x) => { if (x.key === 'Enter') speichern(b); if (x.key === 'Escape') setE(null); }} /></td>
       <td className="actions nowrap"><button className="icon-btn" title="Speichern" onClick={() => speichern(b)}><Check size={16} /></button>
@@ -91,16 +95,28 @@ function Belege({ liste, ausgabe, kontoId, objekt, jahr, onChanged }: { liste: R
   return (
     <>
       <table className="list belege">
-        <thead><tr><th>Datum</th><th>Unternehmen / Text</th><th>Rechnung</th><th>Einheit</th><th>Herkunft</th><th className="num">Betrag</th>{bearbeitbar && <th />}</tr></thead>
-        <tbody>{liste.map((b) => e?.key === keyVon(b) ? zeile(b) : (
+        <thead><tr><th>Datum</th><th>Unternehmen / Text</th><th>Rechnung</th><th>Einheit</th><th>Herkunft</th><th className="num">Betrag</th>
+          {vt?.einheiten.map((x) => <th key={x.id} className="num abr-anteil" title={`Anteil ${x.nummer}`}>{x.nummer}</th>)}{bearbeitbar && <th />}</tr></thead>
+        <tbody>{liste.map((b, i) => e?.key === keyVon(b) ? zeile(b) : (
           <tr key={keyVon(b)}><td>{datum(b.datum)}</td><td>{b.firma ? <b>{b.firma}</b> : null}{b.firma && b.text ? <span className="muted"> · </span> : null}{b.text}</td>
             <td>{b.rechnungsnr ?? '–'}</td><td>{b.einheit ?? 'alle'}</td><td className="muted small">{b.quelle}</td><td className="num">{eur(b.betrag)}</td>
+            {vt?.einheiten.map((x) => { const a = vt.anteile[i]?.[x.id] ?? 0; return <td key={x.id} className={'num abr-anteil' + (Math.abs(a) < 0.005 ? ' muted' : '')}>{Math.abs(a) < 0.005 ? '–' : eur(a)}</td>; })}
             {bearbeitbar && <td className="actions nowrap">
               <button className="icon-btn" title="Betrag ändern" onClick={() => { setFehler(''); setE({ key: keyVon(b), datum: b.datum, text: b.text ?? '', betrag: fmt(b.betrag) }); }}><Pencil size={15} /></button>
               <button className="icon-btn" title="Löschen" onClick={() => loeschen(b)}><Trash2 size={15} /></button></td>}
           </tr>))}
           {e?.key === 'neu' && zeile(null)}
         </tbody>
+        {vt && liste.length > 0 && (() => {
+          const summe = (id: number) => vt.anteile.reduce((a, x) => a + (x[id] ?? 0), 0);
+          return <tfoot>
+            <tr className="abr-anteil-summe"><td colSpan={5}>Ergibt je Einheit</td><td className="num">{eur(vt.betrag)}</td>
+              {vt.einheiten.map((x) => <td key={x.id} className="num abr-anteil"><b>{eur(summe(x.id))}</b></td>)}{bearbeitbar && <td />}</tr>
+            {vt.einheiten.some((x) => Math.abs(summe(x.id) - (vt.abrechnung[x.id] ?? 0)) >= 0.01 * vt.anteile.length + 0.01) &&
+              <tr><td colSpan={6} className="warn small">In der Abrechnung je Einheit</td>
+                {vt.einheiten.map((x) => <td key={x.id} className="num abr-anteil warn small">{eur(vt.abrechnung[x.id] ?? 0)}</td>)}{bearbeitbar && <td />}</tr>}
+          </tfoot>;
+        })()}
       </table>
       {fehler && <p className="error small">{fehler}</p>}
       {bearbeitbar && e?.key !== 'neu' && <button className="link" onClick={() => { setFehler(''); setE({ key: 'neu', datum: neuDatum, text: '', betrag: '' }); }}><Plus size={14} /> Betrag hinzufügen</button>}
@@ -108,12 +124,14 @@ function Belege({ liste, ausgabe, kontoId, objekt, jahr, onChanged }: { liste: R
   );
 }
 
-export function AbrechnungsUebersicht({ objekt, jahr, pos, schluessel, stand = 0, mitEinnahmen = true, titel, onChanged, nurUmlagefaehig = false, nurBezahlt = false, einnahmeKonten, einnahmenTitel }: {
+export function AbrechnungsUebersicht({ objekt, jahr, pos, schluessel, stand = 0, mitEinnahmen = true, titel, onChanged, nurUmlagefaehig = false, nurBezahlt = false, einnahmeKonten, einnahmenTitel, verteilung }: {
   objekt: number; jahr: number; pos: Position[]; schluessel: (p: Position) => ReactNode; stand?: number; mitEinnahmen?: boolean; titel?: string;
   /** Wird nach Ändern, Löschen oder Hinzufügen eines Betrags aufgerufen; ohne diese Funktion ist die Übersicht nur lesbar */
   onChanged?: (text: string) => void; nurUmlagefaehig?: boolean; nurBezahlt?: boolean;
   /** Nur diese Einnahmekonten zeigen (Nebenkostenabrechnung: nur Vorauszahlungen der Mieter, nie Hausgeld oder Rücklage der Eigentümer) */
   einnahmeKonten?: string[]; einnahmenTitel?: string;
+  /** Einheiten und Abrechnungsergebnis je Konto: aufgeklappte Belege zeigen dann den Anteil jeder Einheit */
+  verteilung?: BelegVerteilung;
 }) {
   const [neu, setNeu] = useState<{ konto: string; datum: string; text: string; betrag: string } | null>(null);
   const [neuFehler, setNeuFehler] = useState('');
@@ -135,6 +153,41 @@ export function AbrechnungsUebersicht({ objekt, jahr, pos, schluessel, stand = 0
       .then((r) => setEigeneJahr(new Set(r.map((x) => Number(x.buchungskonto_id)))));
   }, [objekt, jahr, stand, pos, intern]);
 
+  const vtFuer = (p: Position, liste: Row[]): VtBelege | undefined => {
+    if (!verteilung?.einheiten.length) return undefined;
+    const abrechnung = verteilung.jeEinheit(p.konto_id);
+    const je: Record<number, number> = Object.fromEntries(verteilung.einheiten.map((x) => [Number(x.id), abrechnung[x.id] ?? 0]));
+    return { einheiten: verteilung.einheiten, anteile: belegAnteile(p, liste as { betrag: number; einheit_id?: number | null }[], je), abrechnung: je, betrag: p.betrag };
+  };
+  // Abgleich: Summe je Konto in Einnahmen & Ausgaben, in der Abrechnung und tatsächlich auf die Einheiten verteilt
+  const abgleich = () => {
+    const out: { text: string; ok: boolean }[] = [];
+    for (const p of pos) {
+      const ea = belege.aus.filter((b) => b.buchungskonto_id === p.konto_id).reduce((a, b) => a + b.betrag, 0);
+      const je = verteilung?.jeEinheit(p.konto_id) ?? {};
+      const verteilt = Object.values(je).reduce((a, v) => a + v, 0);
+      const name = `${p.nummer} ${p.name}`;
+      if (Math.abs(ea - p.betrag) >= 0.01) out.push({ ok: p.gebucht !== undefined, text: p.gebucht !== undefined
+        ? `${name}: in Einnahmen & Ausgaben ${eur(ea)}, für die Abrechnung angepasst auf ${eur(p.betrag)}${p.grund ? ` (${p.grund})` : ''}.`
+        : `${name}: in Einnahmen & Ausgaben ${eur(ea)}, in der Abrechnung ${eur(p.betrag)}.` });
+      if (Math.abs(verteilt - p.betrag) >= 0.01) out.push({ ok: false, text: `${name}: ${eur(p.betrag)} in der Abrechnung, aber nur ${eur(verteilt)} auf die Einheiten verteilt. Es fehlen Werte (Verbrauch, Messdienst, Personen oder Betrag je Einheit).` });
+    }
+    for (const r of raus) {
+      const ea = belege.aus.filter((b) => b.buchungskonto_id === r.buchungskonto_id).reduce((a, b) => a + b.betrag, 0);
+      if (Math.abs(ea) >= 0.01) out.push({ ok: true, text: `${r.nummer} ${r.name}: ${eur(ea)} in Einnahmen & Ausgaben, bewusst aus der Abrechnung genommen.` });
+    }
+    return out;
+  };
+  const Abgleich = () => {
+    const l = abgleich();
+    const fehler = l.filter((x) => !x.ok);
+    return (
+      <div className={'abr-abgleich ' + (fehler.length ? 'warn' : 'ok')}>
+        <b>Abgleich mit Einnahmen &amp; Ausgaben</b>
+        {!l.length && <span> · Jedes Konto stimmt mit Einnahmen &amp; Ausgaben überein und ist vollständig auf die Einheiten verteilt.</span>}
+        {l.length > 0 && <ul>{l.map((x, i) => <li key={i} className={x.ok ? 'muted' : ''}>{x.text}</li>)}</ul>}
+      </div>);
+  };
   const umschalten = (k: string) => { const n = new Set(offen); if (n.has(k)) n.delete(k); else n.add(k); setOffen(n); };
   const einErlaubt = (id: number) => !einnahmeKonten || einnahmeKonten.includes(String(konten.find((x) => x.id === id)?.nummer ?? ''));
   const einnahmen = [...new Set(belege.ein.map((b) => b.buchungskonto_id))].filter(einErlaubt).map((id) => {
@@ -255,7 +308,7 @@ export function AbrechnungsUebersicht({ objekt, jahr, pos, schluessel, stand = 0
                     <p className="muted small" style={{ flexBasis: '100%', margin: 0 }}>Gebucht sind {eur(p.gebucht ?? p.betrag)}. Der neue Betrag gilt nur für die Abrechnung {jahr} dieser Liegenschaft. Die Buchhaltung bleibt unverändert.</p>
                     {anp.fehler && <p className="error small">{anp.fehler}</p>}
                   </div></td></tr>}
-                {offen.has(k) && <tr className="belege-zeile"><td /><td colSpan={5}><Belege liste={liste} ausgabe kontoId={p.konto_id} objekt={objekt} jahr={jahr} onChanged={geaendert} />
+                {offen.has(k) && <tr className="belege-zeile"><td /><td colSpan={5}><Belege liste={liste} ausgabe kontoId={p.konto_id} objekt={objekt} jahr={jahr} onChanged={geaendert} vt={vtFuer(p, liste)} />
                   {Math.abs(liste.reduce((a, b) => a + b.betrag, 0) - (p.gebucht ?? p.betrag)) > 0.005 && <p className="warn small">Die Belege ergeben {eur(liste.reduce((a, b) => a + b.betrag, 0))}, gebucht sind {eur(p.gebucht ?? p.betrag)}.</p>}</td></tr>}
               </Fragment>);
           })}
@@ -268,6 +321,7 @@ export function AbrechnungsUebersicht({ objekt, jahr, pos, schluessel, stand = 0
         {raus.map((r) => <div key={r.buchungskonto_id} className="abr-raus-zeile"><span>{r.nummer} {r.name}</span><span className="grow" />
           {geaendert && <button className="link" onClick={() => zurueckholen(r)}><Undo2 size={14} /> Wieder aufnehmen</button>}</div>)}
       </div>}
+      {verteilung && pos.length > 0 && <Abgleich />}
       {mitEinnahmen && <>
         <h3 className="sec">{einnahmenTitel ?? 'Einnahmen'}</h3>
         {einnahmen.length === 0 ? <p className="muted">{einnahmeKonten ? `Keine Vorauszahlungen von Mietern im Jahr ${jahr} bei uns gebucht.` : `Keine Einnahmen im Jahr ${jahr} gebucht.`}</p> : (

@@ -242,3 +242,35 @@ export function nichtVerteilteKosten(pos: Position[], erg: Ergebnis[]): { name: 
     return { name: `${p.nummer} ${p.name}`, rest: Math.round((p.betrag - verteilt) * 100) / 100 };
   }).filter((x) => Math.abs(x.rest) >= 0.01);
 }
+
+/** Schlüssel, bei denen die Einheit an der Buchung nicht zählt (ganzer Betrag nach Werten je Einheit) */
+const OHNE_DIREKT: Schluessel[] = ['Summe', 'Messdienst', 'Direkt'];
+
+/**
+ * Verteilung einzelner Belege (Buchungen bzw. Rechnungen) eines Kontos auf die Einheiten, passend zur Abrechnung:
+ * Einer Einheit zugeordnete Belege gehen ganz an diese Einheit, Belege für alle Einheiten anteilig nach dem Schlüssel,
+ * also im Verhältnis, in dem der nicht direkt zugeordnete Rest in der Abrechnung verteilt wurde.
+ * `jeEinheit` ist das Ergebnis der Abrechnung für das Konto (Summe je Einheit über alle Nutzer).
+ * Bei angepasstem Gesamtbetrag werden die Belege im gleichen Verhältnis umgerechnet.
+ */
+export function belegAnteile(p: Position, belege: { betrag: number; einheit_id?: number | null }[], jeEinheit: Record<number, number>): Record<number, number>[] {
+  const gebucht = p.gebucht ?? belege.reduce((a, b) => a + Number(b.betrag), 0);
+  const f = p.gebucht !== undefined ? (Math.abs(gebucht) >= 0.005 ? p.betrag / gebucht : 0) : 1;
+  const mitDirekt = !OHNE_DIREKT.includes(p.schluessel);
+  const direkt: Record<number, number> = {};
+  if (mitDirekt) for (const b of belege) if (b.einheit_id && jeEinheit[b.einheit_id] !== undefined) direkt[b.einheit_id] = (direkt[b.einheit_id] ?? 0) + Number(b.betrag) * f;
+  // Rest je Einheit = Abrechnungsanteil ohne die direkt zugeordneten Belege
+  const rest: Record<number, number> = {};
+  for (const [k, v] of Object.entries(jeEinheit)) rest[Number(k)] = v - (direkt[Number(k)] ?? 0);
+  const restSumme = Object.values(rest).reduce((a, v) => a + v, 0);
+  const alleSumme = belege.filter((b) => !(mitDirekt && b.einheit_id && jeEinheit[b.einheit_id] !== undefined)).reduce((a, b) => a + Number(b.betrag) * f, 0);
+  return belege.map((b) => {
+    const betrag = Number(b.betrag) * f;
+    if (mitDirekt && b.einheit_id && jeEinheit[b.einheit_id] !== undefined) return { [b.einheit_id]: Math.round(betrag * 100) / 100 };
+    // Anteil am Rest: Belegbetrag / alle „für alle“-Belege × Rest der Einheit
+    const basis = Math.abs(alleSumme) >= 0.005 ? alleSumme : restSumme;
+    const out: Record<number, number> = {};
+    for (const [k, v] of Object.entries(rest)) out[Number(k)] = Math.abs(basis) >= 0.005 ? Math.round((betrag * v / basis) * 100) / 100 : 0;
+    return out;
+  });
+}

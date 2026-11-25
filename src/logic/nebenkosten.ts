@@ -60,3 +60,29 @@ export async function nkBerechnen(objektId: number, jahr: number): Promise<{ ein
   });
   return { einheiten, positionen, erg };
 }
+
+/**
+ * Wonach eine Buchung für „Alle Einheiten“ in der Abrechnung verteilt wird, je Buchungskonto (für die Tabelle in Einnahmen & Ausgaben).
+ * Gleiche Regeln wie in der Abrechnung: WEG nach MEA, solange kein eigener Schlüssel gewählt ist; Heizkosten nach Messdienst,
+ * sobald Ergebnisse eingetragen sind. Mietverwaltung: nur umlagefähige Konten werden auf die Mieter verteilt.
+ * Konten, die nicht verteilt werden (Einnahmen, Rücklage, Vorjahresabrechnung, ohne EÜR-Häkchen), fehlen.
+ */
+export async function tabellenSchluessel(objektId: number, jahr: number): Promise<Record<number, string>> {
+  const o = (await db.select('SELECT verwaltungsart FROM objekte WHERE id = $1', [objektId]))[0];
+  if (!o) return {};
+  const weg = o.verwaltungsart === 'WEG';
+  const konten = await db.select(`SELECT k.id, k.nummer, k.umlagefaehig, k.schluessel, COALESCE(sj.schluessel, s.schluessel) AS eigen FROM buchungskonten k
+    LEFT JOIN objekt_schluessel s ON s.buchungskonto_id = k.id AND s.objekt_id = $1
+    LEFT JOIN objekt_schluessel_jahr sj ON sj.buchungskonto_id = k.id AND sj.objekt_id = $1 AND sj.jahr = $2
+    WHERE k.art IN ('Aufwand', 'Ertrag') AND COALESCE(k.euer, 1) = 1`, [objektId, jahr]);
+  const messdienst = Number((await db.select(`SELECT COUNT(*) AS n FROM heizkosten_ergebnisse h JOIN einheiten e ON e.id = h.einheit_id
+    WHERE e.objekt_id = $1 AND h.jahr = $2`, [objektId, jahr]))[0]?.n ?? 0) > 0;
+  const out: Record<number, string> = {};
+  for (const k of konten) {
+    if (weg && ['1260', '1261', '1262', '1601', '1602'].includes(String(k.nummer))) continue;
+    if (!weg && !Number(k.umlagefaehig)) continue;
+    const s = k.nummer === HEIZ_KONTO && messdienst ? 'Messdienst' : (k.eigen ?? (weg ? 'MEA' : (k.schluessel ?? 'Fläche')));
+    out[k.id] = s === 'Summe' ? 'Manuell' : s === 'Messdienst' ? 'lt. Messdienst' : s;
+  }
+  return out;
+}

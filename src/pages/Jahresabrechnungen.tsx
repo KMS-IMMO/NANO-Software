@@ -354,6 +354,7 @@ export function WegAbrechnungPage() {
         ergebnis={() => ({ ausgaben: r2(pos.reduce((a, p) => a + p.betrag, 0)), spitzen: r2(erg.reduce((a, r) => a + r.spitze, 0)), einheiten: erg.length })}
         onStatus={(a, t) => { setZu(a); if (t) setInfo(t); }} />}
       {objekt !== '' && <AbrechnungsUebersicht objekt={Number(objekt)} jahr={jahr} pos={pos} stand={stand} nurBezahlt titel={`Gesamtabrechnung ${jahr}: Übersicht der Buchungskonten`}
+        verteilung={{ einheiten, jeEinheit: anteile }}
         onChanged={zu ? undefined : (t) => { setInfo(t); setStand(stand + 1); rechnen(); }}
         schluessel={(p) => zu ? <>{schluesselText(p.schluessel)}</> : <SchluesselWahl objekt={Number(objekt)} jahr={jahr} p={p} anteile={anteile} onChanged={(t) => { setInfo(t); setStand(stand + 1); rechnen(); }} />} />}
       {objekt !== '' && <fieldset className="gesperrt" disabled={!!zu}><WerteJeEinheit key={`${objekt}-${jahr}-${stand}`} objekt={Number(objekt)} jahr={jahr} einheiten={einheiten}
