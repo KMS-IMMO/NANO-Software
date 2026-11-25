@@ -63,7 +63,6 @@ function Kopf({ titel, text, objekte, objekt, setObjekt, jahr, setJahr, children
 /* =================== WEG-Jahresabrechnung =================== */
 
 interface Einzel extends Ergebnis { soll: number; ist: number; ruecklageSoll: number; vorschuss: number; spitze: number; rueckstand: number;
-  entnahme: number;   // Anteil an der Entnahme aus der Erhaltungsrücklage (Konto 1261), mindert die Abrechnungsspitze
   mieter?: { name: string; kosten: number; vz: number; saldo: number; ueberEigentuemer: boolean } }
 
 export function WegAbrechnungPage() {
@@ -71,7 +70,6 @@ export function WegAbrechnungPage() {
   const [jahr, setJahr] = useState(new Date().getFullYear() - 1);
   const [pos, setPos] = useState<Position[]>([]);
   const [erg, setErg] = useState<Einzel[]>([]);
-  const [entnahme, setEntnahme] = useState(0);
   const [verm, setVerm] = useState<Row>({});
   const [info, setInfo] = useState('');
   const [einheiten, setEinheiten] = useState<Row[]>([]);
@@ -118,20 +116,6 @@ export function WegAbrechnungPage() {
       WHERE art IN ('Hausgeld', 'Rücklage') AND vertrag_id IS NULL AND substr(monat, 1, 4) = $1 GROUP BY person_id, einheit_id, monat, art`, [String(jahr)]);
     // Vermietete Einheiten: Nebenkostenabrechnung der Mieter (umlagefähige Kosten gegen deren Vorauszahlungen)
     const nk = (await nkBerechnen(Number(objekt), jahr)).erg.filter((x) => x.nutzer.art === 'Mieter');
-    // Entnahme aus der Erhaltungsrücklage (Konto 1261): Geld, das im Jahr aus der Rücklage in die Bewirtschaftung geflossen ist
-    // (z. B. Übertrag vom Rücklagenkonto für eine beschlossene Instandsetzung). Die damit bezahlten Kosten stehen ganz normal
-    // in der Abrechnung; die Entnahme wird nach MEA gegengerechnet, sonst zahlen die Eigentümer die Maßnahme ein zweites Mal.
-    // Nur Zuflüsse zählen: ein nachgebuchter Abgang (z. B. Kontoführungsentgelt) ist kein Geld für die Bewirtschaftung.
-    const ent = (await db.select(`SELECT k.id, COALESCE(SUM(b.betrag), 0) AS x FROM buchungskonten k LEFT JOIN buchungen b ON b.buchungskonto_id = k.id
-        AND b.objekt_id = $1 AND b.betrag > 0 AND b.datum BETWEEN $2 AND $3 WHERE k.nummer = '1261' GROUP BY k.id`, [objekt, `${jahr}-01-01`, `${jahr}-12-31`]))[0];
-    const entGesamt = r2(Number(ent?.x) || 0);
-    setEntnahme(entGesamt);
-    const entAnteil = new Map<string, number>();
-    if (entGesamt > 0.005) {
-      const entPos: Position = { konto_id: Number(ent.id), nummer: '1261', name: 'Entnahme aus der Erhaltungsrücklage', gruppe: 'Rücklagen',
-        umlagefaehig: false, hdl: false, hwl: false, betrag: -entGesamt, schluessel: 'MEA' };
-      for (const r of verteilen(jahr, einheiten, nutzer, [entPos], { verbrauch, messdienst })) entAnteil.set(r.nutzer.key, r2(-r.summe));
-    }
     const res = verteilen(jahr, einheiten, nutzer, p, { verbrauch, messdienst }).map((r): Einzel => {
       const x = hg.find((y) => y.person_id === r.nutzer.person_id && y.einheit_id === r.nutzer.einheit_id) ?? { soll: 0, ist: 0 };
       // Rücklagenanteil im Hausgeld (Soll) für die Monate des Eigentümers
@@ -150,8 +134,7 @@ export function WegAbrechnungPage() {
       const m = nk.filter((y) => y.nutzer.einheit_id === r.nutzer.einheit_id);
       const mieter = m.length ? { name: m.map((y) => y.nutzer.name).join(', '), kosten: r2(m.reduce((a, y) => a + y.summe, 0)), vz: r2(m.reduce((a, y) => a + y.vz, 0)),
         saldo: r2(m.reduce((a, y) => a + y.saldo, 0)), ueberEigentuemer: m.some((y) => y.ueberEigentuemer) } : undefined;
-      const entnahme = entAnteil.get(r.nutzer.key) ?? 0;
-      return { ...r, mieter, soll: r2(Number(x.soll)), ist: r2(Number(x.ist)), ruecklageSoll: r2(rs), vorschuss, entnahme, spitze: r2(r.summe - entnahme - vorschuss), rueckstand: r2(Number(x.soll) - Number(x.ist)) };
+      return { ...r, mieter, soll: r2(Number(x.soll)), ist: r2(Number(x.ist)), ruecklageSoll: r2(rs), vorschuss, spitze: r2(r.summe - vorschuss), rueckstand: r2(Number(x.soll) - Number(x.ist)) };
     });
     setErg(res);
     // Vermögensbericht
@@ -246,9 +229,6 @@ export function WegAbrechnungPage() {
     if (pN.length) g.tabelle(['Konto', 'Nicht umlagefähige Kosten', 'Schlüssel', 'Betrag'], pN.map((p) => [p.nummer, p.name, p.schluessel, geld(p.betrag)]),
       [['', 'Summe nicht umlagefähige Kosten', '', geld(sum(pN))]], 3);
     g.tabelle(['', 'Betrag'], [['Umlagefähige Kosten', geld(sum(pU))], ['Nicht umlagefähige Kosten', geld(sum(pN))]], [['Summe Ausgaben gesamt', geld(sum(pos))]]);
-    if (entnahme > 0.005) g.tabelle(['', 'Betrag'], [['Summe Ausgaben gesamt', geld(sum(pos))],
-      [`abzüglich Entnahme aus der Erhaltungsrücklage ${jahr} (Konto 1261, verteilt nach MEA)`, geld(-entnahme)]],
-      [['Von den Eigentümern zu tragen', geld(sum(pos) - entnahme)]]);
     const einZ: Row[] = verm.einnahmen ?? [];
     g.tabelle(['Konto', `Einnahmen ${jahr} (Zahlungseingänge)`, 'Betrag'], [
       ...einZ.map((x) => [x.nummer, x.name, geld(Number(x.betrag))]),
@@ -266,9 +246,7 @@ export function WegAbrechnungPage() {
       g.absatz(`${k.name}: ${teile.join(' ')}`, 3);
     }
     const anteil = (r: typeof erg[number], u: boolean) => r.zeilen.filter((z) => z.pos.umlagefaehig === u).reduce((a, z) => a + z.betrag, 0);
-    if (entnahme > 0.005) g.tabelle(['Einheit', 'Eigentümer', 'umlagefähig', 'nicht umlagef.', 'Kostenanteil', 'Entnahme Rückl.', 'Vorschüsse', 'Spitze'],
-      erg.map((r) => [r.einheit.nummer, r.nutzer.name, geld(anteil(r, true)), geld(anteil(r, false)), geld(r.summe), geld(-r.entnahme), geld(r.vorschuss), saldoZelle(r.spitze, geld(r.spitze))]), undefined, 2);
-    else g.tabelle(['Einheit', 'Eigentümer', 'umlagefähig', 'nicht umlagef.', 'Kostenanteil', 'Vorschüsse', 'Spitze'],
+    g.tabelle(['Einheit', 'Eigentümer', 'umlagefähig', 'nicht umlagef.', 'Kostenanteil', 'Vorschüsse', 'Spitze'],
       erg.map((r) => [r.einheit.nummer, r.nutzer.name, geld(anteil(r, true)), geld(anteil(r, false)), geld(r.summe), geld(r.vorschuss), saldoZelle(r.spitze, geld(r.spitze))]), undefined, 2);
     g.betreff(`Vermögensbericht zum 31.12.${jahr}`);
     g.tabelle(['Position', 'Betrag'], [
@@ -310,8 +288,6 @@ export function WegAbrechnungPage() {
       }
       b.tabelle(['Ergebnis', 'Betrag'], [
         ['Ihr Kostenanteil gesamt', geld(r.summe)],
-        ...(r.entnahme > 0.005 ? [[`abzüglich Ihr Anteil an der Entnahme aus der Erhaltungsrücklage ${jahr} (nach MEA)`, geld(-r.entnahme)],
-          ['Ihr Kostenanteil nach Entnahme', geld(r.summe - r.entnahme)]] : []),
         ['Hausgeld-Vorschüsse laut Wirtschaftsplan (Soll)', geld(r.soll)],
         ['abzüglich Zuführung Erhaltungsrücklage', geld(-r.ruecklageSoll)],
         ['Vorschüsse für Bewirtschaftung (ohne Rücklage)', geld(r.vorschuss)],
@@ -384,15 +360,12 @@ export function WegAbrechnungPage() {
         konten={pos.filter((p) => p.schluessel === 'Summe' || p.schluessel === 'Verbrauch')} onSaved={() => { setInfo('Eingaben gespeichert und neu berechnet.'); setStand(stand + 1); rechnen(); }} /></fieldset>}
       <section className="card">
         <div className="card-head"><h2>Einzelabrechnungen</h2></div>
-        {entnahme > 0.005 && <p className="muted small">Entnahme aus der Erhaltungsrücklage {jahr} (Konto 1261): {eur(entnahme)}. Die damit bezahlten Kosten stehen in der Abrechnung,
-          die Entnahme wird nach MEA gegengerechnet und mindert die Abrechnungsspitze jedes Eigentümers.</p>}
         <table className="list">
-          <thead><tr><th>Einheit</th><th>Eigentümer</th><th>Zeitraum</th><th className="num">umlagefähig</th><th className="num">nicht umlagefähig</th><th className="num">Kostenanteil</th>{entnahme > 0.005 && <th className="num">abzgl. Entnahme Rücklage</th>}<th className="num">Hausgeld-Soll</th><th className="num">abzgl. Rücklage</th><th className="num">Vorschüsse (ohne Rücklage)</th><th className="num">Abrechnungsspitze</th><th className="num">Rückstand Hausgeld</th><th>Mieter (NK-Abrechnung)</th></tr></thead>
+          <thead><tr><th>Einheit</th><th>Eigentümer</th><th>Zeitraum</th><th className="num">umlagefähig</th><th className="num">nicht umlagefähig</th><th className="num">Kostenanteil</th><th className="num">Hausgeld-Soll</th><th className="num">abzgl. Rücklage</th><th className="num">Vorschüsse (ohne Rücklage)</th><th className="num">Abrechnungsspitze</th><th className="num">Rückstand Hausgeld</th><th>Mieter (NK-Abrechnung)</th></tr></thead>
           <tbody>{erg.map((r) => (
             <tr key={r.nutzer.key}>
               <td>{r.einheit.nummer}</td><td>{r.nutzer.name}</td><td className="small">{datum(r.nutzer.von)} – {datum(r.nutzer.bis)}</td>
               <td className="num">{eur(r.zeilen.filter((z) => z.pos.umlagefaehig).reduce((a, z) => a + z.betrag, 0))}</td><td className="num">{eur(r.zeilen.filter((z) => !z.pos.umlagefaehig).reduce((a, z) => a + z.betrag, 0))}</td><td className="num"><b>{eur(r.summe)}</b></td>
-              {entnahme > 0.005 && <td className="num">{eur(-r.entnahme)}</td>}
               <td className="num">{eur(r.soll)}</td><td className="num">{eur(-r.ruecklageSoll)}</td><td className="num">{eur(r.vorschuss)}</td>
               <td className={'num ' + (r.spitze > 0 ? 'neg' : 'pos')}><b>{r.spitze > 0 ? 'Nachschuss ' : 'Erstattung '}{eur(Math.abs(r.spitze))}</b></td>
               <td className={'num ' + (r.rueckstand > 0.005 ? 'neg' : '')}>{eur(r.rueckstand)}</td>
