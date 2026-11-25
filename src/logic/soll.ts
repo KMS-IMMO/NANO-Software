@@ -1,7 +1,8 @@
 // Soll-Stellung: erzeugt die monatlichen Forderungen (offene Posten)
 // für Mietverträge (inkl. Staffel-/Index-/Erhöhungen und USt) und für Hausgeld (WEG).
 import { db, type Row } from '../db';
-import { gesperrt, sperrText } from './abschluss';
+import { buchungGesperrt, gesperrt, sperrText } from './abschluss';
+import { ablegen, artVon, bezeichnungVon, erfassen } from '../db/papierkorb';
 
 export function monate(von: string, bis: string): string[] {
   const out: string[] = [];
@@ -227,3 +228,37 @@ export function postenStatus(r: Row, mahnenAbTage = 14, heute = new Date().toISO
 }
 
 export const mahnenAbTage = async () => Number((await db.select(`SELECT wert FROM einstellungen WHERE schluessel = 'mahnen_ab_tage'`))[0]?.wert) || 14;
+
+/**
+ * Offene Posten löschen (in den Papierkorb). Darauf gebuchte Zahlungen bleiben in der Buchhaltung, werden aber vom Posten gelöst
+ * (sollstellung_id leer). Bankzahlungen erscheinen danach unter „Zahlungen ohne Posten“ und lassen sich neu zuordnen.
+ * Beim Wiederherstellen aus dem Papierkorb werden sie wieder verbunden, solange sie noch keinem anderen Posten gehören.
+ * Posten mit Zahlungen in einem abgeschlossenen Jahr bleiben stehen. Rückgabe: gelöscht, gelöste Zahlungen, gesperrt (mit Grund).
+ */
+export async function postenLoeschen(ids: number[]): Promise<{ geloescht: number; geloest: number; gesperrt: { id: number; grund: string }[] }> {
+  const l = [...new Set(ids.map(Number).filter((i) => Number.isFinite(i)))];
+  const res = { geloescht: 0, geloest: 0, gesperrt: [] as { id: number; grund: string }[] };
+  if (!l.length) return res;
+  const buchungen = await db.select(`SELECT id, sollstellung_id, objekt_id, datum, jahr FROM buchungen WHERE sollstellung_id IN (${l.join(',')})`);
+  const frei: number[] = [];
+  for (const id of l) {
+    let grund: string | null = null;
+    for (const b of buchungen.filter((x) => Number(x.sollstellung_id) === id)) if ((grund = await buchungGesperrt(b.objekt_id, b.datum, b.jahr))) break;
+    if (grund) res.gesperrt.push({ id, grund }); else frei.push(id);
+  }
+  if (!frei.length) return res;
+  const inhalt = await erfassen([{ t: 'sollstellungen', where: `id IN (${frei.join(',')})` }]);
+  for (const id of frei) {
+    const b = buchungen.filter((x) => Number(x.sollstellung_id) === id).map((x) => Number(x.id));
+    if (b.length) inhalt.verweise.push({ t: 'buchungen', spalte: 'sollstellung_id', wert: id, ids: b });
+    res.geloest += b.length;
+  }
+  await db.execute(`UPDATE buchungen SET sollstellung_id = NULL WHERE sollstellung_id IN (${frei.join(',')})`);
+  await db.execute(`DELETE FROM sollstellungen WHERE id IN (${frei.join(',')})`);
+  const erste = inhalt.gruppen[0]?.rows ?? [];
+  const name = frei.length === 1 ? `${erste[0]?.art ?? ''} ${String(erste[0]?.monat ?? '').slice(5, 7)}/${String(erste[0]?.monat ?? '').slice(0, 4)}`.trim()
+    : erste.slice(0, 3).map(bezeichnungVon).filter(Boolean).join('; ');
+  await ablegen(artVon('sollstellungen') + (frei.length > 1 ? ` (${frei.length})` : ''), name, inhalt);
+  res.geloescht = frei.length;
+  return res;
+}
