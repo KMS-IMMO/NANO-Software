@@ -71,6 +71,12 @@ try {
     const okN = (r.aus.match(/^OK /gm) ?? []).length, fail = r.aus.split('\n').filter((z) => /^(FAIL|FEHL)/.test(z));
     melde('Bankkonten bearbeiten und löschen (Papierkorb, Buchungen behalten)', r.code === 0 && okN > 0 && !fail.length, `${okN} Prüfungen grün${fail.length ? `, ${fail.length} rot: ${fail.join(' | ').slice(0, 300)}` : ''}${r.code ? `, Abbruch (Code ${r.code})` : ''}`);
   }
+  // 6) Manuelle Verteilung mit negativer Gesamtsumme (Gutschrift/Erstattung)
+  {
+    const r = await lauf('verteilung-negativ.cjs'); writeFileSync(join(AUS, 'verteilung-negativ.txt'), r.aus);
+    const okN = (r.aus.match(/^OK /gm) ?? []).length, fail = r.aus.split('\n').filter((z) => /^(FAIL|FEHL)/.test(z));
+    melde('Manuelle Verteilung mit negativen Beträgen (Gutschrift)', r.code === 0 && okN > 0 && !fail.length, `${okN} Prüfungen grün${fail.length ? `, ${fail.length} rot: ${fail.join(' | ').slice(0, 300)}` : ''}${r.code ? `, Abbruch (Code ${r.code})` : ''}`);
+  }
 } catch { /* Ergebnis steht unten */ }
 const rot = ergebnis.filter((e) => !e.gut);
 const text = `Komplettest ${new Date().toLocaleString('de-DE')}: ${rot.length ? `${rot.length} von ${ergebnis.length} ROT` : `alle ${ergebnis.length} Teile grün`}\n` + ergebnis.map((e) => `${e.gut ? 'OK  ' : 'FAIL'} ${e.name}${e.info ? ' – ' + e.info : ''}`).join('\n') + '\n';
