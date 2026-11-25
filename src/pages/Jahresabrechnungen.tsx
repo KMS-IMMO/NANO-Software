@@ -305,7 +305,7 @@ export function WegAbrechnungPage() {
         const z = r.zeilen.filter((x) => x.pos.umlagefaehig === filter && Math.abs(x.betrag) > 0.004);
         if (!z.length) continue;
         b.absatz(titel, 1);
-        b.tabelle(['Kostenart', 'Gesamt', 'Schlüssel', 'Ihr Anteil'], z.map((x) => [x.pos.name, geld(x.pos.betrag), x.pos.schluessel, geld(x.betrag)]),
+        b.tabelle(['Kostenart', 'Gesamt', 'Schlüssel', 'Ihr Anteil'], z.map((x) => [x.pos.name, geld(x.pos.betrag), x.pos.schluessel + (x.direkt ? ` + direkt ${geld(x.direkt)}` : ''), geld(x.betrag)]),
           [['Zwischensumme', '', '', geld(z.reduce((a, x) => a + x.betrag, 0))]], 1);
       }
       b.tabelle(['Ergebnis', 'Betrag'], [
