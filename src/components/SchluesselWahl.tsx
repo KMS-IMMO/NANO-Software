@@ -47,7 +47,7 @@ export function SchluesselWahl({ objekt, jahr, p, anteile, onChanged }: {
       const ids = einheiten.map((e) => e.id);
       const bet = ids.map((id) => r2(a[id] ?? 0));
       const diff = r2(p.betrag - bet.reduce((s, b) => s + b, 0));
-      if (ids.length && Math.abs(diff) > 0 && bet.some((b) => b)) { const i = bet.reduce((m, x, j) => (x > bet[m] ? j : m), 0); bet[i] = r2(bet[i] + diff); }
+      if (ids.length && Math.abs(diff) > 0 && bet.some((b) => b)) { const i = bet.reduce((m, x, j) => (Math.abs(x) > Math.abs(bet[m]) ? j : m), 0); bet[i] = r2(bet[i] + diff); }
       ids.forEach((id, i) => { if (bet[i]) werte[id] = fmt(bet[i]); });
     }
     const me = (await db.select('SELECT masseinheit FROM objekt_schluessel_jahr WHERE objekt_id = $1 AND jahr = $2 AND buchungskonto_id = $3', [objekt, jahr, p.konto_id]))[0]?.masseinheit;
@@ -67,7 +67,10 @@ export function SchluesselWahl({ objekt, jahr, p, anteile, onChanged }: {
   const inEuro = f?.art === 'Verbrauch' && f.masseinheit === '€';
   const verteilt = f ? r2(f.einheiten.reduce((s, e) => s + zahl(f.werte[e.id] ?? ''), 0) * 1000) / 1000 : 0;
   const gesamt = !f ? 0 : inEuro ? verteilt : zahl(f.gesamt);
-  const passt = f ? gesamt > 0 && Math.abs(verteilt - gesamt) < (f.art === 'Summe' ? 0.005 : 0.0005) : false;
+  // Manuell (Summe) darf auch negativ sein (Gutschrift, Erstattung, Rückzahlung einer Sonderumlage); Verbräuche nur positiv
+  const passt = f ? (f.art === 'Summe' ? Math.abs(gesamt) >= 0.005 : gesamt > 0) && Math.abs(verteilt - gesamt) < (f.art === 'Summe' ? 0.005 : 0.0005) : false;
+  // „Es fehlen“, solange der Betrag noch nicht erreicht ist – bei negativer Gesamtsumme in Richtung minus
+  const fehlt = gesamt < 0 ? verteilt > gesamt : verteilt < gesamt;
   const kosten = (e: Row) => (!f ? 0 : f.art === 'Summe' ? zahl(f.werte[e.id] ?? '') : gesamt ? p.betrag * zahl(f.werte[e.id] ?? '') / gesamt : 0);
 
   async function uebernehmen() {
@@ -120,8 +123,8 @@ export function SchluesselWahl({ objekt, jahr, p, anteile, onChanged }: {
             <p className={passt ? 'info' : 'warn'}>{inEuro ? (verteilt > 0 ? (Math.abs(verteilt - p.betrag) < 0.005 ? 'Die Beträge ergeben genau die Gesamtkosten.'
                 : `Die Beträge ergeben ${eur(verteilt)}, die Gesamtkosten sind ${eur(p.betrag)}. Verteilt wird im Verhältnis der Beträge.`) : 'Bitte die Beträge je Einheit in € eintragen.')
               : passt ? 'Gesamtwert und Verteilung stimmen überein.'
-              : f.art === 'Summe' ? `Verteilt ${eur(verteilt)} von ${eur(gesamt)}. ${verteilt < gesamt ? 'Es fehlen' : 'Zu viel verteilt:'} ${eur(Math.abs(r2(gesamt - verteilt)))}.`
-              : gesamt ? `Verteilt ${fmt(verteilt, 3).replace(/,?0+$/, '')} von ${fmt(gesamt, 3).replace(/,?0+$/, '')}${f.masseinheit ? ' ' + f.masseinheit : ''}. ${verteilt < gesamt ? 'Es fehlen' : 'Zu viel verteilt:'} ${fmt(Math.abs(r2((gesamt - verteilt) * 1000) / 1000), 3).replace(/,?0+$/, '')}${f.masseinheit ? ' ' + f.masseinheit : ''}.`
+              : f.art === 'Summe' ? `Verteilt ${eur(verteilt)} von ${eur(gesamt)}. ${fehlt ? 'Es fehlen' : 'Zu viel verteilt:'} ${eur(Math.abs(r2(gesamt - verteilt)))}.`
+              : gesamt ? `Verteilt ${fmt(verteilt, 3).replace(/,?0+$/, '')} von ${fmt(gesamt, 3).replace(/,?0+$/, '')}${f.masseinheit ? ' ' + f.masseinheit : ''}. ${fehlt ? 'Es fehlen' : 'Zu viel verteilt:'} ${fmt(Math.abs(r2((gesamt - verteilt) * 1000) / 1000), 3).replace(/,?0+$/, '')}${f.masseinheit ? ' ' + f.masseinheit : ''}.`
               : 'Bitte zuerst den Gesamtverbrauch eintragen.'}</p>
             {fehler && <p className="error">{fehler}</p>}
             <div className="row end"><span className="grow" /><button onClick={() => setF(null)}>Abbrechen</button>
