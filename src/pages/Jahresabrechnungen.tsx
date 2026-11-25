@@ -32,6 +32,16 @@ const VORJAHRESABRECHNUNG = ['1601', '1602'];
 const HEIZ_KONTO = '1200';
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
+/** Rücklagenkonten (1260/1261/1262) und ihre Buchungen im Jahr, für Block 4 der Abrechnung */
+async function rlKonten(objekt: number, jahr: number): Promise<Row[]> {
+  return db.select(`SELECT k.nummer, k.name, COALESCE(SUM(b.betrag), 0) AS betrag, COUNT(b.id) AS anzahl FROM buchungskonten k
+      LEFT JOIN buchungen b ON b.buchungskonto_id = k.id AND b.objekt_id = $1 AND b.datum BETWEEN $2 AND $3
+    WHERE k.nummer IN ('1260', '1261', '1262') GROUP BY k.id ORDER BY k.nummer`, [objekt, `${jahr}-01-01`, `${jahr}-12-31`]);
+}
+const RL_TEXT: Record<string, string> = { '1260': 'Sonderzuführungen', '1261': 'Entnahmen', '1262': 'Zinserträge' };
+/** § 35a je Konto: Art (Abs. 1/2/3) und eingegebene Arbeitskosten */
+const art35a = (p: Position) => p.hbg ? 'Minijob (Abs. 1)' : p.hdl ? 'Haushaltsnahe Dienstleistung (Abs. 2)' : p.hwl ? 'Handwerkerleistung (Abs. 3)' : '';
+
 function useObjekte(art: 'WEG' | 'Mietverwaltung') {
   const fix = useObjektKontext();
   const [objekte, setObjekte] = useState<Row[]>([]);
@@ -203,7 +213,7 @@ export function WegAbrechnungPage() {
     const einSumme = r2(einnahmen.reduce((a, x) => a + Number(x.betrag), 0));
     setOhnePosten(await zahlungenOhnePosten(Number(objekt), jahr));
     setSpaet(await spaeteHandzahlungen(Number(objekt), jahr));
-    setVerm({ einnahmen, einSumme, einOffen: zahlungsEin - einSumme > 0.005 ? r2(zahlungsEin - einSumme) : 0, entwicklung, ruecklage: rl.bestand, ruecklageIst: rl.bestandIst, ruecklageOffen: rl.offen, zufIstJahr: rl.zufuehrungIst, zufJahr, sonderJahr: rl.sonder, entnahmeJahr: rl.entnahme, zinsJahr: rl.zinsen, banken,
+    setVerm({ einnahmen, einSumme, einOffen: zahlungsEin - einSumme > 0.005 ? r2(zahlungsEin - einSumme) : 0, entwicklung, rlAnfang: r2(rl.anfangsbestand + rl.uebernahme), rlKonten: await rlKonten(Number(objekt), jahr), ruecklage: rl.bestand, ruecklageIst: rl.bestandIst, ruecklageOffen: rl.offen, zufIstJahr: rl.zufuehrungIst, zufJahr, sonderJahr: rl.sonder, entnahmeJahr: rl.entnahme, zinsJahr: rl.zinsen, banken,
       forderungen: r2(offen.filter((z) => z.saldo > 0).reduce((a, z) => a + z.saldo, 0)),
       guthaben: r2(offen.filter((z) => z.saldo < 0).reduce((a, z) => a - z.saldo, 0)),
       opKonten: offen, hgImJahr, offeneRechnungen,
@@ -224,11 +234,31 @@ export function WegAbrechnungPage() {
     g.betreff(`Gesamtabrechnung ${jahr} (Wirtschaftsjahr 01.01.–31.12.${jahr})`);
     const pU = pos.filter((p) => p.umlagefaehig), pN = pos.filter((p) => !p.umlagefaehig);
     const sum = (l: Position[]) => l.reduce((a, p) => a + p.betrag, 0);
-    if (pU.length) g.tabelle(['Konto', 'Umlagefähige Kosten', 'Schlüssel', 'Betrag'], pU.map((p) => [p.nummer, p.name, p.schluessel, geld(p.betrag)]),
+    // Block 1: umlagefähige Kosten
+    g.absatz('1. Umlagefähige Kosten', 1);
+    g.tabelle(['Konto', 'Kostenart', 'Schlüssel', 'Betrag'], pU.map((p) => [p.nummer, p.name, p.schluessel, geld(p.betrag)]),
       [['', 'Summe umlagefähige Kosten', '', geld(sum(pU))]], 3);
-    if (pN.length) g.tabelle(['Konto', 'Nicht umlagefähige Kosten', 'Schlüssel', 'Betrag'], pN.map((p) => [p.nummer, p.name, p.schluessel, geld(p.betrag)]),
+    // Block 2: nicht umlagefähige Kosten
+    g.absatz('2. Nicht umlagefähige Kosten', 1);
+    g.tabelle(['Konto', 'Kostenart', 'Schlüssel', 'Betrag'], pN.map((p) => [p.nummer, p.name, p.schluessel, geld(p.betrag)]),
       [['', 'Summe nicht umlagefähige Kosten', '', geld(sum(pN))]], 3);
     g.tabelle(['', 'Betrag'], [['Umlagefähige Kosten', geld(sum(pU))], ['Nicht umlagefähige Kosten', geld(sum(pN))]], [['Summe Ausgaben gesamt', geld(sum(pos))]]);
+    // Block 3: § 35a EStG aus den eingegebenen Arbeitskosten
+    const p35 = pos.filter((p) => p.hbg || p.hdl || p.hwl);
+    g.absatz('3. Steuerermäßigung nach § 35a EStG (Arbeitskosten laut Eingabe)', 1);
+    if (p35.length) g.tabelle(['Konto', 'Kostenart', 'Art nach § 35a', 'Kosten gesamt', 'davon Arbeitskosten'],
+      p35.map((p) => [p.nummer, p.name, art35a(p), geld(p.betrag), geld(p.betrag35a ?? p.betrag)]),
+      [['', 'Summe', '', geld(sum(p35)), geld(p35.reduce((a, p) => a + (p.betrag35a ?? p.betrag), 0))]], 3);
+    else g.absatz('Im Jahr sind keine Kosten mit § 35a-Kennzeichen gebucht.');
+    // Block 4: Rücklagen
+    g.absatz('4. Erhaltungsrücklage', 1);
+    const rk: Row[] = verm.rlKonten ?? [];
+    g.tabelle(['Konto', 'Entwicklung der Erhaltungsrücklage', 'Betrag'], [
+      ['', `Bestand 01.01.${jahr}`, geld(verm.rlAnfang ?? 0)],
+      ['', `Zuführung laut Wirtschaftsplan (Soll), davon gezahlt ${geld(verm.zufIstJahr ?? 0)}`, geld(verm.zufJahr ?? 0)],
+      ...['1260', '1261', '1262'].map((nr) => [nr, `${RL_TEXT[nr]} (${rk.find((k) => k.nummer === nr)?.name ?? ''})`,
+        geld(nr === '1261' ? -(verm.entnahmeJahr ?? 0) : nr === '1260' ? (verm.sonderJahr ?? 0) : (verm.zinsJahr ?? 0))]),
+    ], [['', `Bestand 31.12.${jahr}`, geld(verm.ruecklage ?? 0)]], 2);
     const einZ: Row[] = verm.einnahmen ?? [];
     g.tabelle(['Konto', `Einnahmen ${jahr} (Zahlungseingänge)`, 'Betrag'], [
       ...einZ.map((x) => [x.nummer, x.name, geld(Number(x.betrag))]),
@@ -279,13 +309,30 @@ export function WegAbrechnungPage() {
       b.betreff(`Einzelabrechnung ${jahr}: ${/^weg\b/i.test(o.name) ? '' : 'WEG '}${o.name}, Einheit ${r.einheit.nummer}${wid(o.objekt_nr, r.einheit.lfd_nr) ? ` (W-ID ${wid(o.objekt_nr, r.einheit.lfd_nr)})` : ''}`);
       b.absatz(`Miteigentumsanteil: ${num(r.einheit.mea, 0)} / ${num(o.gesamt_mea, 0)} · Fläche ${num(r.einheit.flaeche)} m² · Eigentum im Jahr: ${dDatum(r.nutzer.von)} bis ${dDatum(r.nutzer.bis)}`);
       b.kennzahlen([['Ihr Kostenanteil', geld(r.summe)], ['Vorschüsse Bewirtschaftung', geld(r.vorschuss)], [r.spitze > 0 ? 'Nachschuss' : 'Erstattung', geld(Math.abs(r.spitze))]], 2);
-      for (const [titel, filter] of [['Umlagefähige Kosten (für Ihre Betriebskostenabrechnung an Mieter)', true], ['Nicht umlagefähige Kosten', false]] as const) {
+      for (const [titel, filter] of [['1. Umlagefähige Kosten (für Ihre Betriebskostenabrechnung an Mieter)', true], ['2. Nicht umlagefähige Kosten', false]] as const) {
         const z = r.zeilen.filter((x) => x.pos.umlagefaehig === filter && Math.abs(x.betrag) > 0.004);
-        if (!z.length) continue;
         b.absatz(titel, 1);
+        if (!z.length) { b.absatz('Keine Kosten.'); continue; }
         b.tabelle(['Kostenart', 'Gesamt', 'Schlüssel', 'Ihr Anteil'], z.map((x) => [x.pos.name, geld(x.pos.betrag), x.pos.schluessel + (x.direkt ? ` + direkt ${geld(x.direkt)}` : ''), geld(x.betrag)]),
           [['Zwischensumme', '', '', geld(z.reduce((a, x) => a + x.betrag, 0))]], 1);
       }
+      // Block 3: § 35a je Konto mit Ihrem Anteil an den eingegebenen Arbeitskosten
+      const z35 = r.zeilen.filter((x) => (x.pos.hbg || x.pos.hdl || x.pos.hwl) && Math.abs(x.betrag) > 0.004);
+      b.absatz('3. Steuerermäßigung nach § 35a EStG', 1);
+      if (z35.length) b.tabelle(['Kostenart', 'Art nach § 35a', 'Arbeitskosten gesamt', 'Ihr Anteil'],
+        z35.map((x) => { const a = x.pos.betrag35a ?? x.pos.betrag; return [x.pos.name, art35a(x.pos), geld(a), geld(x.pos.betrag ? x.betrag * a / x.pos.betrag : 0)]; }),
+        [['Summe', '', '', geld((r.hbg ?? 0) + r.hdl + r.hwl)]], 2);
+      else b.absatz('Keine Kosten mit § 35a-Kennzeichen.');
+      // Block 4: Ihr Anteil an der Erhaltungsrücklage (nach MEA, zur Information, ändert die Abrechnungsspitze nicht)
+      const mq = Number(o.gesamt_mea) ? (Number(r.einheit.mea) || 0) / Number(o.gesamt_mea) * (r.nutzer.anteil / 100) : 0;
+      b.absatz('4. Erhaltungsrücklage', 1);
+      b.tabelle(['Erhaltungsrücklage', 'Gemeinschaft', 'Ihr Anteil'], [
+        [`Bestand 01.01.${jahr}`, geld(verm.rlAnfang ?? 0), geld((verm.rlAnfang ?? 0) * mq)],
+        ['Ihre Zuführung laut Wirtschaftsplan (im Hausgeld enthalten)', geld(verm.zufJahr ?? 0), geld(r.ruecklageSoll)],
+        ...(verm.sonderJahr ? [['Sonderzuführungen (Konto 1260)', geld(verm.sonderJahr), geld(verm.sonderJahr * mq)]] : []),
+        ...(verm.entnahmeJahr ? [['Entnahmen (Konto 1261)', geld(-verm.entnahmeJahr), geld(-verm.entnahmeJahr * mq)]] : []),
+        ...(verm.zinsJahr ? [['Zinserträge (Konto 1262)', geld(verm.zinsJahr), geld(verm.zinsJahr * mq)]] : []),
+      ], [[`Bestand 31.12.${jahr}`, geld(verm.ruecklage ?? 0), geld((verm.ruecklage ?? 0) * mq)]], 1);
       b.tabelle(['Ergebnis', 'Betrag'], [
         ['Ihr Kostenanteil gesamt', geld(r.summe)],
         ['Hausgeld-Vorschüsse laut Wirtschaftsplan (Soll)', geld(r.soll)],
@@ -303,7 +350,6 @@ export function WegAbrechnungPage() {
           : 'Die Nebenkostenabrechnung für Ihren Mieter erstellen und buchen wir gesondert.');
       }
       if (r.rueckstand > 0.005) b.absatz(`Hinweis: Aus dem Jahr ${jahr} sind noch Hausgeldzahlungen von ${geld(r.rueckstand)} offen. Diese sind unabhängig von der Abrechnungsspitze zu zahlen.`);
-      if (r.hdl || r.hwl || r.hbg) b.steuer35a(r, 'eigentuemer');
       b.absatz('Die Abrechnung wird der Eigentümerversammlung zur Beschlussfassung über die Nachschüsse bzw. Anpassung der Vorschüsse vorgelegt (§ 28 Abs. 2 WEG).');
       b.gruss();
       if (!gesamt) await speichern(b.bytes(), `Einzelabrechnung ${jahr} ${r.einheit.nummer} ${r.nutzer.name}.pdf`, { bezug: 'Objekt', bezugId: o.id, ordner });
