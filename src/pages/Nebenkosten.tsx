@@ -264,7 +264,7 @@ function abrechnungPdf(b: Brief, o: Row, jahr: number, r: NkErgebnis, eigentueme
   b.absatz(`Objekt: ${o.name}, ${[o.strasse, [o.plz, o.ort].filter(Boolean).join(' ')].filter(Boolean).join(', ')} · Einheit ${r.einheit.nummer}${wid(o.objekt_nr, r.einheit.lfd_nr) ? ` (W-ID ${wid(o.objekt_nr, r.einheit.lfd_nr)})` : ''}` +
     `${r.einheit.flaeche ? `, ${num(r.einheit.flaeche)} m²` : ''}\nAbrechnungszeitraum: 01.01.${jahr} bis 31.12.${jahr} · Ihr Nutzungszeitraum: ${dDatum(r.nutzer.von)} bis ${dDatum(r.nutzer.bis)} (${r.nutzer.tage} Tage)`);
   b.kennzahlen([['Ihre Kosten', geld(r.summe)], ['Ihre Vorauszahlungen', geld(r.vz)], [r.saldo > 0 ? 'Nachzahlung' : 'Guthaben', geld(Math.abs(r.saldo))]], 2);
-  const body = r.zeilen.map((z) => [z.pos.name, geld(z.pos.betrag), z.pos.schluessel === 'Messdienst' ? 'lt. Messdienst' : z.pos.schluessel,
+  const body = r.zeilen.map((z) => [z.pos.name, geld(z.pos.betrag), (z.pos.schluessel === 'Messdienst' ? 'lt. Messdienst' : z.pos.schluessel) + (z.direkt ? ` + direkt ${geld(z.direkt)}` : ''),
     `${basisFmt(z.pos.schluessel, z.gesamtBasis)} ${einheitText[z.pos.schluessel] ?? ''}`, basisFmt(z.pos.schluessel, z.nutzerBasis), geld(z.betrag)]);
   b.tabelle(['Kostenart', 'Gesamtkosten', 'Schlüssel', 'Gesamt', 'Ihr Anteil', 'Ihre Kosten'], body,
     [[{ content: 'Summe Ihrer Kosten', colSpan: 5 }, geld(r.summe)], [{ content: r.ueberEigentuemer ? 'abzüglich Ihrer Vorauszahlungen laut Mietvertrag' : 'abzüglich Ihrer Vorauszahlungen', colSpan: 5 }, geld(-r.vz)],

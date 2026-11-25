@@ -45,7 +45,7 @@ export interface Position {
 export interface Ergebnis {
   nutzer: Nutzer;
   einheit: Row;
-  zeilen: { pos: Position; gesamtBasis: number; nutzerBasis: number; betrag: number }[];
+  zeilen: { pos: Position; gesamtBasis: number; nutzerBasis: number; betrag: number; direkt?: number }[];  // direkt: darin enthaltener, der Einheit direkt zugeordneter Betrag
   summe: number;
   hdl: number; hwl: number; hbg: number;
 }
@@ -57,6 +57,8 @@ export interface Ergebnis {
  * - Verbrauch / Messdienst: Wert je Einheit, zeitanteilig auf die Nutzer der Einheit
  * - Summe: fest eingetragener Betrag je Einheit (z. B. 1.000 € = W1 800 €, W2 100 €, W3 100 €), zeitanteilig auf deren Nutzer
  * - Direkt: in der Rechnung direkt einer Einheit zugeordnete Beträge, zeitanteilig auf deren Nutzer
+ * Bei allen anderen Schlüsseln außer Summe und Messdienst gehen direkt zugeordnete Beträge vorab an die Einheit,
+ * nur der nicht zugeordnete Rest wird nach dem Schlüssel verteilt.
  */
 export function verteilen(jahr: number, einheiten: Row[], nutzer: Nutzer[], positionen: Position[],
   werte: { verbrauch: Record<string, number>; messdienst: Record<number, number> }): Ergebnis[] {
@@ -77,12 +79,27 @@ export function verteilen(jahr: number, einheiten: Row[], nutzer: Nutzer[], posi
     }
   };
 
+  // In Einnahmen & Ausgaben (Buchung oder Rechnung) direkt einer Einheit zugeordnete Kosten gehören dieser Einheit.
+  // Sie gehen vorab an die Nutzer der Einheit (zeitanteilig); nur der Rest wird nach dem Schlüssel verteilt.
+  // Ausnahmen: „Manuell“ (Summe) legt den ganzen Betrag je Einheit selbst fest, „Messdienst“ kommt komplett aus der
+  // Heizkostenabrechnung, und „Direkt“ verteilt ohnehin alles nach den Zuordnungen.
+  const ids = new Set(einheiten.map((e) => e.id));
+  const direktTeile = (p: Position): Record<number, number> => {
+    if (p.schluessel === 'Summe' || p.schluessel === 'Messdienst' || p.schluessel === 'Direkt' || !p.direkt) return {};
+    return Object.fromEntries(Object.entries(p.direkt).map(([k, v]) => [Number(k), Number(v)]).filter(([k, v]) => ids.has(k) && Math.abs(v) >= 0.005));
+  };
+
   for (const p of positionen) {
     if (Math.abs(p.betrag) < 0.005) continue;
+    const dt = direktTeile(p);
+    const dSumme = Object.values(dt).reduce((a, v) => a + v, 0);
+    const rest = p.betrag - dSumme;
+    // Anteil am direkt zugeordneten Betrag je Nutzer
+    const direktVon = (n: Nutzer) => (dt[n.einheit_id] ?? 0) * (n.tage / T) * (n.anteil / 100);
     if (p.schluessel === 'Personen') {
       const gesamt = nutzer.reduce((a, n) => a + n.personen * n.tage, 0);
-      centGenau(nutzer.map((n) => { const nb = n.personen * n.tage; return { r: res.get(n.key)!, gb: gesamt, nb, betrag: gesamt ? (p.betrag * nb) / gesamt : 0 }; }))
-        .forEach((z) => add(z.r, p, z.gb, z.nb, z.betrag));
+      centGenau(nutzer.map((n) => { const nb = n.personen * n.tage, d = direktVon(n); return { r: res.get(n.key)!, gb: gesamt, nb, d, betrag: (gesamt ? (rest * nb) / gesamt : 0) + d }; }))
+        .forEach((z) => add(z.r, p, z.gb, z.nb, z.betrag, z.d));
       continue;
     }
     const gesamt = einheiten.reduce((a, e) => a + basisEinheit(e, p.schluessel, p), 0);
@@ -93,9 +110,10 @@ export function verteilen(jahr: number, einheiten: Row[], nutzer: Nutzer[], posi
       const e = einheiten.find((x) => x.id === n.einheit_id)!;
       const eb = basisEinheit(e, p.schluessel, p);
       const nb = eb * (n.tage / T) * (n.anteil / 100);
-      const betrag = (p.schluessel === 'Direkt' || p.schluessel === 'Summe') ? eb * faktor * (n.tage / T) * (n.anteil / 100) : gesamt ? (p.betrag * nb) / gesamt : 0;
-      return { r: res.get(n.key)!, gb: gesamt, nb, betrag };
-    })).forEach((z) => add(z.r, p, z.gb, z.nb, z.betrag));
+      const d = direktVon(n);
+      const betrag = (p.schluessel === 'Direkt' || p.schluessel === 'Summe') ? eb * faktor * (n.tage / T) * (n.anteil / 100) : (gesamt ? (rest * nb) / gesamt : 0) + d;
+      return { r: res.get(n.key)!, gb: gesamt, nb, d, betrag };
+    })).forEach((z) => add(z.r, p, z.gb, z.nb, z.betrag, z.d));
   }
   return [...res.values()];
 
@@ -110,9 +128,9 @@ export function verteilen(jahr: number, einheiten: Row[], nutzer: Nutzer[], posi
     return out.map((z) => ({ ...z, betrag: z.betrag / 100 }));
   }
 
-  function add(r: Ergebnis, p: Position, gb: number, nb: number, betrag: number) {
+  function add(r: Ergebnis, p: Position, gb: number, nb: number, betrag: number, d = 0) {
     const b = Math.round(betrag * 100) / 100;
-    r.zeilen.push({ pos: p, gesamtBasis: gb, nutzerBasis: nb, betrag: b });
+    r.zeilen.push({ pos: p, gesamtBasis: gb, nutzerBasis: nb, betrag: b, ...(Math.abs(d) >= 0.005 ? { direkt: Math.round(d * 100) / 100 } : {}) });
     r.summe = Math.round((r.summe + b) * 100) / 100;
     // § 35a: nur der begünstigte Teil (Arbeitskosten) der Position, anteilig wie die Kosten verteilt
     const f = p.betrag ? (p.betrag35a ?? p.betrag) / p.betrag : 0;
