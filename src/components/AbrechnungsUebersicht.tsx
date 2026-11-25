@@ -5,7 +5,7 @@
 import { BetragFeld } from './BetragFeld';
 import { loeschen as inPapierkorb } from '../db/papierkorb';
 import { Fragment, useEffect, useState, type ReactNode } from 'react';
-import { Check, ChevronDown, ChevronRight, Pencil, Plus, Trash2, Undo2, X } from 'lucide-react';
+import { Check, ChevronDown, ChevronRight, Pencil, PiggyBank, Plus, Trash2, Undo2, X } from 'lucide-react';
 import { db, type Row } from '../db';
 import { eur } from './EntityTable';
 import type { Position } from '../logic/verteilung';
@@ -108,13 +108,16 @@ function Belege({ liste, ausgabe, kontoId, objekt, jahr, onChanged }: { liste: R
   );
 }
 
-export function AbrechnungsUebersicht({ objekt, jahr, pos, schluessel, stand = 0, mitEinnahmen = true, titel, onChanged, nurUmlagefaehig = false, nurBezahlt = false, einnahmeKonten, einnahmenTitel }: {
+export function AbrechnungsUebersicht({ objekt, jahr, pos, schluessel, stand = 0, mitEinnahmen = true, titel, onChanged, nurUmlagefaehig = false, nurBezahlt = false, einnahmeKonten, einnahmenTitel, ruecklage }: {
   objekt: number; jahr: number; pos: Position[]; schluessel: (p: Position) => ReactNode; stand?: number; mitEinnahmen?: boolean; titel?: string;
   /** Wird nach Ändern, Löschen oder Hinzufügen eines Betrags aufgerufen; ohne diese Funktion ist die Übersicht nur lesbar */
   onChanged?: (text: string) => void; nurUmlagefaehig?: boolean; nurBezahlt?: boolean;
   /** Nur diese Einnahmekonten zeigen (Nebenkostenabrechnung: nur Vorauszahlungen der Mieter, nie Hausgeld oder Rücklage der Eigentümer) */
   einnahmeKonten?: string[]; einnahmenTitel?: string;
+  /** WEG: je Kostenkonto eintragen, was aus der Erhaltungsrücklage bezahlt wurde; zufluss = Entnahmen (Konto 1261) im Jahr zum Vergleich */
+  ruecklage?: { teile: Record<number, number>; zufluss: number };
 }) {
+  const [rlE, setRlE] = useState<{ konto: number; betrag: string; fehler?: string } | null>(null);
   const [neu, setNeu] = useState<{ konto: string; datum: string; text: string; betrag: string } | null>(null);
   const [neuFehler, setNeuFehler] = useState('');
   const [anp, setAnp] = useState<{ konto: number; betrag: string; grund: string; fehler?: string } | null>(null);
@@ -184,6 +187,21 @@ export function AbrechnungsUebersicht({ objekt, jahr, pos, schluessel, stand = 0
     geaendert?.(`${p.nummer} ${p.name}: Gesamtkosten für die Abrechnung ${jahr} ${eur(b)} (gebucht ${eur(gebucht)}).`);
   }
 
+  // Teil der Kosten, der aus der Erhaltungsrücklage bezahlt wurde (nur für die Abrechnung, Buchhaltung bleibt unverändert)
+  async function rlSpeichern(p: Position) {
+    if (!rlE) return;
+    const sp = await gesperrt(objekt, `${jahr}-01-01`);
+    if (sp) { setRlE({ ...rlE, fehler: sperrText(sp) }); return; }
+    const b = rlE.betrag.trim() ? zahl(rlE.betrag) : 0;
+    if (!Number.isFinite(b) || b < 0) { setRlE({ ...rlE, fehler: 'Bitte einen Betrag ab 0 eintragen, z. B. 11.627,48.' }); return; }
+    if (b > p.betrag + 0.005) { setRlE({ ...rlE, fehler: `Höchstens die Gesamtkosten dieses Kontos (${eur(p.betrag)}).` }); return; }
+    if (b < 0.005) await db.execute('DELETE FROM abrechnung_ruecklage WHERE objekt_id = $1 AND jahr = $2 AND buchungskonto_id = $3', [objekt, jahr, p.konto_id]);
+    else await db.execute(`INSERT INTO abrechnung_ruecklage (objekt_id, jahr, buchungskonto_id, betrag) VALUES ($1, $2, $3, $4)
+      ON CONFLICT (objekt_id, jahr, buchungskonto_id) DO UPDATE SET betrag = excluded.betrag`, [objekt, jahr, p.konto_id, Math.round(b * 100) / 100]);
+    setRlE(null);
+    geaendert?.(b < 0.005 ? `${p.nummer} ${p.name}: nichts mehr aus der Rücklage bezahlt.` : `${p.nummer} ${p.name}: ${eur(b)} aus der Erhaltungsrücklage bezahlt, wird nach MEA gutgeschrieben.`);
+  }
+
   // Kostenposition ganz aus der Abrechnung nehmen; die Buchungen bleiben in der Buchhaltung
   async function herausnehmen(p: Position) {
     const sp = await gesperrt(objekt, `${jahr}-01-01`);
@@ -242,8 +260,10 @@ export function AbrechnungsUebersicht({ objekt, jahr, pos, schluessel, stand = 0
                     {p.gebucht !== undefined && <span className="pill klein abr-angepasst" title={p.grund ?? 'Für die Abrechnung angepasst'}>angepasst</span>}
                     <b>{eur(p.betrag)}</b>
                     {geaendert && <button className="icon-btn" title="Gesamtkosten für die Abrechnung anpassen" onClick={() => setAnp({ konto: p.konto_id, betrag: String(p.betrag.toFixed(2)).replace('.', ','), grund: p.grund ?? '' })}><Pencil size={14} /></button>}
+                    {geaendert && ruecklage && <button className="icon-btn" title="Davon aus der Erhaltungsrücklage bezahlt" onClick={() => setRlE({ konto: p.konto_id, betrag: ruecklage.teile[p.konto_id] ? ruecklage.teile[p.konto_id].toFixed(2).replace('.', ',') : '' })}><PiggyBank size={14} /></button>}
                     {geaendert && <button className="icon-btn" title="Kostenposition aus der Abrechnung nehmen" onClick={() => herausnehmen(p)}><Trash2 size={14} /></button>}</span>
-                    {p.gebucht !== undefined && <div className="muted small">gebucht {eur(p.gebucht)}{p.grund ? ` · ${p.grund}` : ''}</div>}</td>
+                    {p.gebucht !== undefined && <div className="muted small">gebucht {eur(p.gebucht)}{p.grund ? ` · ${p.grund}` : ''}</div>}
+                    {ruecklage?.teile[p.konto_id] ? <div className="small abr-rl">davon aus der Rücklage bezahlt {eur(ruecklage.teile[p.konto_id])}</div> : null}</td>
                 </tr>
                 {anp?.konto === p.konto_id && <tr className="abr-anpassen"><td /><td colSpan={5}>
                   <div className="abr-neu">
@@ -255,6 +275,13 @@ export function AbrechnungsUebersicht({ objekt, jahr, pos, schluessel, stand = 0
                     <p className="muted small" style={{ flexBasis: '100%', margin: 0 }}>Gebucht sind {eur(p.gebucht ?? p.betrag)}. Der neue Betrag gilt nur für die Abrechnung {jahr} dieser Liegenschaft. Die Buchhaltung bleibt unverändert.</p>
                     {anp.fehler && <p className="error small">{anp.fehler}</p>}
                   </div></td></tr>}
+                {ruecklage && rlE?.konto === p.konto_id && <tr className="abr-anpassen"><td /><td colSpan={5}>
+                  <div className="abr-neu">
+                    <label><span>Davon aus der Erhaltungsrücklage bezahlt</span><BetragFeld autoFocus value={rlE.betrag} onChange={(x) => setRlE({ ...rlE, betrag: x.target.value, fehler: undefined })} onKeyDown={(x) => x.key === 'Enter' && rlSpeichern(p)} /></label>
+                    <div className="row"><button onClick={() => setRlE(null)}>Abbrechen</button><button className="primary" onClick={() => rlSpeichern(p)}>Übernehmen</button></div>
+                    <p className="muted small" style={{ flexBasis: '100%', margin: 0 }}>Die Kosten von {eur(p.betrag)} bleiben voll in der Abrechnung. Der hier eingetragene Teil wurde mit Geld aus der Rücklage bezahlt (Entnahme auf Konto 1261) und wird jedem Eigentümer nach MEA gutgeschrieben, damit niemand doppelt zahlt. Leer lassen oder 0 löscht den Eintrag.</p>
+                    {rlE.fehler && <p className="error small">{rlE.fehler}</p>}
+                  </div></td></tr>}
                 {offen.has(k) && <tr className="belege-zeile"><td /><td colSpan={5}><Belege liste={liste} ausgabe kontoId={p.konto_id} objekt={objekt} jahr={jahr} onChanged={geaendert} />
                   {Math.abs(liste.reduce((a, b) => a + b.betrag, 0) - (p.gebucht ?? p.betrag)) > 0.005 && <p className="warn small">Die Belege ergeben {eur(liste.reduce((a, b) => a + b.betrag, 0))}, gebucht sind {eur(p.gebucht ?? p.betrag)}.</p>}</td></tr>}
               </Fragment>);
@@ -263,6 +290,13 @@ export function AbrechnungsUebersicht({ objekt, jahr, pos, schluessel, stand = 0
           </tbody>))}
           <tfoot><tr><td /><td colSpan={4}>Summe Ausgaben gesamt</td><td className="num">{eur(summeAus)}</td></tr></tfoot>
         </table>)}
+      {ruecklage && (() => {
+        const t = Object.entries(ruecklage.teile).filter(([id]) => pos.some((p) => p.konto_id === Number(id))).reduce((a, [, b]) => a + b, 0);
+        if (t < 0.005 && ruecklage.zufluss < 0.005) return null;
+        const diff = Math.round((ruecklage.zufluss - t) * 100) / 100;
+        return <p className={'small ' + (Math.abs(diff) > 0.005 ? 'warn' : 'muted')}>Aus der Erhaltungsrücklage bezahlt (eingetragen bei den Konten oben): <b>{eur(t)}</b> · Entnahmen auf Konto 1261 im Jahr {jahr}: <b>{eur(ruecklage.zufluss)}</b>
+          {Math.abs(diff) > 0.005 ? (diff > 0 ? `. ${eur(diff)} der Entnahme sind keinem Konto zugeordnet und werden nicht gutgeschrieben (z. B. Vorauszahlungen). Trage mit dem Sparschwein-Symbol ein, welche Kosten aus der Rücklage bezahlt wurden.` : `. Eingetragen ist ${eur(-diff)} mehr als entnommen. Bitte prüfen.`) : '. Stimmt überein.'}</p>;
+      })()}
       {raus.length > 0 && <div className="abr-raus">
         <div><b>Aus der Abrechnung genommen</b><span className="muted small"> · die Buchungen bleiben in der Buchhaltung</span></div>
         {raus.map((r) => <div key={r.buchungskonto_id} className="abr-raus-zeile"><span>{r.nummer} {r.name}</span><span className="grow" />
