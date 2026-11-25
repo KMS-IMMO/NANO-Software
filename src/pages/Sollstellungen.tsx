@@ -4,11 +4,12 @@ import { MonatWahl } from '../components/MonatWahl';
 // für einen Zeitraum aus den Stammdaten erzeugen, einzeln bearbeiten, löschen oder von Hand anlegen.
 import { useEffect, useMemo, useState } from 'react';
 import { CalendarRange, Plus, Trash2 } from 'lucide-react';
-import { db, remove, update, type Row } from '../db';
+import { db, update, type Row } from '../db';
 import { useObjektKontext } from '../logic/objektKontext';
 import { eur } from '../components/EntityTable';
 import { SollstellungNeu } from '../components/SollstellungNeu';
-import { OP_SQL, postenStatus, sollStellen, zahlungBuchen, mahnenAbTage } from '../logic/soll';
+import { OP_SQL, postenStatus, sollStellen, zahlungBuchen, mahnenAbTage, postenLoeschen } from '../logic/soll';
+import { sperrText } from '../logic/abschluss';
 import { DatumFeld } from '../components/DatumFeld';
 
 const heute = () => new Date().toISOString().slice(0, 10);
@@ -52,20 +53,24 @@ export function SollstellungenPage() {
     if ((feld === 'betrag' && !v) || v === r[feld]) return;
     await update('sollstellungen', r.id, { [feld]: v }); load();
   }
+  const loeschText = (x: Awaited<ReturnType<typeof postenLoeschen>>) =>
+    (x.geloescht === 1 ? '1 Posten gelöscht.' : `${x.geloescht} Posten gelöscht.`)
+    + (x.geloest ? ` ${x.geloest === 1 ? '1 Zahlung wurde' : `${x.geloest} Zahlungen wurden`} vom Posten gelöst und ${x.geloest === 1 ? 'kann' : 'können'} neu zugeordnet werden (Zahlungen ohne Posten).` : '')
+    + (x.gesperrt.length ? ` ${x.gesperrt.length} nicht gelöscht: ${[...new Set(x.gesperrt.map((g) => sperrText(g.grund)))].join(' ')}` : '');
   async function loeschen(r: Row) {
-    if (r.bezahlt > 0.005) { setInfo('Auf diesen Posten ist schon eine Zahlung gebucht. Bitte zuerst die Zahlung lösen.'); return; }
-    await remove('sollstellungen', r.id); load();
+    if (r.bezahlt > 0.005 && !window.confirm(`Auf diesen Posten sind ${eur(r.bezahlt)} gebucht. Die Zahlung bleibt in der Buchhaltung und wird vom Posten gelöst. Posten löschen?`)) return;
+    try { setInfo(loeschText(await postenLoeschen([Number(r.id)]))); } catch (e) { setInfo(String((e as Error)?.message ?? e)); }
+    load();
   }
 
   const umschalten = (ids: number[], an: boolean) => { setSicher(false); setWahl((alt) => { const n = new Set(alt); ids.forEach((id) => (an ? n.add(id) : n.delete(id))); return n; }); };
   async function mehrereLoeschen() {
     if (!sicher) { setSicher(true); return; }
-    const gewaehlt = rows.filter((r) => wahl.has(Number(r.id)));
-    const frei = gewaehlt.filter((r) => !(r.bezahlt > 0.005));
-    for (const r of frei) await remove('sollstellungen', r.id);
-    const rest = gewaehlt.length - frei.length;
-    setInfo(`${frei.length} Posten gelöscht.` + (rest ? ` ${rest} mit gebuchter Zahlung wurden nicht gelöscht. Bitte dort zuerst die Zahlung lösen.` : ''));
-    setWahl(new Set(rest ? gewaehlt.filter((r) => r.bezahlt > 0.005).map((r) => Number(r.id)) : []));
+    try {
+      const x = await postenLoeschen([...wahl]);
+      setInfo(loeschText(x));
+      setWahl(new Set(x.gesperrt.map((g) => g.id)));
+    } catch (e) { setInfo(String((e as Error)?.message ?? e)); }
     setSicher(false); load();
   }
 
