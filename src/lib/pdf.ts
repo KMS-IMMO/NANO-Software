@@ -145,6 +145,11 @@ export class Brief {
     zeilen.push(['Haushaltsnahe Dienstleistungen, z. B. Reinigung, Garten, Winterdienst (Abs. 2)', geld(w.hdl)], ['Handwerkerleistungen, z. B. Reparatur, Wartung (Abs. 3)', geld(w.hwl)]);
     this.platz(70);
     this.tabelle(['Steuerermäßigung § 35a EStG: Ihr Anteil an den Arbeitskosten', 'Betrag'], zeilen);
+    this.hinweise35a(fuer);
+  }
+
+  /** Hinweise zur Steuerermäßigung nach § 35a unter einer Tabelle */
+  hinweise35a(fuer: 'eigentuemer' | 'mieter') {
     this.y -= 4;
     const d = this.doc;
     d.setFontSize(8); d.setTextColor(85);
