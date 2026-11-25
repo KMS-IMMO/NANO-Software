@@ -208,6 +208,7 @@ export function NebenkostenPage() {
       </fieldset>
 
       {objekt !== '' && <AbrechnungsUebersicht objekt={Number(objekt)} jahr={jahr} pos={pos} titel={`Abrechnungsübersicht ${jahr}: umlagefähige Kosten`} nurUmlagefaehig
+        verteilung={{ einheiten, jeEinheit: (k) => { const m: Record<number, number> = {}; for (const r of erg) for (const z of r.zeilen) if (z.pos.konto_id === k) m[r.nutzer.einheit_id] = (m[r.nutzer.einheit_id] ?? 0) + z.betrag; return m; } }}
         mitEinnahmen={!weg} einnahmeKonten={['1001', '1002']} einnahmenTitel="Vorauszahlungen der Mieter"
         onChanged={zu ? undefined : (t) => { setInfo(t); setStand((x) => x + 1); laden(); }}
         schluessel={(p) => zu ? <>{schluesselText(p.schluessel)}</> : <SchluesselWahl objekt={Number(objekt)} jahr={jahr} p={p} onChanged={(t) => { setInfo(t); laden(); }} anteile={(k) => {
