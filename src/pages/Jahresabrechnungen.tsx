@@ -322,6 +322,7 @@ export function WegAbrechnungPage() {
       if (z35.length) b.tabelle(['Kostenart', 'Art nach § 35a', 'Arbeitskosten gesamt', 'Ihr Anteil'],
         z35.map((x) => { const a = x.pos.betrag35a ?? x.pos.betrag; return [x.pos.name, art35a(x.pos), geld(a), geld(x.pos.betrag ? x.betrag * a / x.pos.betrag : 0)]; }),
         [['Summe', '', '', geld((r.hbg ?? 0) + r.hdl + r.hwl)]], 2);
+      if (z35.length) b.hinweise35a('eigentuemer');
       else b.absatz('Keine Kosten mit § 35a-Kennzeichen.');
       // Block 4: Ihr Anteil an der Erhaltungsrücklage (nach MEA, zur Information, ändert die Abrechnungsspitze nicht)
       const mq = Number(o.gesamt_mea) ? (Number(r.einheit.mea) || 0) / Number(o.gesamt_mea) * (r.nutzer.anteil / 100) : 0;
