@@ -936,4 +936,15 @@ CREATE TABLE ruecklage_auszug (
   PRIMARY KEY (objekt_id, jahr)
 );
 `,
+  // 39: WEG-Abrechnung – je Kostenkonto der Teil, der aus der Erhaltungsrücklage bezahlt wurde (wird nach MEA gutgeschrieben)
+  `
+CREATE TABLE abrechnung_ruecklage (
+  objekt_id INTEGER NOT NULL REFERENCES objekte(id) ON DELETE CASCADE,
+  jahr INTEGER NOT NULL,
+  buchungskonto_id INTEGER NOT NULL REFERENCES buchungskonten(id) ON DELETE CASCADE,
+  betrag REAL NOT NULL,
+  notiz TEXT,
+  PRIMARY KEY (objekt_id, jahr, buchungskonto_id)
+);
+`,
 ];
