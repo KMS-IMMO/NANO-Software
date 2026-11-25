@@ -1608,3 +1608,31 @@ tr.ou-ignoriert td:nth-child(n+2):not(:last-child) { color: var(--muted, #8a8580
 /* Eigentümerabrechnung: Gründe einer Differenz in der Kontoentwicklung */
 .diff-gruende { margin-top: 8px; }
 .diff-gruende table.list { margin: 4px 0 6px; }
+
+/* ===== Einnahmen & Ausgaben als flache Tabelle (eine Zeile je Buchung) ===== */
+.ea-wrap { overflow-x: auto; }
+table.list.ea-tabelle th { font-size: 12px; color: #4A4D53; white-space: nowrap; padding: 11px 9px; position: sticky; top: 0; z-index: 1; }
+table.list.ea-tabelle td { padding: 10px 9px; font-size: 13px; vertical-align: middle; }
+table.list.ea-tabelle tbody tr:not(.ks-rot):hover > td { background: #FBF8F2; }
+table.list.ea-tabelle tbody tr:hover > td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
+table.list.ea-tabelle td.wahl, table.list.ea-tabelle th.wahl { width: 34px; }
+.ea-konto { white-space: nowrap; }
+.ea-konto > span { display: inline-flex; align-items: center; gap: 8px; }
+.ea-nr { display: inline-block; min-width: 42px; text-align: center; font-size: 12px; font-weight: 700; padding: 3px 7px; border-radius: 8px; background: var(--accent-soft); color: var(--accent-dark); font-variant-numeric: tabular-nums; }
+.ea-kurz { display: inline-block; max-width: 125px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle; }
+td.ea-kurz-zelle { max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+td.ea-text { max-width: 170px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
+.ea-betrag { display: inline-block; font-size: 13px; font-weight: 700; padding: 3px 9px; border-radius: 8px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.ea-betrag.neg { background: #FDECEA; color: #C0392B; } .ea-betrag.pos { background: #E7F3E8; color: #2E7D32; }
+select.ea-einheit, .ea-einheit.fest { width: auto; min-width: 0; max-width: 150px; font-size: 12px; font-weight: 600; padding: 4px 24px 4px 9px; border-radius: 8px;
+  background-color: var(--accent-soft); color: var(--accent-dark); border: 1px solid #EADFC9; cursor: pointer; }
+.ea-einheit.fest { display: inline-block; padding: 4px 10px; cursor: default; }
+select.ea-einheit.einzeln, .ea-einheit.fest.einzeln { background-color: #fff; color: var(--text); border-color: #DCD6CB; }
+.ea-beleg { font-size: 12px; font-weight: 600; padding: 3px 9px; border-radius: 8px; border: 0; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; box-shadow: none; }
+.ea-beleg.kein { background: #FDECEA; color: #C0392B; } .ea-beleg.kein:hover { background: #F9DAD6; }
+.ea-beleg.hat { background: #E7F3E8; color: #2E7D32; } .ea-beleg.hat:hover { background: #D8ECDA; }
+.ea-fuss { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; padding: 12px 4px 2px; border-top: 1px solid var(--line); margin-top: 2px; }
+.ea-fuss select { width: auto; padding: 5px 8px; margin-left: 6px; }
+.ea-blaettern { display: inline-flex; align-items: center; gap: 6px; }
+.ea-blaettern .icon-btn:disabled { opacity: .35; cursor: default; }
+.ea-summe { font-size: 13px; color: var(--muted); } .ea-summe b { margin-left: 6px; font-size: 14px; }

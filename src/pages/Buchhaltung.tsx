@@ -5,7 +5,7 @@ import { OffeneUmsaetze } from '../components/OffeneUmsaetze';
 import { AuszugImport } from '../components/AuszugImport';
 import { useEffect, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { BarChart3, BookOpen, Download, FileSpreadsheet, FileText, Gavel, Paperclip, Pencil, PiggyBank, Plus, Receipt, RefreshCw, Search, Sparkles, Trash2, Users, User, X } from 'lucide-react';
+import { BarChart3, BookOpen, ChevronLeft, ChevronRight, Download, FileSpreadsheet, FileText, Gavel, Paperclip, Pencil, PiggyBank, Plus, Receipt, RefreshCw, Search, Sparkles, Trash2, Users, User, X } from 'lucide-react';
 import { EntityTable, datum, eur, num } from '../components/EntityTable';
 import { db, insert, remove, update, type Row } from '../db';
 import { einheitLabel, einheitPerson, personLabel } from '../db/labels';
@@ -91,6 +91,9 @@ export function JournalPage() {
   const [bankVersion, setBankVersion] = useState(0);
   const [wahl, setWahl] = useState<Set<number>>(new Set());
   const [pdfMenue, setPdfMenue] = useState(false);
+  const [einheiten, setEinheiten] = useState<Row[]>([]);
+  const [proSeite, setProSeite] = useState(100);
+  const [seiteNr, setSeiteNr] = useState(0);
 
   useEffect(() => { db.select(kontoOptions).then(setKonten); }, []);
   // Jahr mit Buchungen zeigen: hat das gewählte Jahr keine, das neueste Jahr mit Buchungen wählen
@@ -117,7 +120,7 @@ export function JournalPage() {
     if (monat) w.push(`substr(b.datum, 6, 2) = '${monat}'`);
     if (objekt !== '') w.push(`b.objekt_id = ${Number(objekt)}`);
     if (kontoWahl.length) w.push(`b.buchungskonto_id IN (${kontoWahl.map(Number).join(',')})`);
-    setRows(await db.select(`SELECT b.*, (SELECT COUNT(*) FROM buchungen x WHERE x.aufteilung = b.aufteilung) AS teile_n, (SELECT COUNT(*) FROM buchungen x WHERE x.aufteilung = b.aufteilung AND x.id <= b.id) AS teil_nr, (SELECT SUM(x.betrag) FROM buchungen x WHERE x.aufteilung = b.aufteilung) AS teile_summe, k.nummer, k.name AS konto, k.art AS kontoart, o.name AS objekt, e.nummer AS einheit, COALESCE(f.name, rf.name) AS firma, COALESCE(b.rechnungsnr, r.rechnungsnr) AS rechnungsnr, ${BELEGE_SQL} AS belege,
+    setRows(await db.select(`SELECT b.*, (SELECT COUNT(*) FROM buchungen x WHERE x.aufteilung = b.aufteilung) AS teile_n, (SELECT COUNT(*) FROM buchungen x WHERE x.aufteilung = b.aufteilung AND x.id <= b.id) AS teil_nr, (SELECT SUM(x.betrag) FROM buchungen x WHERE x.aufteilung = b.aufteilung) AS teile_summe, k.nummer, k.name AS konto, k.art AS kontoart, o.name AS objekt, e.nummer AS einheit, COALESCE(f.name, rf.name) AS firma, COALESCE(b.rechnungsnr, r.rechnungsnr) AS rechnungsnr, r.datum AS rechnungsdatum, r.zeitraum_von, r.zeitraum_bis, COALESCE(r.mwst_satz, k.mwst) AS mwst_satz, ${BJ('b')} AS abr_jahr, ${BELEGE_SQL} AS belege,
         (SELECT u.datum FROM bankumsaetze u WHERE u.id = b.bankumsatz_id) AS bankumsatz_datum,
         COALESCE((SELECT ${personLabel('pp')} FROM sollstellungen ss JOIN personen pp ON pp.id = ss.person_id WHERE ss.id = b.sollstellung_id),
           (SELECT u.gegenpartei FROM bankumsaetze u WHERE u.id = b.bankumsatz_id)) AS person,
@@ -156,7 +159,28 @@ export function JournalPage() {
     try { await f(); setInfo(text); load(); setBankVersion((v) => v + 1); } catch (e) { setInfo(String((e as Error)?.message ?? e)); }
   }
   const offeneRechnungen = suche.trim() ? alleRechnungen.filter((r) => trifft(r, suche)) : alleRechnungen;
-  useEffect(() => { setWahl(new Set()); }, [suche]);
+  useEffect(() => { setWahl(new Set()); setSeiteNr(0); }, [suche]);
+  useEffect(() => { setSeiteNr(0); }, [objekt, jahr, monat, kontoWahl.join(','), statusFilter]);
+  useEffect(() => {
+    if (objekt === '') { setEinheiten([]); return; }
+    db.select(`SELECT e.id, e.nummer, ${einheitLabel('e')} AS label FROM einheiten e WHERE e.objekt_id = $1 ORDER BY e.lfd_nr, e.nummer`, [Number(objekt)]).then(setEinheiten);
+  }, [objekt]);
+  // Seitenweise anzeigen (0 = alle)
+  const seiten = proSeite ? Math.max(1, Math.ceil(rows.length / proSeite)) : 1;
+  const seiteJetzt = Math.min(seiteNr, seiten - 1);
+  const seiteAb = proSeite ? seiteJetzt * proSeite : 0;
+  // Neueste Buchung oben; die Exporte bleiben chronologisch
+  const neuesteZuerst = [...rows].reverse();
+  const seite = proSeite ? neuesteZuerst.slice(seiteAb, seiteAb + proSeite) : neuesteZuerst;
+  const spalten = 15 + (mitBank ? 2 : 0) + (fix ? 0 : 1);
+  /** Einheit direkt in der Tabelle ändern („Alle Einheiten“ = ganzes Objekt) */
+  async function einheitSetzen(r: Row, wert: string) {
+    const sp = await buchungGesperrt(Number(r.objekt_id), r.datum, r.jahr);
+    if (sp) { setInfo(sperrText(sp)); return; }
+    await update('buchungen', r.id, { einheit_id: wert ? Number(wert) : null });
+    const e = einheiten.find((x) => String(x.id) === wert);
+    setInfo(`Buchung ${r.id}: ${e ? `Einheit ${e.label}` : 'alle Einheiten'}.`); load();
+  }
 
   const soll = rows.reduce((a, r) => a + (r.betrag < 0 ? -r.betrag : 0), 0), haben = rows.reduce((a, r) => a + (r.betrag > 0 ? r.betrag : 0), 0);
   const kontoText = kontoWahl.length ? konten.filter((k) => kontoWahl.includes(k.value)).map((k) => String(k.label).split(' ')[0]).join(', ') : '';
@@ -361,29 +385,43 @@ export function JournalPage() {
             <button className="danger" onClick={auswahlLoeschen}><Trash2 size={14} /> Buchungen löschen</button>
             <button className="link" onClick={() => setWahl(new Set())}>Auswahl aufheben</button>
           </div>)}
-        {rows.length === 0 ? <p className="muted">{suche.trim() ? `Keine Buchung passt zu „${suche.trim()}“.` : 'Keine Buchungen im Zeitraum.'}</p> : (
-          <div className="tablewrap"><table className="list gross">
+        {rows.length === 0 ? <p className="muted">{suche.trim() ? `Keine Buchung passt zu „${suche.trim()}“.` : 'Keine Buchungen im Zeitraum.'}</p> : (<>
+          <div className="tablewrap ea-wrap"><table className="list ea-tabelle">
             <thead><tr><th className="wahl"><input type="checkbox" title="Alle auswählen" checked={rows.length > 0 && rows.every((r) => wahl.has(r.id))}
-              onChange={(e) => setWahl(e.target.checked ? new Set(rows.map((r) => r.id)) : new Set())} /></th>{mitBank && <th className="ks-dot-sp" title="Bankstatus" />}<th>Bu.-Nr.</th><th>Datum</th><th>{fix ? 'Einheit' : 'Liegenschaft'}</th><th>Konto</th><th>Unternehmen</th><th>Buchungstext</th><th className="num">Soll</th><th className="num">Haben</th>{mitBank && <th>Bank</th>}<th /></tr></thead>
-            <tbody>{rows.map((r) => { const st = bankStatus(r, saldoTag); const pu = passendU[r.id] ?? []; return [
-              <tr key={r.id} className={mitBank && st === 'ohne' ? 'ks-rot' : ''}>
+              onChange={(e) => setWahl(e.target.checked ? new Set(rows.map((r) => r.id)) : new Set())} /></th>{mitBank && <th className="ks-dot-sp" title="Bankstatus" />}
+              <th>Konto</th><th>Datum</th><th className="num">Betrag</th>{!fix && <th>Liegenschaft</th>}<th>Einheiten</th><th>MwSt</th><th>Leistungszeitraum</th><th>Lieferant / Zahler</th>
+              <th title="Abrechnungsjahr">Abr.-Jahr</th><th>Rechnungs-Nr.</th><th>Buchungstext</th><th>Re.-Datum</th><th>Beleg</th>{mitBank && <th>Bank</th>}<th /></tr></thead>
+            <tbody>{seite.map((r) => { const st = bankStatus(r, saldoTag); const pu = passendU[r.id] ?? []; const wer = r.firma ?? (r.betrag > 0 ? (r.person || r.einheit_person) : null); return [
+              <tr key={r.id} className={mitBank && st === 'ohne' ? 'ks-rot' : ''} title={`Buchung ${r.id}`}>
                 <td className="wahl"><input type="checkbox" checked={wahl.has(r.id)} onChange={() => setWahl((w) => { const n = new Set(w); if (n.has(r.id)) n.delete(r.id); else n.add(r.id); return n; })} /></td>
                 {mitBank && <td><i className={'ks-dot ' + ({ bank: 'gruen', ohne: 'rot', bar: 'grau', vorher: 'leer' } as const)[st]} title={STATUS_TEXT[st]} /></td>}
-                <td>{r.id}</td><td>{datum(r.datum)}</td><td>{!fix && r.objekt}<div className={fix ? '' : 'muted small'}>{r.einheit ?? (r.betrag < 0 ? 'alle Einheiten' : fix ? 'gesamtes Objekt' : '')}</div>
-                  {(r.person || r.einheit_person) && r.betrag > 0 && <div className="muted small">{r.person || r.einheit_person}</div>}</td>
-                <td>{r.nummer ? `${r.nummer} ${r.konto}` : <span className="tag">ohne Konto</span>}</td>
-                <td>{r.firma ?? <span className="muted">–</span>}</td>
-                <td className="small">{r.text}{r.rechnungsnr && !String(r.text ?? "").includes(r.rechnungsnr) ? <span className="muted"> · Rechnung {r.rechnungsnr}</span> : ''}{!mitBank && r.bankumsatz_id ? <span className="muted"> · Bank</span> : ''}{r.aufteilung ? <span className="tag teil-tag" title={`Teil ${r.teil_nr} von ${r.teile_n} einer Aufteilung über ${eur(Math.abs(Number(r.teile_summe)))}`}>Teil {r.teil_nr}/{r.teile_n}</span> : ''}</td>
-                <td className="num neg">{r.betrag < 0 ? eur(-r.betrag) : '–'}</td><td className="num pos">{r.betrag > 0 ? eur(r.betrag) : '–'}</td>
+                <td className="ea-konto">{r.nummer ? <span title={`${r.nummer} ${r.konto}`}><b className="ea-nr">{r.nummer}</b><span className="ea-kurz">{r.konto}</span></span> : <span className="tag">ohne Konto</span>}</td>
+                <td className="nowrap">{datum(r.datum)}</td>
+                <td className="num"><span className={'ea-betrag ' + (r.betrag < 0 ? 'neg' : 'pos')}>{eur(Number(r.betrag))}</span></td>
+                {!fix && <td className="ea-kurz-zelle" title={r.objekt ?? ''}>{r.objekt}</td>}
+                <td className="nowrap">{fix && !r.aufteilung && !r.sollstellung_id
+                  ? <select className={'ea-einheit' + (r.einheit_id ? ' einzeln' : '')} value={r.einheit_id ?? ''} title="Einheit ändern" onChange={(e) => einheitSetzen(r, e.target.value)}>
+                      <option value="">Alle Einheiten</option>{einheiten.map((e) => <option key={e.id} value={e.id}>{e.label}</option>)}</select>
+                  : <span className={'ea-einheit fest' + (r.einheit_id ? ' einzeln' : '')}>{r.einheit ?? 'Alle Einheiten'}</span>}
+                  {r.aufteilung ? <span className="tag teil-tag" title={`Teil ${r.teil_nr} von ${r.teile_n} einer Aufteilung über ${eur(Math.abs(Number(r.teile_summe)))}`}>Teil {r.teil_nr}/{r.teile_n}</span> : ''}</td>
+                <td className="nowrap">{r.mwst_satz == null ? <span className="muted">–</span> : Number(r.mwst_satz) ? `${String(r.mwst_satz).replace('.', ',')} % MwSt` : 'ohne MwSt'}</td>
+                <td className="nowrap">{r.zeitraum_von || r.zeitraum_bis ? `${datum(r.zeitraum_von) || '…'} – ${datum(r.zeitraum_bis) || '…'}` : ''}</td>
+                <td className="ea-kurz-zelle" title={wer ?? ''}>{wer ?? ''}</td>
+                <td>{r.abr_jahr}</td>
+                <td className="ea-kurz-zelle" title={r.rechnungsnr ?? ''}>{r.rechnungsnr ?? ''}</td>
+                <td className="ea-text" title={r.text ?? ''}>{r.text}{!mitBank && r.bankumsatz_id ? <span className="muted"> · Bank</span> : ''}</td>
+                <td className="nowrap">{datum(r.rechnungsdatum)}</td>
+                <td className="nowrap"><button className={'ea-beleg ' + (r.belege ? 'hat' : 'kein')} title={r.belege ? `${r.belege} Beleg(e) ansehen oder anhängen` : 'Beleg anhängen'} onClick={() => setBelegFuer(r)}>
+                  {r.belege ? <><Paperclip size={12} />{r.belege === 1 ? '1 Beleg' : `${r.belege} Belege`}</> : 'Kein Beleg'}</button></td>
                 {mitBank && <td className="nowrap">{st === 'bank' ? <span className="pill ks-pill-gruen">Bank{r.bankumsatz_datum ? ` · ${datum(r.bankumsatz_datum)}` : ''}</span>
                   : st === 'bar' ? <button className="pill ks-pill-grau" title="Bewusst ohne Bankkonto. Klicken, um es wieder als Bankzahlung zu führen." onClick={() => bankAktion(() => barSetzen(Number(r.id), false), `Buchung ${r.id} wird wieder als Bankzahlung geführt.`)}>bar</button>
                   : st === 'vorher' ? <span className="muted small" title="Liegt vor dem ersten erfassten Kontoumsatz und steckt im Anfangssaldo">vor Kontostart</span>
                   : <span className="pill ks-pill-rot">kein Kontoumsatz</span>}</td>}
-                <td className="actions nowrap"><button className={'icon-btn beleg-btn ' + (r.belege ? 'hat' : 'leer')} title={r.belege ? `${r.belege} Beleg(e) ansehen oder anhängen` : 'Beleg anhängen'} onClick={() => setBelegFuer(r)}><Paperclip size={15} />{r.belege > 0 && <small>{r.belege}</small>}</button>
+                <td className="actions nowrap">
                   <button className="icon-btn" title="Buchung bearbeiten" onClick={() => bearbeiten(r)}><Pencil size={15} /></button>
                   <button className="icon-btn" title="Buchung löschen" onClick={() => loeschen(r)}><Trash2 size={15} /></button></td>
               </tr>,
-              mitBank && st === 'ohne' && <tr key={r.id + 'h'} className="ks-rot"><td /><td /><td colSpan={10}>
+              mitBank && st === 'ohne' && <tr key={r.id + 'h'} className="ks-rot"><td /><td /><td colSpan={spalten - 2}>
                 <div className="ks-hinweis">{pu.length
                   ? <span><b>Diese Buchung gibt es schon auf dem Konto:</b> Kontoumsatz vom {datum(pu[0].datum)}, {eur(Number(pu[0].betrag))}, „{[pu[0].gegenpartei, pu[0].verwendungszweck].filter(Boolean).join(' · ')}“ ist noch offen.{pu.length > 1 ? ` ${pu.length - 1} weitere passen ebenfalls.` : ''} Ohne Verbinden würde die Zahlung beim Zuordnen ein zweites Mal gebucht.</span>
                   : <span>Noch kein passender Kontoumsatz (gleicher Betrag, bis {20} Tage Abstand). Sobald der Kontoauszug eingelesen ist, erscheint hier „Verbinden“. Bar oder ohne Bank bezahlt? Dann so kennzeichnen.</span>}
@@ -393,9 +431,21 @@ export function JournalPage() {
                 </div></td></tr>,
             ]; })}
             </tbody>
-            <tfoot><tr><td colSpan={mitBank ? 8 : 7}>Summe</td><td className="num neg">{eur(soll)}</td><td className="num">{eur(haben)}</td>{mitBank && <td />}<td /></tr></tfoot>
-          </table></div>)}
-        <p className="muted small">Mit dem Stift änderst du eine Buchung, mit dem Papierkorb löschst du sie. Neue Einnahmen und Ausgaben buchst du über „Buchen“, Rechnungen mit Beleg über „Rechnung erfassen“.
+          </table></div>
+          <div className="ea-fuss">
+            <label className="inline">Einträge pro Seite <select value={proSeite} onChange={(e) => { setProSeite(Number(e.target.value)); setSeiteNr(0); }}>
+              {[25, 50, 100, 250, 0].map((n) => <option key={n} value={n}>{n || 'Alle'}</option>)}</select></label>
+            <span className="muted small">{rows.length > seite.length ? `${seiteAb + 1}–${seiteAb + seite.length} von ${rows.length}` : `${rows.length} Buchungen`}</span>
+            {seiten > 1 && <span className="ea-blaettern">
+              <button className="icon-btn" title="Vorherige Seite" disabled={seiteJetzt === 0} onClick={() => setSeiteNr(seiteJetzt - 1)}><ChevronLeft size={16} /></button>
+              <span className="small">Seite {seiteJetzt + 1} von {seiten}</span>
+              <button className="icon-btn" title="Nächste Seite" disabled={seiteJetzt >= seiten - 1} onClick={() => setSeiteNr(seiteJetzt + 1)}><ChevronRight size={16} /></button></span>}
+            <span className="grow" />
+            <span className="ea-summe">Ausgaben <b className="neg">{eur(-soll)}</b></span>
+            <span className="ea-summe">Einnahmen <b className="pos">{eur(haben)}</b></span>
+            <span className="ea-summe">Saldo <b className={haben - soll < 0 ? 'neg' : 'pos'}>{eur(haben - soll)}</b></span>
+          </div></>)}
+        <p className="muted small">Mit dem Stift änderst du eine Buchung, mit dem Papierkorb löschst du sie. Über „Kein Beleg“ hängst du einen Beleg an, über das Feld „Einheiten“ ordnest du die Buchung einer Einheit zu. Neue Einnahmen und Ausgaben buchst du über „Buchen“, Rechnungen mit Beleg über „Rechnung erfassen“.
           Mit den Häkchen wählst du mehrere Buchungen zum Löschen aus. Gelöschte Bankbuchungen stehen danach wieder oben unter „Aus dem Kontoauszug“ zum Buchen bereit.</p>
       </section>)}
       {edit && (
