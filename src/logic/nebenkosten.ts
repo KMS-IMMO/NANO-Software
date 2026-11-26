@@ -79,7 +79,7 @@ export async function tabellenSchluessel(objektId: number, jahr: number): Promis
     WHERE e.objekt_id = $1 AND h.jahr = $2`, [objektId, jahr]))[0]?.n ?? 0) > 0;
   const out: Record<number, string> = {};
   for (const k of konten) {
-    if (weg && ['1260', '1261', '1262', '1601', '1602'].includes(String(k.nummer))) continue;
+    if (weg && ['1260', '1262', '1601', '1602'].includes(String(k.nummer))) continue;
     if (!weg && !Number(k.umlagefaehig)) continue;
     const s = k.nummer === HEIZ_KONTO && messdienst ? 'Messdienst' : (k.eigen ?? (weg ? 'MEA' : (k.schluessel ?? 'Fläche')));
     out[k.id] = s === 'Summe' ? 'Manuell' : s === 'Messdienst' ? 'lt. Messdienst' : s;
