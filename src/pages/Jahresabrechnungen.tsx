@@ -26,7 +26,9 @@ import { ruecklageJahr } from '../logic/ruecklage';
 import { HEIZ_HINWEIS, heizkostenOhneMessung, nkBerechnen } from '../logic/nebenkosten';
 import { JahrWahl } from '../components/DatumFeld';
 
-const RUECKLAGE = ['1260', '1261', '1262'];
+// Zuführung (1260) und Zinsen (1262) sind keine Kosten. Die Entnahme (1261) zählt wie jedes Konto mit EÜR-Häkchen:
+// Sie steht als Zeile bei den nicht umlagefähigen Kosten und mindert die Summe (gegen die daraus bezahlten Rechnungen).
+const RUECKLAGE = ['1260', '1262'];
 // Nachzahlungen und Erstattungen aus der Abrechnung des Vorjahres sind keine Kosten des Jahres und werden nicht verteilt
 const VORJAHRESABRECHNUNG = ['1601', '1602'];
 const HEIZ_KONTO = '1200';

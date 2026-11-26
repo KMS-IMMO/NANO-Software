@@ -10,7 +10,7 @@ import { OP_SQL } from './soll';
 const r2 = (n: number) => Math.round(n * 100) / 100;
 const eurT = (n: number) => n.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' });
 const dT = (d?: string) => (d && /^\d{4}-\d{2}-\d{2}/.test(d) ? d.slice(0, 10).split('-').reverse().join('.') : d ?? '');
-const RUECKLAGE = ['1260', '1261', '1262'], VORJAHR = ['1601', '1602'];
+const RUECKLAGE = ['1260', '1262'], VORJAHR = ['1601', '1602'];
 
 export type Befund = { stufe: 'rot' | 'gelb' | 'gruen'; text: string };
 
