@@ -22,7 +22,7 @@ import { eigeneSchluessel, kostenErmitteln, nichtVerteilteKosten, nutzerErmittel
 import { Brief, EIGENTUEMER_HINWEIS, HINWEIS_35A_VERMIETER, absender, dDatum, eigentuemerGruppen, geld, saldoZelle } from '../lib/pdf';
 import { oeffnen, speichern } from '../lib/dateien';
 import { WerteJeEinheit } from '../components/WerteJeEinheit';
-import { ruecklageJahr } from '../logic/ruecklage';
+import { ruecklageAbgleich, ruecklageJahr } from '../logic/ruecklage';
 import { HEIZ_HINWEIS, heizkostenOhneMessung, nkBerechnen } from '../logic/nebenkosten';
 import { JahrWahl } from '../components/DatumFeld';
 
@@ -142,6 +142,7 @@ export function WegAbrechnungPage() {
     // Vermögensbericht
     const ende = `${jahr}-12-31`;
     const rl = await ruecklageJahr(Number(objekt), jahr);
+    const rlAb = await ruecklageAbgleich(Number(objekt), jahr);
     const zufJahr = res.reduce((a, r) => a + r.ruecklageSoll, 0);
     const banken = await db.select(`SELECT b.*, b.anfangssaldo + COALESCE((SELECT SUM(u.betrag) FROM bankumsaetze u WHERE u.bankkonto_id = b.id
       AND u.datum <= $2 AND (b.saldo_datum IS NULL OR u.datum > b.saldo_datum)), 0) AS saldo FROM bankkonten b WHERE b.objekt_id = $1`, [objekt, ende]);
@@ -205,7 +206,7 @@ export function WegAbrechnungPage() {
     const einSumme = r2(einnahmen.reduce((a, x) => a + Number(x.betrag), 0));
     setOhnePosten(await zahlungenOhnePosten(Number(objekt), jahr));
     setSpaet(await spaeteHandzahlungen(Number(objekt), jahr));
-    setVerm({ einnahmen, einSumme, einOffen: zahlungsEin - einSumme > 0.005 ? r2(zahlungsEin - einSumme) : 0, entwicklung, ruecklage: rl.bestand, ruecklageIst: rl.bestandIst, ruecklageOffen: rl.offen, zufIstJahr: rl.zufuehrungIst, zufJahr, sonderJahr: rl.sonder, entnahmeJahr: rl.entnahme, zinsJahr: rl.zinsen, banken,
+    setVerm({ einnahmen, einSumme, einOffen: zahlungsEin - einSumme > 0.005 ? r2(zahlungsEin - einSumme) : 0, entwicklung, ruecklage: rl.bestand, ruecklageIst: rl.bestandIst, ruecklageOffen: rl.offen, zufIstJahr: rl.zufuehrungIst, zufJahr, sonderJahr: rl.sonder, entnahmeJahr: rl.entnahme, zinsJahr: rl.zinsen, rlStart: rl.anfangsbestand + rl.uebernahme, rlAuszug: rlAb.auszug.ende, rlAuszugDatum: rlAb.auszug.endeDatum, rlAuszugDiff: rlAb.endeDiff, banken,
       forderungen: r2(offen.filter((z) => z.saldo > 0).reduce((a, z) => a + z.saldo, 0)),
       guthaben: r2(offen.filter((z) => z.saldo < 0).reduce((a, z) => a - z.saldo, 0)),
       opKonten: offen, hgImJahr, offeneRechnungen,
@@ -251,6 +252,27 @@ export function WegAbrechnungPage() {
     g.tabelle(['Einheit', 'Eigentümer', 'umlagefähig', 'nicht umlagef.', 'Kostenanteil', 'Vorschüsse', 'Spitze'],
       erg.map((r) => [r.einheit.nummer, r.nutzer.name, geld(anteil(r, true)), geld(anteil(r, false)), geld(r.summe), geld(r.vorschuss), saldoZelle(r.spitze, geld(r.spitze))]), undefined, 2);
     g.betreff(`Vermögensbericht zum 31.12.${jahr}`);
+    /** Erhaltungsrücklage: Anfangsbestand, Bewegungen, Endbestand und Veränderung (grün Zunahme, rot Abnahme); mit r zusätzlich der Anteil der Einheit nach MEA */
+    const rlTabelle = (brief: Brief, r?: typeof erg[number]) => {
+      const q = r ? (Number(r.einheit.mea) || 0) / (Number(o.gesamt_mea) || 1) : 0;
+      const st = verm.rlStart ?? 0, zu = verm.zufJahr ?? 0, so = verm.sonderJahr ?? 0, en = verm.entnahmeJahr ?? 0, zi = verm.zinsJahr ?? 0, ende = verm.ruecklage ?? 0, d = r2(ende - st);
+      const a = r ? { st: r2(st * q), zu: r.ruecklageSoll, so: r2(so * q), en: r2(en * q), zi: r2(zi * q) } : null;
+      const aEnde = a ? r2(a.st + a.zu + a.so - a.en + a.zi) : 0, aD = a ? r2(aEnde - a.st) : 0;
+      const z = (t: string, g: number, x?: number) => (a ? [t, geld(g), x === undefined ? '' : geld(x)] : [t, geld(g)]);
+      const veraenderung = (v: number) => saldoZelle(-v, (v > 0 ? '+' : '') + geld(v));
+      const ok = Math.abs(verm.rlAuszugDiff ?? 0) < 0.005;
+      brief.tabelle(a ? [`Erhaltungsrücklage ${jahr}`, 'Gesamt', `Ihr Anteil (${num(r!.einheit.mea, 0)} / ${num(o.gesamt_mea, 0)} MEA)`] : [`Erhaltungsrücklage ${jahr}`, 'Betrag'], [
+        z(`Anfangsbestand 01.01.${jahr}`, st, a?.st),
+        z(`+ Zuführung ${jahr} laut Wirtschaftsplan`, zu, a?.zu),
+        ...(so ? [z(`+ Sonderzuführungen ${jahr} (Konto 1260)`, so, a?.so)] : []),
+        z(`− Entnahmen ${jahr} (Konto 1261)`, -en, a ? -a.en : undefined),
+        z(`+ Zinserträge ${jahr} (Konto 1262)`, zi, a?.zi),
+        z(`Endbestand 31.12.${jahr}`, ende, a ? aEnde : undefined),
+        ...(verm.rlAuszug != null ? [[`Endbestand laut Kontoauszug vom ${dDatum(verm.rlAuszugDatum)}`,
+          saldoZelle(ok ? -1 : 1, `${geld(verm.rlAuszug)} ${ok ? 'stimmt überein' : `(Differenz ${geld(verm.rlAuszugDiff)})`}`), ...(a ? [''] : [])]] : []),
+      ], [[d >= 0 ? 'Veränderung im Jahr (Zunahme)' : 'Veränderung im Jahr (Abnahme)', veraenderung(d), ...(a ? [veraenderung(aD)] : [])]], 1);
+    };
+    rlTabelle(g);
     g.tabelle(['Position', 'Betrag'], [
       ['Erhaltungsrücklage zum 31.12. laut Wirtschaftsplan (Soll)', geld(verm.ruecklage ?? 0)],
       ['   davon tatsächlich eingezahlt (Ist)', geld(verm.ruecklageIst ?? 0)],
@@ -294,6 +316,7 @@ export function WegAbrechnungPage() {
         ['abzüglich Zuführung Erhaltungsrücklage', geld(-r.ruecklageSoll)],
         ['Vorschüsse für Bewirtschaftung (ohne Rücklage)', geld(r.vorschuss)],
       ], [[r.spitze > 0 ? 'Nachschuss (Abrechnungsspitze)' : 'Erstattung (Abrechnungsspitze)', geld(Math.abs(r.spitze))]]);
+      rlTabelle(b, r);
       if (r.mieter) {
         b.absatz(`Ihre Einheit ist vermietet (${r.mieter.name})`, 1);
         b.tabelle(['Verrechnung mit Ihrem Mieter (Nebenkostenabrechnung)', 'Betrag'], [
@@ -402,6 +425,18 @@ export function WegAbrechnungPage() {
       {objekt !== '' && <KontoabgleichKarte objekt={Number(objekt)} jahr={jahr} stand={stand} gesperrt={!!zu} />}
       <section className="card abr-uebersicht">
         <div className="card-head"><h2>Vermögensbericht zum 31.12.{jahr}</h2></div>
+        {(() => { const st = verm.rlStart ?? 0, en = verm.ruecklage ?? 0, d = r2(en - st); return (
+        <table className="list" style={{ marginBottom: 16 }}><thead><tr><th>Erhaltungsrücklage {jahr}</th><th className="num">Betrag</th></tr></thead><tbody>
+          <tr><td>Anfangsbestand 01.01.{jahr}</td><td className="num"><b>{eur(st)}</b></td></tr>
+          <tr><td className="einzug">+ Zuführung {jahr} laut Wirtschaftsplan</td><td className="num">{eur(verm.zufJahr ?? 0)}</td></tr>
+          {verm.sonderJahr ? <tr><td className="einzug">+ Sonderzuführungen {jahr} (Konto 1260)</td><td className="num">{eur(verm.sonderJahr)}</td></tr> : null}
+          <tr><td className="einzug">− Entnahmen {jahr} (Konto 1261)</td><td className="num">{eur(-(verm.entnahmeJahr ?? 0))}</td></tr>
+          <tr><td className="einzug">+ Zinserträge {jahr} (Konto 1262)</td><td className="num">{eur(verm.zinsJahr ?? 0)}</td></tr>
+          <tr><td>Endbestand 31.12.{jahr}</td><td className="num"><b>{eur(en)}</b></td></tr>
+          <tr><td><b>Veränderung im Jahr ({d >= 0 ? 'Zunahme' : 'Abnahme'})</b></td><td className={'num ' + (d >= 0 ? 'pos' : 'neg')}><b>{d > 0 ? '+' : ''}{eur(d)}</b></td></tr>
+          {verm.rlAuszug != null ? <tr><td>Endbestand laut Kontoauszug vom {dDatum(verm.rlAuszugDatum)}</td><td className={'num ' + (Math.abs(verm.rlAuszugDiff ?? 0) < 0.005 ? 'pos' : 'neg')}>{eur(verm.rlAuszug)} {Math.abs(verm.rlAuszugDiff ?? 0) < 0.005 ? '✓ stimmt überein' : `(Differenz ${eur(verm.rlAuszugDiff)})`}</td></tr>
+            : <tr><td className="muted">Endbestand laut Kontoauszug</td><td className="num muted">noch nicht eingetragen (unter Rücklagen)</td></tr>}
+        </tbody></table>); })()}
         <table className="list"><tbody>
           <tr><td>Erhaltungsrücklage laut Wirtschaftsplan (Soll)</td><td className="num"><b>{eur(verm.ruecklage ?? 0)}</b></td></tr>
           <tr><td className="einzug">davon tatsächlich eingezahlt (Ist)</td><td className="num">{eur(verm.ruecklageIst ?? 0)}</td></tr>
