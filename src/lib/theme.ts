@@ -1,16 +1,24 @@
-// Darstellung: Hell, Dunkel (Forged Carbon) oder wie macOS. Gespeichert pro Gerät, damit schon der Sperrbildschirm passt.
-export type Darstellung = 'hell' | 'dunkel' | 'system';
+// Darstellung: Marmor Schiefer (Standard), Hell, Dunkel (Forged Carbon) oder wie macOS.
+// Gespeichert pro Gerät, damit schon der Sperrbildschirm passt.
+export type Darstellung = 'marmor' | 'hell' | 'dunkel' | 'system';
 const SCHLUESSEL = 'nano-darstellung';
+// Einmalige Umstellung auf das Marmor-Design (27.11.2026); danach gilt wieder die eigene Wahl.
+const MARMOR_EINGEFUEHRT = 'nano-darstellung-marmor-eingefuehrt';
 const mq = typeof window !== 'undefined' && window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
 
 export function darstellungLesen(): Darstellung {
-  try { const v = localStorage.getItem(SCHLUESSEL); if (v === 'dunkel' || v === 'system') return v; } catch { /* ohne Speicher: hell */ }
-  return 'hell';
+  try {
+    if (!localStorage.getItem(MARMOR_EINGEFUEHRT)) { localStorage.setItem(MARMOR_EINGEFUEHRT, '1'); localStorage.setItem(SCHLUESSEL, 'marmor'); }
+    const v = localStorage.getItem(SCHLUESSEL);
+    if (v === 'hell' || v === 'dunkel' || v === 'system' || v === 'marmor') return v;
+  } catch { /* ohne Speicher: Marmor */ }
+  return 'marmor';
 }
 
 export function darstellungAnwenden(d: Darstellung = darstellungLesen()) {
   const dunkel = d === 'dunkel' || (d === 'system' && !!mq?.matches);
   if (dunkel) document.documentElement.dataset.theme = 'dunkel';
+  else if (d === 'marmor') document.documentElement.dataset.theme = 'marmor';
   else delete document.documentElement.dataset.theme;
   document.documentElement.style.colorScheme = dunkel ? 'dark' : 'light';
 }
