@@ -11,6 +11,7 @@ import { SollstellungNeu } from '../components/SollstellungNeu';
 import { OP_SQL, postenStatus, sollStellen, zahlungBuchen, mahnenAbTage, postenLoeschen } from '../logic/soll';
 import { sperrText } from '../logic/abschluss';
 import { DatumFeld } from '../components/DatumFeld';
+import { betragEinfuegen, betragTippen } from '../components/BetragFeld';
 
 const heute = () => new Date().toISOString().slice(0, 10);
 const zahl = (s: string) => betragZahl(s) ?? 0;
@@ -128,7 +129,7 @@ export function SollstellungenPage() {
                     <td>{r.schuldner || <span className="muted">–</span>}</td>
                     <td>{r.art}</td>
                     <td><DatumFeld className="cell" style={{ width: 140 }} defaultValue={r.faellig} onBlur={(e) => aendern(r, 'faellig', e.target.value)} /></td>
-                    <td className="num"><span className="betrag-feld zelle"><input className="cell" inputMode="decimal" defaultValue={betragText(Number(r.betrag))} onBlur={(e) => { const n = betragZahl(e.target.value); if (n !== null) e.target.value = betragText(n); aendern(r, 'betrag', e.target.value); }} /><span className="betrag-eur">€</span></span></td>
+                    <td className="num"><span className="betrag-feld zelle"><input className="cell" inputMode="decimal" defaultValue={betragText(Number(r.betrag))} onFocus={(e) => { e.target.dataset.v = e.target.value; }} onChange={(e) => { const t = betragTippen(e, e.target.dataset.v ?? ''); e.target.value = t; e.target.dataset.v = t; }} onPaste={(e) => { const t = betragEinfuegen(e); if (t !== null) { e.currentTarget.value = t; e.currentTarget.dataset.v = t; } }} onBlur={(e) => { const n = betragZahl(e.target.value); if (n !== null) e.target.value = betragText(n); aendern(r, 'betrag', e.target.value); }} /><span className="betrag-eur">€</span></span></td>
                     <td className="num">{eur(r.bezahlt)}</td>
                     <td><span className={'pill st-' + STATUS_KLASSE[st]}>{st}</span></td>
                     <td className="actions">

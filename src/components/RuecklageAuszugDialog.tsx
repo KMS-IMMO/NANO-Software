@@ -6,6 +6,7 @@ import { auszugSpeichern, ruecklageAbgleich, ruecklageIstStand } from '../logic/
 import { betragLesen, startLautUmsaetzen } from '../logic/kontostart';
 import { DatumFeld } from './DatumFeld';
 import { db } from '../db';
+import { BetragFeld } from './BetragFeld';
 import { eur, datum } from './EntityTable';
 
 type Abgleich = Awaited<ReturnType<typeof ruecklageAbgleich>>;
@@ -71,7 +72,7 @@ export function RuecklageAuszugDialog({ objektId, jahr, g, endeAbschluss, onClos
           <div className="rl-felder">
             <label><span>Anfangsbestand am</span><input value={`01.01.${jahr}`} disabled /></label>
             <label><span>laut Auszug Nr.</span><input value={anfangAuszug} placeholder={`z. B. 12/${jahr - 1}`} onChange={(e) => setAnfangAuszug(e.target.value)} aria-label="Auszug Nr. Anfangsbestand" /></label>
-            <label><span>Anfangsbestand (€)</span><input className="num" inputMode="decimal" autoFocus value={anfang} aria-label={`Anfangsbestand 01.01.${jahr}`}
+            <label><span>Anfangsbestand (€)</span><BetragFeld autoFocus value={anfang} aria-label={`Anfangsbestand 01.01.${jahr}`}
               onChange={(e) => setAnfang(e.target.value)} onBlur={() => { const n = betragLesen(anfang); if (n !== null && Number.isFinite(n)) setAnfang(feld(n)); }} /></label>
           </div>
           <div className="rl-vorschlag small">
@@ -85,7 +86,7 @@ export function RuecklageAuszugDialog({ objektId, jahr, g, endeAbschluss, onClos
           <div className="rl-felder">
             <label><span>Endbestand am</span><DatumFeld value={endeDatum} onChange={(e) => setEndeDatum(e.target.value)} aria-label="Datum Endbestand" /></label>
             <label><span>laut Auszug Nr.</span><input value={endeAuszug} placeholder={`z. B. 10/${jahr}`} onChange={(e) => setEndeAuszug(e.target.value)} aria-label="Auszug Nr. Endbestand" /></label>
-            <label><span>Endbestand (€)</span><input className="num" inputMode="decimal" value={ende} aria-label="Endbestand laut Kontoauszug"
+            <label><span>Endbestand (€)</span><BetragFeld value={ende} aria-label="Endbestand laut Kontoauszug"
               onChange={(e) => setEnde(e.target.value)} onBlur={() => { const n = betragLesen(ende); if (n !== null && Number.isFinite(n)) setEnde(feld(n)); }} /></label>
           </div>
           <div className="rl-vorschlag small">
