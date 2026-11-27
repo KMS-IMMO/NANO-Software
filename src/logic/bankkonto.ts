@@ -1,6 +1,7 @@
 // Bankkonto bearbeiten und löschen (mit Rücksicht auf Umsätze, Buchungen und die Online-Banking-Verbindung)
 import { db, sicherheit, type Row } from '../db';
 import { ablegen, erfassen } from '../db/papierkorb';
+import { betragZahl } from '../lib/betrag';
 import { invoke, isTauri, kontoBlz, pinGespeichert } from './bankAbruf';
 
 /** IBAN ohne Leerzeichen, in Großbuchstaben */
@@ -24,7 +25,7 @@ export const ibanAnzeige = (s: unknown) => ibanNormal(s).replace(/(.{4})/g, '$1 
 /** Speichert geänderte Kontodaten. Wechselt die Bank (BLZ), wird die Online-Banking-Verbindung getrennt. */
 export async function bankkontoSpeichern(alt: Row, neu: Row): Promise<string> {
   const iban = ibanNormal(neu.iban) || null;
-  const saldo = neu.anfangssaldo === '' || neu.anfangssaldo == null ? 0 : Number(String(neu.anfangssaldo).replace(',', '.'));
+  const saldo = neu.anfangssaldo === '' || neu.anfangssaldo == null ? 0 : (betragZahl(neu.anfangssaldo) ?? NaN);
   await db.execute(`UPDATE bankkonten SET objekt_id = $1, name = $2, bank = $3, iban = $4, bic = $5, anfangssaldo = $6, saldo_datum = $7 WHERE id = $8`, [
     neu.objekt_id ? Number(neu.objekt_id) : null, String(neu.name ?? '').trim(), String(neu.bank ?? '').trim() || null, iban,
     String(neu.bic ?? '').replace(/\s/g, '').toUpperCase() || null, saldo, neu.saldo_datum || null, alt.id,

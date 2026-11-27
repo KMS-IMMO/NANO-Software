@@ -5,6 +5,7 @@ import { Link } from 'react-router-dom';
 import { AlertTriangle, CheckCircle2, XCircle } from 'lucide-react';
 import { eur, datum } from './EntityTable';
 import { auszugSpeichern, buchungAlsUmsatz, kontoabgleich, umsatzNachtragen, type KontoAbgleich } from '../logic/kontoabgleich';
+import { BetragFeld } from './BetragFeld';
 import { DatumFeld } from './DatumFeld';
 
 const zahl = (s: string) => { const t = s.trim(); if (!t) return null; const n = Number(t.replace(/[€\s]/g, '').replace(/\.(?=\d{3}(\D|$))/g, '').replace(',', '.')); return Number.isFinite(n) ? n : NaN; };
@@ -108,7 +109,7 @@ export function KontoabgleichKarte({ objekt, jahr, stand, gesperrt }: { objekt: 
               {!gesperrt && <div className="row" style={{ flexWrap: 'wrap', gap: 8 }}>
                 <span className="small" title="Buchungen unter „Einnahmen & Ausgaben“ ändern den Kontostand nicht. Er kommt nur aus den Umsätzen der Kontoauszüge.">Fehlenden Umsatz laut Kontoauszug nachtragen:</span>
                 <DatumFeld value={f.datum} aria-label="Datum" onChange={(e) => setNeu({ ...neu, [k.id]: { ...f, datum: e.target.value } })} />
-                <input className="num" style={{ width: 110 }} placeholder="Betrag" aria-label="Betrag" value={f.betrag} onChange={(e) => setNeu({ ...neu, [k.id]: { ...f, betrag: e.target.value } })} />
+                <BetragFeld zelle style={{ width: 120 }} placeholder="Betrag" aria-label="Betrag" value={f.betrag} onChange={(e) => setNeu({ ...neu, [k.id]: { ...f, betrag: e.target.value } })} />
                 <input style={{ width: 180 }} placeholder="Auftraggeber" aria-label="Auftraggeber" value={f.gegenpartei} onChange={(e) => setNeu({ ...neu, [k.id]: { ...f, gegenpartei: e.target.value } })} />
                 <input style={{ width: 200 }} placeholder="Verwendungszweck" aria-label="Verwendungszweck" value={f.zweck} onChange={(e) => setNeu({ ...neu, [k.id]: { ...f, zweck: e.target.value } })} />
                 <button className="small-btn" onClick={() => nachtragen(k)}>Nachtragen</button>

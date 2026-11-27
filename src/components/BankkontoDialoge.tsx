@@ -2,6 +2,8 @@
 import { useEffect, useState } from 'react';
 import { Pencil, Trash2, X } from 'lucide-react';
 import { db, sicherheit, type Row } from '../db';
+import { BetragFeld } from './BetragFeld';
+import { betragText, betragZahl } from '../lib/betrag';
 import { bankkontoLoeschen, bankkontoSpeichern, bankkontoUmfang, ibanAnzeige, ibanGueltig, ibanNormal } from '../logic/bankkonto';
 
 type Opt = { value: number; label: string };
@@ -9,7 +11,7 @@ type Opt = { value: number; label: string };
 export function BankkontoBearbeiten({ konto, onClose, onDone, onLoeschen }: {
   konto: Row; onClose: () => void; onDone: (info: string) => void; onLoeschen?: () => void;
 }) {
-  const [w, setW] = useState<Row>({ ...konto, iban: ibanAnzeige(konto.iban), anfangssaldo: konto.anfangssaldo == null ? '' : String(konto.anfangssaldo).replace('.', ',') });
+  const [w, setW] = useState<Row>({ ...konto, iban: ibanAnzeige(konto.iban), anfangssaldo: konto.anfangssaldo == null ? '' : betragText(Number(konto.anfangssaldo)) });
   const [objekte, setObjekte] = useState<Opt[]>([]);
   const [fehler, setFehler] = useState('');
   const [busy, setBusy] = useState(false);
@@ -24,7 +26,7 @@ export function BankkontoBearbeiten({ konto, onClose, onDone, onLoeschen }: {
     if (!String(w.name ?? '').trim()) { setFehler('Bitte eine Bezeichnung eingeben.'); return; }
     if (!w.objekt_id) { setFehler('Bitte das Objekt auswählen.'); return; }
     if (!ibanOk) { setFehler('Die IBAN ist nicht gültig. Bitte prüfen (Prüfziffer oder Länge stimmt nicht).'); return; }
-    if (w.anfangssaldo !== '' && w.anfangssaldo != null && !Number.isFinite(Number(String(w.anfangssaldo).replace(',', '.')))) { setFehler('Der Anfangssaldo ist keine Zahl.'); return; }
+    if (w.anfangssaldo !== '' && w.anfangssaldo != null && betragZahl(w.anfangssaldo) === null) { setFehler('Der Anfangssaldo ist keine Zahl.'); return; }
     setBusy(true);
     try { onDone(await bankkontoSpeichern(konto, w)); }
     catch (e: any) { setFehler('Speichern fehlgeschlagen: ' + String(e?.message ?? e)); setBusy(false); }
@@ -46,7 +48,7 @@ export function BankkontoBearbeiten({ konto, onClose, onDone, onLoeschen }: {
           <label className="wide"><span>IBAN</span>
             <input value={w.iban ?? ''} onChange={(e) => set('iban', e.target.value)} onBlur={() => set('iban', ibanAnzeige(w.iban))} placeholder="DE00 0000 0000 0000 0000 00"
               style={!ibanOk ? { borderColor: 'var(--neg)' } : undefined} /></label>
-          <label><span>Anfangssaldo (€)</span><input inputMode="decimal" value={w.anfangssaldo ?? ''} onChange={(e) => set('anfangssaldo', e.target.value)} /></label>
+          <label><span>Anfangssaldo (€)</span><BetragFeld value={w.anfangssaldo ?? ''} onChange={(e) => set('anfangssaldo', e.target.value)} /></label>
           <label><span>Saldo zum</span><input type="date" value={w.saldo_datum ?? ''} onChange={(e) => set('saldo_datum', e.target.value)} /></label>
         </div>
         {!ibanOk && <p className="error">Diese IBAN ist nicht gültig.</p>}

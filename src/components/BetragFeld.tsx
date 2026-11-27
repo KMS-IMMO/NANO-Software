@@ -1,8 +1,31 @@
 // Eingabefeld für Geldbeträge: rechtsbündig mit festem „€“, Anzeige immer als 1.234,00.
-// Beim Hineinklicken bleibt der Text stehen (nichts springt), getippt wird frei; Eingaben wie 1.234,50 / 1234,5 / 1234.50 werden verstanden.
-// Der Wert im Formular ist der getippte Text; nur die Anzeige wird formatiert.
-import { useState, type InputHTMLAttributes } from 'react';
-import { betragText, betragZahl } from '../lib/betrag';
+// Beim Tippen setzt das Feld die Tausenderpunkte selbst (11354 → 11.354), das Komma (oder ein einzeln getippter Punkt) beginnt die Cent;
+// beim Verlassen wird auf zwei Nachkommastellen ergänzt (11.354,00). Eingefügte Beträge wie 1234.50 oder 1.234,50 € werden umgerechnet.
+// Der Wert im Formular ist der angezeigte Text (mit Tausenderpunkten); betragZahl liest ihn.
+import { useState, type ChangeEvent, type ClipboardEvent, type InputHTMLAttributes } from 'react';
+import { betragLive, betragText, betragZahl } from '../lib/betrag';
+
+/** Tipp-Logik für ein Betragsfeld: formatiert den Text und setzt den Cursor wieder an die richtige Stelle. `vorher` = Text vor der Eingabe. */
+export function betragTippen(e: ChangeEvent<HTMLInputElement>, vorher: string): string {
+  const el = e.target;
+  let roh = el.value;
+  const pos = el.selectionStart ?? roh.length;
+  // Mehrere Zeichen auf einmal (Autofill, Ziehen, Spracheingabe): als ganzen Betrag lesen, damit 1234.50 nicht zu 123.450 wird
+  if (roh.length - vorher.length > 1) { const n = betragZahl(roh); if (n !== null) return betragText(n); }
+  // Ein einzeln getippter Punkt ist das Dezimalzeichen (Ziffernblock), Tausenderpunkte setzt das Feld selbst
+  if (roh.length === vorher.length + 1 && roh[pos - 1] === '.' && !vorher.includes(',')) roh = roh.slice(0, pos - 1) + ',' + roh.slice(pos);
+  const { text, caret } = betragLive(roh, pos);
+  requestAnimationFrame(() => { try { if (document.activeElement === el) el.setSelectionRange(caret, caret); } catch { /* Feld weg */ } });
+  return text;
+}
+
+/** Eingefügter Text (z. B. aus dem Online-Banking): als ganzer Betrag lesen. null = normal einfügen lassen. */
+export function betragEinfuegen(e: ClipboardEvent<HTMLInputElement>): string | null {
+  const n = betragZahl(e.clipboardData.getData('text'));
+  if (n === null) return null;
+  e.preventDefault();
+  return betragText(n);
+}
 
 type Props = Omit<InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange'> & {
   value: string | number | null | undefined;
@@ -11,7 +34,7 @@ type Props = Omit<InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange'> &
   zelle?: boolean;
 };
 
-export function BetragFeld({ value, onChange, zelle, className, onFocus, onBlur, placeholder, style, ...rest }: Props) {
+export function BetragFeld({ value, onChange, zelle, className, onFocus, onBlur, onPaste, placeholder, style, ...rest }: Props) {
   const [lokal, setLokal] = useState<string | null>(null);
   const roh = value === null || value === undefined ? '' : String(value);
   const n = betragZahl(value);
@@ -23,7 +46,8 @@ export function BetragFeld({ value, onChange, zelle, className, onFocus, onBlur,
         placeholder={placeholder ?? '0,00'}
         onFocus={(e) => { setLokal(formatiert); onFocus?.(e); }}
         onBlur={(e) => { setLokal(null); onBlur?.(e); }}
-        onChange={(e) => { setLokal(e.target.value); onChange({ target: { value: e.target.value } }); }} />
+        onPaste={(e) => { onPaste?.(e); const t = betragEinfuegen(e); if (t !== null) { setLokal(t); onChange({ target: { value: t } }); } }}
+        onChange={(e) => { const t = betragTippen(e, anzeige); setLokal(t); onChange({ target: { value: t } }); }} />
       <span className="betrag-eur" aria-hidden="true">€</span>
     </span>
   );

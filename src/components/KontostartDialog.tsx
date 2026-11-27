@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import { Pencil, X } from 'lucide-react';
 import { kontostand, type Kontostand } from '../logic/kontostand';
 import { betragLesen, startSpeichern } from '../logic/kontostart';
+import { BetragFeld } from './BetragFeld';
 import { datum, eur } from './EntityTable';
 
 const ibanAnzeige = (s: string) => s.replace(/\s/g, '').toUpperCase().replace(/(.{4})/g, '$1 ').trim();
@@ -48,7 +49,7 @@ export function KontostartDialog({ objekt, jahr, k, onClose, onDone }: {
               <div key={z.id} className="ks-start-zeile">
                 <div className="ks-start-konto"><b>{z.name}</b>{z.iban ? <div className="muted small">{ibanAnzeige(z.iban)}</div> : null}</div>
                 <label className="ks-start-feld"><span>Stand 01.01.{jahr} (€)</span>
-                  <input inputMode="decimal" value={w[z.id] ?? ''} autoFocus={i === 0} placeholder={feld(z.lautUmsaetzen)} aria-label={`Stand 01.01.${jahr} ${z.name}`}
+                  <BetragFeld value={w[z.id] ?? ''} autoFocus={i === 0} placeholder={feld(z.lautUmsaetzen)} aria-label={`Stand 01.01.${jahr} ${z.name}`}
                     onChange={(e) => set(z.id, e.target.value)} onBlur={() => { const n = betragLesen(w[z.id] ?? ''); if (n !== null && Number.isFinite(n)) set(z.id, feld(n)); }} /></label>
                 <div className="ks-start-vorschlag small">
                   <span className="muted">Laut Kontoumsätzen: {eur(z.lautUmsaetzen)}</span>
