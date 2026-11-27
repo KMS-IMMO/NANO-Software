@@ -947,4 +947,19 @@ CREATE TABLE abrechnung_ruecklage (
   PRIMARY KEY (objekt_id, jahr, buchungskonto_id)
 );
 `,
+  // 40: Fehlende Konten aus der Prüfung vom 27.11.2026 (Kabel-TV, Schädlingsbekämpfung, Legionellen, Rauchwarnmelder, Erträge der
+  // Gemeinschaft, Bankzinsen Girokonto, Porto/Büro, Versammlung, Mietverwaltung). Vorhandene Nummern bleiben unverändert (OR IGNORE).
+  `
+INSERT OR IGNORE INTO buchungskonten (nummer, name, gruppe, art, euer, mwst, umlagefaehig, hdl, hwl, schluessel) VALUES
+ ('1247', 'Kabel-TV / Antenne / Breitband', 'Allgemeine Betriebskosten', 'Aufwand', 1, 19, 1, 0, 0, 'Einheiten'),
+ ('1248', 'Schädlingsbekämpfung', 'Allgemeine Betriebskosten', 'Aufwand', 1, 19, 1, 1, 0, 'Fläche'),
+ ('1249', 'Trinkwasser- / Legionellenprüfung', 'Allgemeine Betriebskosten', 'Aufwand', 1, 19, 1, 0, 0, 'Einheiten'),
+ ('1210', 'Rauchwarnmelder Wartung / Miete', 'Allgemeine Betriebskosten', 'Aufwand', 1, 19, 1, 0, 1, 'Einheiten'),
+ ('1030', 'Erträge der Gemeinschaft (z. B. Miete Funkanlage)', 'Einnahmen', 'Ertrag', 1, 0, 0, 0, 0, 'MEA'),
+ ('1031', 'Bankzinsen Girokonto', 'Einnahmen', 'Ertrag', 1, 0, 0, 0, 0, 'MEA'),
+ ('1406', 'Porto und Bürokosten', 'Verwaltungskosten', 'Aufwand', 1, 19, 0, 0, 0, NULL),
+ ('1407', 'Eigentümerversammlung (Raummiete, Kosten)', 'Verwaltungskosten', 'Aufwand', 1, 19, 0, 0, 0, NULL),
+ ('1410', 'Hausgeld an die WEG (Mietverwaltung)', 'Mietverwaltung', 'Aufwand', 1, 0, 0, 0, 0, NULL),
+ ('1411', 'Umsatzsteuer-Zahlung Finanzamt (Gewerbe)', 'Mietverwaltung', 'Aufwand', 1, 0, 0, 0, 0, NULL);
+`,
 ];
