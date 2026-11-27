@@ -190,11 +190,12 @@ export function EinstellungenPage() {
 }
 
 
-/** Darstellung: Hell, Dunkel (Forged Carbon) oder wie macOS */
+/** Darstellung: Marmor Schiefer, Hell, Dunkel (Forged Carbon) oder wie macOS */
 function DarstellungKarte() {
   const [d, setD] = useState<Darstellung>(darstellungLesen);
   const [schrift, setSchrift] = useState<Schrift>(schriftLesen);
   const wahl: [Darstellung, string, string][] = [
+    ['marmor', 'Marmor Schiefer', 'Anthrazit-Marmor mit Gold, heller Stein-Hintergrund'],
     ['hell', 'Hell', 'Heller Hintergrund, wie bisher'],
     ['dunkel', 'Dunkel (Forged Carbon)', 'Carbon-Grau mit Bronze, Minus knallrot, Plus knallgrün'],
     ['system', 'Wie macOS', 'Folgt der Einstellung des Mac (hell am Tag, dunkel am Abend)'],
