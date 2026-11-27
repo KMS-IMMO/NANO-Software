@@ -9,6 +9,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "tauri": "tauri",
+    "build:web": "tsc -b && vite build --mode web",
     "komplettest": "node tests/komplett/lauf.mjs"
   },
   "dependencies": {

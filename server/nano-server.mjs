@@ -4,8 +4,8 @@
 import http from 'node:http';
 import { DatabaseSync } from 'node:sqlite';
 import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
-import { mkdirSync, readdirSync, rmSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { mkdirSync, readdirSync, rmSync, existsSync, readFileSync, statSync } from 'node:fs';
+import { join, normalize, extname } from 'node:path';
 
 const VERSION = '1.0.0';
 const PORT = Number(process.env.PORT || 8080);
@@ -13,6 +13,12 @@ const DATEN = process.env.NANO_DATEN || './daten';
 const SICHERUNGEN = join(DATEN, 'sicherungen');
 const BEHALTEN = Number(process.env.NANO_SICHERUNGEN_BEHALTEN || 30);
 const SITZUNG_STUNDEN = Number(process.env.NANO_SITZUNG_STUNDEN || 12);
+// Web-Version: Ordner mit der gebauten Oberfläche (npm run build:web). Fehlt er, liefert der Server nur die API.
+const WEB = process.env.NANO_WEB || './web';
+// CORS: '*' für Desktop-Arbeitsplätze im Büronetz; bei der Web-Version leer lassen (gleiche Adresse, kein CORS nötig)
+const CORS = process.env.NANO_CORS ?? '*';
+// Läuft hinter einem Reverse-Proxy (Caddy): echte Absender-IP für die Sperre nach Fehlversuchen aus X-Forwarded-For
+const HINTER_PROXY = process.env.NANO_HINTER_PROXY === '1';
 mkdirSync(SICHERUNGEN, { recursive: true });
 
 const db = new DatabaseSync(join(DATEN, 'nano.db'));
@@ -90,10 +96,30 @@ function taeglich() { const heute = new Date().toISOString().slice(0, 10); if (!
 taeglich(); setInterval(taeglich, 3600e3).unref();
 
 // ---------- HTTP ----------
+const SICHERHEIT = { 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer', 'x-frame-options': 'DENY' };
+const corsKoepfe = () => (CORS ? { 'access-control-allow-origin': CORS, 'access-control-allow-headers': 'authorization, content-type', 'access-control-allow-methods': 'GET, POST, OPTIONS' } : {});
 const antwort = (res, code, daten) => {
-  res.writeHead(code, { 'content-type': 'application/json; charset=utf-8', 'access-control-allow-origin': '*', 'access-control-allow-headers': 'authorization, content-type', 'access-control-allow-methods': 'GET, POST, OPTIONS' });
+  res.writeHead(code, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', ...SICHERHEIT, ...corsKoepfe() });
   res.end(JSON.stringify(daten));
 };
+const ipVon = (req) => (HINTER_PROXY && String(req.headers['x-forwarded-for'] || '').split(',')[0].trim()) || req.socket.remoteAddress || '';
+
+// ---------- Web-Oberfläche ausliefern ----------
+const TYPEN = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
+  '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.ico': 'image/x-icon', '.json': 'application/json', '.woff': 'font/woff', '.woff2': 'font/woff2',
+  '.wasm': 'application/wasm', '.map': 'application/json', '.txt': 'text/plain; charset=utf-8' };
+function datei(req, res, pfad) {
+  if (!existsSync(join(WEB, 'index.html'))) return false;
+  let rel = normalize(decodeURIComponent(pfad)).replace(/^([/\\])+/, '');
+  if (rel.startsWith('..')) return false;
+  let ziel = join(WEB, rel);
+  if (!rel || !existsSync(ziel) || !statSync(ziel).isFile()) { ziel = join(WEB, 'index.html'); rel = 'index.html'; }
+  const html = rel === 'index.html';
+  res.writeHead(200, { 'content-type': TYPEN[extname(ziel).toLowerCase()] || 'application/octet-stream', ...SICHERHEIT,
+    'cache-control': html ? 'no-cache' : rel.startsWith('assets/') ? 'public, max-age=31536000, immutable' : 'public, max-age=3600' });
+  res.end(req.method === 'HEAD' ? undefined : readFileSync(ziel));
+  return true;
+}
 const lesen = (req) => new Promise((ok, fehler) => {
   let n = 0; const teile = [];
   req.on('data', (c) => { n += c.length; if (n > 50e6) { fehler(new Error('Anfrage zu groß')); req.destroy(); } else teile.push(c); });
@@ -104,7 +130,7 @@ const routen = {
   'GET /api/info': () => ({ name: 'NANO-Server', version: VERSION }),
 
   'POST /api/anmelden': (b, _s, req) => {
-    const ip = req.socket.remoteAddress || '';
+    const ip = ipVon(req);
     const f = fehlversuche.get(ip);
     if (f && f.n >= 5 && f.bis > Date.now()) throw Object.assign(new Error('Zu viele Fehlversuche. Bitte 5 Minuten warten.'), { code: 429 });
     const u = db.prepare('SELECT * FROM _benutzer WHERE login = ? AND aktiv = 1').get(String(b.login || ''));
@@ -124,7 +150,10 @@ const routen = {
   'GET /api/stand': () => ({ stand }),
 
   'POST /api/select': (b) => {
-    if (GESCHUETZT.test(b.sql)) throw Object.assign(new Error('Nicht erlaubt.'), { code: 403 });
+    // Nur lesende Abfragen: Änderungen laufen ausschließlich über /api/execute (Rollenprüfung und Protokoll)
+    if (GESCHUETZT.test(b.sql) || !/^\s*(select|with|pragma\s+table_info)\b/i.test(b.sql) || /;\s*\S/.test(String(b.sql).trim().replace(/;\s*$/, '')))
+      throw Object.assign(new Error('Nicht erlaubt.'), { code: 403 });
+    if (/^\s*with\b/i.test(b.sql) && /\b(insert|update|delete|replace)\b/i.test(b.sql)) throw Object.assign(new Error('Nicht erlaubt.'), { code: 403 });
     return auswahl(String(b.sql), b.params);
   },
   'POST /api/lesend': (b) => {
@@ -212,6 +241,7 @@ http.createServer(async (req, res) => {
   const url = new URL(req.url || '/', 'http://x');
   const schluessel = `${req.method} ${url.pathname}`;
   const f = routen[schluessel];
+  if (!f && (req.method === 'GET' || req.method === 'HEAD') && !url.pathname.startsWith('/api/') && datei(req, res, url.pathname)) return;
   if (!f) return antwort(res, 404, { fehler: 'Unbekannte Adresse' });
   try {
     const s = OFFEN.has(schluessel) ? null : sitzung(req);

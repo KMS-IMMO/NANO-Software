@@ -1,0 +1,12 @@
+# HTTPS-Zertifikat holt Caddy automatisch, sobald die Domain auf diesen Server zeigt.
+{$NANO_DOMAIN} {
+	encode gzip zstd
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy no-referrer
+		-Server
+	}
+	reverse_proxy nano:8080
+}
